@@ -170,103 +170,7 @@ The system will support importing from various sources:
 - Include detailed metadata with all saved files
 - Maintain a robust version system for backward compatibility
 
-## 4. Development Style Guidelines
-
-To maintain code quality and consistency throughout the project, we'll adhere to the following guidelines:
-
-### 4.1 Code Organization
-
-#### 4.1.1 File Structure
-
-- One class per file (with closely related helper classes when appropriate)
-- Files named after the primary class they contain
-- Use of `__init__.py` files to create clean public APIs for modules
-
-#### 4.1.2 Import Organization
-
-Imports should be organized in the following order, separated by a blank line:
-1. Standard library imports
-2. Third-party library imports
-3. Local application imports
-
-### 4.2 Naming Conventions
-
-- **Classes**: CamelCase (e.g., `SignalProcessor`)
-- **Functions/Methods**: snake_case (e.g., `process_signal`)
-- **Variables**: snake_case (e.g., `current_signal`)
-- **Constants**: UPPER_SNAKE_CASE (e.g., `MAX_SAMPLE_RATE`)
-- **Private Members**: Prefixed with underscore (e.g., `_internal_data`)
-- **Properties**: snake_case, same as regular variables
-
-### 4.3 Commenting and Documentation
-
-#### 4.3.1 Docstrings
-
-All modules, classes, methods, and functions should have docstrings:
-
-```python
-def analyze_frequency(signal, sample_rate):
-    """
-    Perform frequency analysis on the given signal.
-    
-    Args:
-        signal (numpy.ndarray): Time-domain signal to analyze
-        sample_rate (float): Sample rate in Hz
-        
-    Returns:
-        tuple: Frequencies and magnitudes (numpy.ndarray)
-        
-    Raises:
-        ValueError: If signal is empty or sample_rate is zero
-    """
-```
-
-#### 4.3.2 Special Comment Tags
-
-For enhanced code navigation and task tracking:
-
-- **# MARK: [description]**: Marks significant sections of code (appears in VS Code minimap)
-  - Example: `# MARK: - Signal Processing Functions`
-
-- **# TODO: [description]**: Indicates incomplete/future work
-  - Example: `# TODO: Implement adaptive filtering algorithm`
-
-- **# FIXME: [description]**: Highlights code that needs repair
-  - Example: `# FIXME: Memory leak when processing large signals`
-
-- **# NOTE: [description]**: Important information about the code
-  - Example: `# NOTE: This algorithm assumes normalized input`
-
-#### 4.3.3 Comment Style
-
-- Use complete sentences with proper capitalization and punctuation
-- Focus on *why* rather than *what* (the code shows what, comments explain why)
-- Keep comments up-to-date with code changes
-- Use block comments for complex algorithms or non-obvious logic
-
-### 4.4 Code Style
-
-- Follow PEP 8 guidelines for Python code style
-- Maximum line length of 100 characters
-- Use type hints for function parameters and return values
-- Prefer explicit over implicit
-- Use context managers (`with` statements) for resource management
-
-### 4.5 Error Handling
-
-- Use exceptions for error conditions, not for flow control
-- Create custom exception classes for application-specific errors
-- Include informative error messages
-- Log exceptions appropriately before re-raising or handling
-
-### 4.6 Testing Strategy
-
-- Unit tests for all non-UI components
-- Integration tests for component interactions
-- UI tests for critical workflows
-- Test coverage targeting 80%+ for core components
-
-## 5. Project Structure
+## 4. Project Structure
 
 The project will be organized into the following directory structure:
 
@@ -360,18 +264,16 @@ pysignaldecipher/
 │   └── test_helpers/          # Test utilities and mock objects
 │       ├── mock_oscilloscope.py
 │       └── sample_signals.py
+├── development/           # Developer guides
+│   ├── coding_standards.md
+│   ├── project_planning.md
+│   ├── project_proposal.md
+│   └── pyvisa_usage_notes.md
 └── docs/                      # Project documentation
     ├── architecture/          # System design docs
     │   ├── system_overview.md
     │   ├── protocol_system.md
     │   └── diagrams/
-    ├── development/           # Developer guides
-    │   ├── setup_guide.md
-    │   ├── coding_standards.md
-    │   ├── project_planning.md
-    │   ├── project_proposal.md
-    │   ├── pyvisa_usage_notes.md
-    │   └── testing_guide.md
     ├── user/                  # User documentation
     │   ├── installation.md
     │   ├── quick_start.md
@@ -380,9 +282,9 @@ pysignaldecipher/
     └── assets/                # Documentation assets
 ```
 
-### 5.1 Core Modules
+### 4.1 Core Modules
 
-#### 5.1.1 Hardware Interface Layer
+#### 4.1.1 Hardware Interface Layer
 
 The hardware interface layer will provide abstraction for oscilloscope communication:
 
@@ -391,7 +293,7 @@ The hardware interface layer will provide abstraction for oscilloscope communica
 - **Configuration Management**: Save/load device configurations
 - **Real-time Data Acquisition**: Streaming data from devices
 
-#### 5.1.2 Signal Management System
+#### 4.1.2 Signal Management System
 
 The signal management system will serve as the central registry for all signals:
 
@@ -400,7 +302,7 @@ The signal management system will serve as the central registry for all signals:
 - **Signal Relationships**: Track parent-child relationships for derived signals
 - **Version Tracking**: Maintain history of signal transformations
 
-#### 5.1.3 Signal Processing Engine
+#### 4.1.3 Signal Processing Engine
 
 The processing engine will provide algorithms for signal manipulation:
 
@@ -409,7 +311,7 @@ The processing engine will provide algorithms for signal manipulation:
 - **Measurements**: Time and frequency domain measurements
 - **Signal Mathematics**: Operations between signals
 
-#### 5.1.4 Protocol Analysis Module
+#### 4.1.4 Protocol Analysis Module
 
 The protocol module will handle decoding and analysis of communication protocols:
 
@@ -418,7 +320,7 @@ The protocol module will handle decoding and analysis of communication protocols
 - **Data Extraction**: Converting signals to meaningful data
 - **Timing Analysis**: Protocol timing verification
 
-#### 5.1.5 Pattern Recognition System
+#### 4.1.5 Pattern Recognition System
 
 The pattern system will identify and extract patterns within signals:
 
@@ -427,7 +329,7 @@ The pattern system will identify and extract patterns within signals:
 - **Pattern Library**: Storage and management of reusable patterns
 - **Pattern Extraction**: Isolating patterns from complex signals
 
-#### 5.1.6 Workspace Management
+#### 4.1.6 Workspace Management
 
 The workspace module will handle project management and persistence:
 
@@ -436,7 +338,7 @@ The workspace module will handle project management and persistence:
 - **Session State**: Managing application state between sessions
 - **Export/Import**: Conversion between file formats
 
-### 5.2 UI Architecture
+### 4.2 UI Architecture
 
 The UI will be built on a Model-View-Controller pattern:
 
@@ -444,7 +346,7 @@ The UI will be built on a Model-View-Controller pattern:
 - **Views**: UI components that display data
 - **Controllers**: Logic that connects models and views
 
-#### 5.2.1 Key UI Components
+#### 4.2.1 Key UI Components
 
 - **Main Window**: Application shell with docking support
 - **Workspaces**: Task-specific environments (tabs)
@@ -452,17 +354,17 @@ The UI will be built on a Model-View-Controller pattern:
 - **Signal Views**: Visualization components for signals
 - **Property Editors**: UI for editing properties of selected items
 
-#### 5.2.2 UI Update Mechanism
+#### 4.2.2 UI Update Mechanism
 
 - **Signal/Slot**: Qt's signal-slot mechanism for UI updates
 - **Observer Pattern**: For model changes notifications
 - **Event System**: Custom event system for complex interactions
 
-## 6. Test Structure and Strategy
+## 5. Test Structure and Strategy
 
 Testing is a critical part of ensuring PySignalDecipher's reliability and stability. The project will use a comprehensive testing approach organized as follows:
 
-### 6.1 Test Organization
+### 5.1 Test Organization
 
 Tests are organized in the `tests/` directory which mirrors the structure of the main package:
 
@@ -479,9 +381,9 @@ tests/
 └── test_helpers/          # Testing utilities
 ```
 
-### 6.2 Test Categories
+### 5.2 Test Categories
 
-#### 6.2.1 Unit Tests
+#### 5.2.1 Unit Tests
 
 - Test individual classes and functions in isolation
 - Mock dependencies to focus on the unit under test
@@ -489,30 +391,30 @@ tests/
 - Use pytest as the testing framework
 - Naming convention: `test_<module>_<function>.py`
 
-#### 6.2.2 Integration Tests
+#### 5.2.2 Integration Tests
 
 - Test interaction between modules
 - Verify correct behavior of assembled components
 - Focus on critical paths and common workflows
 - May use actual hardware when available or hardware simulation
 
-#### 6.2.3 UI Tests
+#### 5.2.3 UI Tests
 
 - Test UI components and interactions
 - Verify correct rendering and user interaction handling
 - Use Qt's testing utilities for widget testing
 - Screenshot-based regression testing for visual elements
 
-#### 6.2.4 Performance Tests
+#### 5.2.4 Performance Tests
 
 - Benchmark critical operations
 - Test with large datasets to ensure scalability
 - Monitor memory usage during extended operations
 - Verify real-time processing capabilities
 
-### 6.3 Hardware Testing Tools
+### 5.3 Hardware Testing Tools
 
-#### 6.3.1 Quick Test Tool
+#### 5.3.1 Quick Test Tool
 
 The project includes a standalone quick test tool (`quick_test.py`) that provides:
 
@@ -523,7 +425,7 @@ The project includes a standalone quick test tool (`quick_test.py`) that provide
 
 This tool serves both developers and end-users for rapid hardware verification without launching the full application.
 
-#### 6.3.2 Oscilloscope Simulation
+#### 5.3.2 Oscilloscope Simulation
 
 For development and testing without physical hardware:
 
@@ -532,34 +434,34 @@ For development and testing without physical hardware:
 - Network and communication error simulation
 - Configurable latency and bandwidth limitations
 
-### 6.4 Continuous Integration
+### 5.4 Continuous Integration
 
 - Automated test execution on code changes
 - Unit and integration test suites run on each commit
 - UI tests run on scheduled intervals
 - Performance benchmarks tracked over time
 
-### 6.5 Test Data Management
+### 5.5 Test Data Management
 
 - Reference signals stored in version control
 - Larger test datasets stored externally
 - Synthetic test signal generation
 - Real-world sample captures (anonymized)
 
-## 7. Documentation Strategy
+## 6. Documentation Strategy
 
 Documentation is essential for both developers and users of PySignalDecipher. The project maintains comprehensive documentation in the `docs/` directory.
 
-### 7.1 Documentation Types
+### 6.1 Documentation Types
 
-#### 7.1.1 Architecture Documentation
+#### 6.1.1 Architecture Documentation
 
 - System design and architecture overview
 - Component interaction diagrams
 - Design rationales and decisions
 - Extension points and customization guidelines
 
-#### 7.1.2 Developer Documentation
+#### 6.1.2 Developer Documentation
 
 - Development environment setup
 - Coding standards and conventions
@@ -567,7 +469,7 @@ Documentation is essential for both developers and users of PySignalDecipher. Th
 - Build and deployment processes
 - API references (generated from docstrings)
 
-#### 7.1.3 User Documentation
+#### 6.1.3 User Documentation
 
 - Installation and setup guides
 - Quick start tutorial
@@ -575,7 +477,7 @@ Documentation is essential for both developers and users of PySignalDecipher. Th
 - Common workflow examples
 - Troubleshooting and FAQ
 
-### 7.2 Documentation Formats
+### 6.2 Documentation Formats
 
 - Markdown (.md) for most documentation
 - Generated HTML for API reference
@@ -583,21 +485,21 @@ Documentation is essential for both developers and users of PySignalDecipher. Th
 - Video tutorials for complex workflows
 - Interactive examples where appropriate
 
-### 7.3 Documentation Tools
+### 6.3 Documentation Tools
 
 - Sphinx for API documentation generation
 - MkDocs for user-facing documentation websites
 - Diagrams.net (draw.io) for architecture diagrams
 - Jupyter notebooks for interactive examples
 
-### 7.4 Documentation Process
+### 6.4 Documentation Process
 
 - Documentation updated alongside code changes
 - Technical writers review for clarity and completeness
 - User testing of documentation
 - Regular audits for accuracy and completeness
 
-## 8. Implementation Phases
+## 7. Implementation Phases
 
 While maintaining flexibility in our approach, we'll divide implementation into logical phases:
 
@@ -632,7 +534,7 @@ While maintaining flexibility in our approach, we'll divide implementation into 
 - Extended file format support
 - Advanced reporting
 
-## 7. Conclusion
+## 8. Conclusion
 
 This planning document provides a comprehensive framework for the development of PySignalDecipher. By following these guidelines for theme management, window customization, data persistence, development style, and project structure, we'll create a cohesive, extensible application that meets the needs of signal analysis and protocol reverse engineering.
 
