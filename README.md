@@ -1,0 +1,2 @@
+# PySignalDecipher
+ PySignalDecipher: Advanced signal analysis and protocol reverse engineering platform built with Python. Interfaces with oscilloscopes (primarily Rigol) for real-time signal capture, processing, and protocol decoding. Features include multi-channel acquisition, protocol analysis, pattern recognition, signal separation, and comprehensive visualization tools for engineers and researchers.
