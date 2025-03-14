@@ -22,7 +22,8 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QComboBox, QLabel, QGroupBox, QTextEdit, QCheckBox,
     QStatusBar, QMessageBox, QFileDialog, QSlider, QSpinBox,
-    QDoubleSpinBox, QProgressBar, QTabWidget, QRadioButton, QButtonGroup
+    QDoubleSpinBox, QProgressBar, QTabWidget, QRadioButton, QButtonGroup,
+    QTableWidget, QTableWidgetItem, QHeaderView
 )
 from PySide6.QtCore import Qt, Slot, Signal, QThread, QTimer, QElapsedTimer
 import psutil
@@ -1130,6 +1131,358 @@ class WaveformPlotter(FigureCanvas):
         self.fig.savefig(filename, dpi=300, bbox_inches='tight')
 
 
+class ChannelWaveformPlotter:
+    """Widget containing separate waveform plots for each channel with free zooming and data reduction."""
+    
+    def __init__(self, parent=None):
+        """
+        Initialize the channel waveform plotter.
+        
+        Args:
+            parent: Parent widget
+        """
+        # Main widget and layout
+        self._widget = QWidget(parent)
+        self._layout = QVBoxLayout(self._widget)
+        
+        # Time range selection controls
+        range_group = QGroupBox("Time Range and Sampling")
+        range_layout = QHBoxLayout()
+        
+        # Min/Max time range selectors
+        self._range_label = QLabel("Display Range:")
+        self._range_min_spin = QDoubleSpinBox()
+        self._range_min_spin.setRange(0, 300)
+        self._range_min_spin.setDecimals(3)
+        self._range_min_spin.setSingleStep(0.01)
+        self._range_min_spin.setPrefix("Start: ")
+        self._range_min_spin.setSuffix(" s")
+        
+        self._range_max_spin = QDoubleSpinBox()
+        self._range_max_spin.setRange(0, 300)
+        self._range_max_spin.setDecimals(3)
+        self._range_max_spin.setSingleStep(0.01)
+        self._range_max_spin.setValue(3.0)  # Default 3 seconds
+        self._range_max_spin.setPrefix("End: ")
+        self._range_max_spin.setSuffix(" s")
+        
+        # Max points control
+        self._max_points_label = QLabel("Max Points:")
+        self._max_points_spin = QSpinBox()
+        self._max_points_spin.setRange(100, 100000)
+        self._max_points_spin.setSingleStep(1000)
+        self._max_points_spin.setValue(10000)  # Default 10K points per plot
+        
+        # Decimation method
+        self._decimation_label = QLabel("Reduction Method:")
+        self._decimation_combo = QComboBox()
+        self._decimation_combo.addItems(["Decimation", "Mean", "Min/Max"])
+        
+        # Apply button
+        self._apply_button = QPushButton("Apply")
+        self._apply_button.clicked.connect(self._apply_range_settings)
+        
+        # Full range button
+        self._full_range_button = QPushButton("Show Full Range")
+        self._full_range_button.clicked.connect(self._show_full_range)
+        
+        # Add to range layout
+        range_layout.addWidget(self._range_label)
+        range_layout.addWidget(self._range_min_spin)
+        range_layout.addWidget(self._range_max_spin)
+        range_layout.addWidget(self._max_points_label)
+        range_layout.addWidget(self._max_points_spin)
+        range_layout.addWidget(self._decimation_label)
+        range_layout.addWidget(self._decimation_combo)
+        range_layout.addWidget(self._apply_button)
+        range_layout.addWidget(self._full_range_button)
+        
+        range_group.setLayout(range_layout)
+        self._layout.addWidget(range_group)
+        
+        # Create chart widgets (one for each channel)
+        self._channel_charts = {}
+        self._channel_toolbars = {}
+        
+        for ch in range(1, 3):  # Create charts for channels 1 and 2
+            # Create a QGroupBox for this channel
+            group = QGroupBox(f"Channel {ch}")
+            group_layout = QVBoxLayout()
+            
+            # Create plot for this channel
+            chart = WaveformPlotter(self._widget, width=8, height=3)
+            
+            # Create a matplotlib toolbar for the chart
+            toolbar = matplotlib.backends.backend_qtagg.NavigationToolbar2QT(chart, self._widget)
+            
+            # Store references
+            self._channel_charts[ch] = chart
+            self._channel_toolbars[ch] = toolbar
+            
+            # Add to group layout
+            group_layout.addWidget(chart)
+            group_layout.addWidget(toolbar)
+            group.setLayout(group_layout)
+            
+            # Add group to main layout
+            self._layout.addWidget(group)
+        
+        # Store signal data
+        self._time_values = None
+        self._voltage_values = {}
+        self._current_range = (0, 3.0)  # Default 0-3 second range
+        
+        # Status label
+        self._status_label = QLabel("No data loaded")
+        self._layout.addWidget(self._status_label)
+    
+    def widget(self):
+        """
+        Get the widget for this plotter.
+        
+        Returns:
+            QWidget: The main widget
+        """
+        return self._widget
+    
+    def update_data(self, times, voltages_by_channel):
+        """
+        Update the plots with new data.
+        
+        Args:
+            times (np.ndarray): Array of time values
+            voltages_by_channel (dict): Dictionary mapping channel numbers to voltage arrays
+        """
+        # Store data
+        self._time_values = times
+        self._voltage_values = voltages_by_channel
+        
+        # Update range controls
+        if len(times) > 0:
+            min_time = times[0]
+            max_time = times[-1]
+            
+            # Update spinner ranges
+            self._range_min_spin.setRange(min_time, max_time)
+            self._range_max_spin.setRange(min_time, max_time)
+            
+            # Set default range to full data
+            self._range_min_spin.setValue(min_time)
+            self._range_max_spin.setValue(max_time)
+            
+            # Store current range
+            self._current_range = (min_time, max_time)
+            
+            # Update status
+            data_points = len(times)
+            channels = ", ".join([f"CH{ch}" for ch in sorted(voltages_by_channel.keys())])
+            duration = max_time - min_time
+            
+            self._status_label.setText(
+                f"Data loaded: {data_points:,} points, {duration:.3f} seconds, Channels: {channels}"
+            )
+        
+        # Update charts with full range initially
+        self._show_full_range()
+    
+    def _reduce_data(self, times, voltages, start_time, end_time, max_points):
+        """
+        Reduce data to a manageable size using the selected method.
+        
+        Args:
+            times (np.ndarray): Array of time values
+            voltages (np.ndarray): Array of voltage values
+            start_time (float): Start time for the range
+            end_time (float): End time for the range
+            max_points (int): Maximum number of points to return
+            
+        Returns:
+            tuple: (reduced_times, reduced_voltages)
+        """
+        # Get indices within the time range
+        mask = (times >= start_time) & (times <= end_time)
+        range_times = times[mask]
+        range_voltages = voltages[mask]
+        
+        if len(range_times) <= max_points:
+            # No reduction needed
+            return range_times, range_voltages
+        
+        # Determine reduction method
+        reduction_method = self._decimation_combo.currentText()
+        
+        if reduction_method == "Decimation":
+            # Simple decimation (take every Nth point)
+            step = len(range_times) // max_points
+            return range_times[::step], range_voltages[::step]
+            
+        elif reduction_method == "Mean":
+            # Average values in bins
+            bins = np.linspace(start_time, end_time, max_points + 1)
+            digitized = np.digitize(range_times, bins)
+            
+            reduced_times = []
+            reduced_voltages = []
+            
+            for i in range(1, len(bins)):
+                points = digitized == i
+                if np.any(points):
+                    reduced_times.append(np.mean(range_times[points]))
+                    reduced_voltages.append(np.mean(range_voltages[points]))
+            
+            return np.array(reduced_times), np.array(reduced_voltages)
+            
+        elif reduction_method == "Min/Max":
+            # Keep min/max pairs for each segment
+            # This preserves peaks and valleys better than other methods
+            samples_per_bin = len(range_times) // (max_points // 2)
+            
+            reduced_times = []
+            reduced_voltages = []
+            
+            for i in range(0, len(range_times), samples_per_bin):
+                if i + samples_per_bin < len(range_times):
+                    segment_times = range_times[i:i+samples_per_bin]
+                    segment_voltages = range_voltages[i:i+samples_per_bin]
+                    
+                    # Find min and max points in this segment
+                    min_idx = np.argmin(segment_voltages)
+                    max_idx = np.argmax(segment_voltages)
+                    
+                    # Add min and max points to reduced data
+                    # Add min first, max second to preserve waveform shape better
+                    reduced_times.extend([segment_times[min_idx], segment_times[max_idx]])
+                    reduced_voltages.extend([segment_voltages[min_idx], segment_voltages[max_idx]])
+            
+            return np.array(reduced_times), np.array(reduced_voltages)
+        
+        # Default to decimation
+        step = len(range_times) // max_points
+        return range_times[::step], range_voltages[::step]
+    
+    def _apply_range_settings(self):
+        """Apply the current range settings to the plots."""
+        if self._time_values is None or not self._voltage_values:
+            return
+        
+        # Get range values
+        start_time = self._range_min_spin.value()
+        end_time = self._range_max_spin.value()
+        max_points = self._max_points_spin.value()
+        
+        # Ensure start < end
+        if start_time >= end_time:
+            self._range_max_spin.setValue(start_time + 0.01)
+            end_time = start_time + 0.01
+        
+        # Store current range
+        self._current_range = (start_time, end_time)
+        
+        # Update each channel chart with the reduced data
+        for ch in range(1, 3):
+            if ch in self._voltage_values:
+                # Reduce data for this range
+                reduced_times, reduced_voltages = self._reduce_data(
+                    self._time_values, 
+                    self._voltage_values[ch],
+                    start_time,
+                    end_time,
+                    max_points
+                )
+                
+                # Update the chart
+                self._update_channel_chart(ch, reduced_times, reduced_voltages, 
+                                         f"Channel {ch} ({start_time:.3f}s - {end_time:.3f}s, {len(reduced_times):,} points)")
+    
+    def _show_full_range(self):
+        """Show the full time range of the data."""
+        if self._time_values is None or not self._voltage_values:
+            return
+        
+        # Get full range
+        start_time = self._time_values[0]
+        end_time = self._time_values[-1]
+        
+        # Update spinners
+        self._range_min_spin.setValue(start_time)
+        self._range_max_spin.setValue(end_time)
+        
+        # Apply the settings
+        self._apply_range_settings()
+    
+    def _update_channel_chart(self, channel, times, voltages, title=None):
+        """
+        Update a specific channel chart.
+        
+        Args:
+            channel (int): Channel number
+            times (np.ndarray): Array of time values
+            voltages (np.ndarray): Array of voltage values
+            title (str, optional): Chart title. If None, uses default title.
+        """
+        if channel not in self._channel_charts:
+            return
+            
+        chart = self._channel_charts[channel]
+        
+        # Clear the plot
+        chart._main_ax.clear()
+        
+        # Plot the channel data
+        color_idx = (channel - 1) % len(chart._colors)
+        chart._main_ax.plot(
+            times, 
+            voltages, 
+            color=chart._colors[color_idx]
+        )
+        
+        # Add labels and grid
+        chart._main_ax.set_xlabel('Time (s)')
+        chart._main_ax.set_ylabel('Voltage (V)')
+        
+        if title:
+            chart._main_ax.set_title(title)
+        else:
+            chart._main_ax.set_title(f'Channel {channel}')
+            
+        chart._main_ax.grid(True)
+        
+        # Update the figure
+        chart.fig.tight_layout()
+        chart.draw()
+    
+    def _clear_channel_chart(self, channel):
+        """
+        Clear a specific channel chart.
+        
+        Args:
+            channel (int): Channel number
+        """
+        if channel not in self._channel_charts:
+            return
+            
+        chart = self._channel_charts[channel]
+        chart._main_ax.clear()
+        chart._main_ax.set_xlabel('Time (s)')
+        chart._main_ax.set_ylabel('Voltage (V)')
+        chart._main_ax.set_title(f'Channel {channel} (No Data)')
+        chart._main_ax.grid(True)
+        chart.fig.tight_layout()
+        chart.draw()
+    
+    def clear_all(self):
+        """Clear all data and reset plots."""
+        self._time_values = None
+        self._voltage_values = {}
+        
+        # Clear all channel charts
+        for ch in self._channel_charts:
+            self._clear_channel_chart(ch)
+            
+        # Reset status
+        self._status_label.setText("No data loaded")
+
+
 # MARK: - Main Application
 
 class ContinuousAcquisitionApp(QMainWindow):
@@ -1246,9 +1599,79 @@ class ContinuousAcquisitionApp(QMainWindow):
         
         return tab
     
+    def _create_visualization_tab(self):
+        """
+        Create the visualization tab with separate charts for each channel.
+        
+        Returns:
+            QWidget: The visualization tab widget
+        """
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        
+        # Create channel waveform plotter
+        self._channel_plotter = ChannelWaveformPlotter()
+        
+        # Controls
+        control_layout = QHBoxLayout()
+        
+        # Save visualization button
+        self._save_viz_button = QPushButton("Save Plots")
+        self._save_viz_button.clicked.connect(self._save_visualization)
+        
+        # Clear visualization button
+        self._clear_viz_button = QPushButton("Clear Plots")
+        self._clear_viz_button.clicked.connect(self._clear_visualization)
+        
+        # Help label
+        help_label = QLabel("Tip: Use the toolbar below each chart to zoom, pan, and explore the signal.")
+        help_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        help_label.setStyleSheet("color: #555; font-style: italic;")
+        
+        control_layout.addWidget(self._save_viz_button)
+        control_layout.addWidget(self._clear_viz_button)
+        control_layout.addStretch(1)
+        
+        # Add widgets to layout
+        layout.addWidget(help_label)
+        layout.addWidget(self._channel_plotter.widget())
+        layout.addLayout(control_layout)
+        
+        return tab
+    
+    @Slot()
+    def _save_visualization(self):
+        """Save the current visualization charts to files."""
+        # Open file dialog
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Visualization", "", "PNG Files (*.png);;PDF Files (*.pdf);;All Files (*)"
+        )
+        
+        if file_path:
+            # Get base path without extension
+            base_path, ext = os.path.splitext(file_path)
+            if not ext:
+                ext = ".png"  # Default to PNG
+            
+            # Save channel charts
+            saved_files = []
+            for ch in self._channel_plotter._channel_charts:
+                ch_path = f"{base_path}_ch{ch}{ext}"
+                self._channel_plotter._channel_charts[ch].save_plot(ch_path)
+                saved_files.append(ch_path)
+            
+            file_list = ", ".join([os.path.basename(f) for f in saved_files])
+            self._status_bar.showMessage(f"Plots saved to: {file_list}")
+    
+    @Slot()
+    def _clear_visualization(self):
+        """Clear the visualization charts."""
+        self._channel_plotter.clear_all()
+        self._status_bar.showMessage("Visualization charts cleared.")
+    
     def _create_results_tab(self):
         """
-        Create the results and analysis tab.
+        Create the results and analysis tab with proper tables.
         
         Returns:
             QWidget: The results tab widget
@@ -1256,23 +1679,47 @@ class ContinuousAcquisitionApp(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         
-        # Results text area
-        self._results_text = QTextEdit()
-        self._results_text.setReadOnly(True)
+        # Create performance table
+        performance_group = QGroupBox("Performance Analysis")
+        performance_layout = QVBoxLayout(performance_group)
         
-        # Benchmark results area
-        self._benchmark_text = QTextEdit()
-        self._benchmark_text.setReadOnly(True)
+        self._performance_table = QTableWidget()
+        self._performance_table.setColumnCount(2)
+        self._performance_table.setHorizontalHeaderLabels(["Metric", "Value"])
+        self._performance_table.horizontalHeader().setStretchLastSection(True)
+        self._performance_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        self._performance_table.setColumnWidth(0, 200)
+        self._performance_table.verticalHeader().setVisible(False)
+        self._performance_table.setAlternatingRowColors(True)
+        self._performance_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        
+        performance_layout.addWidget(self._performance_table)
+        
+        # Create benchmark table
+        benchmark_group = QGroupBox("File Format Benchmark")
+        benchmark_layout = QVBoxLayout(benchmark_group)
+        
+        self._benchmark_table = QTableWidget()
+        self._benchmark_table.setColumnCount(4)
+        self._benchmark_table.setHorizontalHeaderLabels(["Format", "Size (MB)", "Speed (MB/s)", "Relative Size"])
+        self._benchmark_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._benchmark_table.verticalHeader().setVisible(False)
+        self._benchmark_table.setAlternatingRowColors(True)
+        self._benchmark_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        
+        # Add recommendations label
+        self._benchmark_recommendations = QLabel("No benchmark data available.")
+        
+        benchmark_layout.addWidget(self._benchmark_table)
+        benchmark_layout.addWidget(self._benchmark_recommendations)
         
         # Export results button
         self._export_results_button = QPushButton("Export Results Report")
         self._export_results_button.setEnabled(False)
         
         # Add widgets to layout
-        layout.addWidget(QLabel("<b>Performance Analysis:</b>"))
-        layout.addWidget(self._results_text, 1)
-        layout.addWidget(QLabel("<b>File Format Benchmark:</b>"))
-        layout.addWidget(self._benchmark_text, 1)
+        layout.addWidget(performance_group, 1)
+        layout.addWidget(benchmark_group, 1)
         layout.addWidget(self._export_results_button)
         
         return tab
@@ -1750,12 +2197,12 @@ class ContinuousAcquisitionApp(QMainWindow):
         sample_rate = results.get('achieved_sample_rate', 0)
         total_points = results.get('total_points', 0)
         
-        # Display performance summary
-        self._results_text.setText(results.get('performance_summary', 'No performance data available.'))
+        # Fill performance table
+        self._update_performance_table(results)
         
-        # Display benchmark results if available
+        # Update benchmark table if available
         if self._storage_manager.benchmark_results:
-            self._benchmark_text.setText(self._storage_manager.get_benchmark_summary())
+            self._update_benchmark_table()
         
         # Update status
         self._acquisition_status.setText("Acquisition complete!")
@@ -1763,6 +2210,111 @@ class ContinuousAcquisitionApp(QMainWindow):
         
         # Switch to results tab
         self._tab_widget.setCurrentIndex(2)
+    
+    def _update_performance_table(self, results):
+        """
+        Update the performance table with acquisition results.
+        
+        Args:
+            results (dict): Acquisition results
+        """
+        # Clear previous data
+        self._performance_table.setRowCount(0)
+        
+        # Define metrics to display
+        metrics = [
+            ("Test Duration", f"{results.get('duration', 0):.2f} seconds"),
+            ("Total Data Points", f"{results.get('total_points', 0):,.0f}"),
+            ("Achieved Sample Rate", f"{results.get('achieved_sample_rate', 0)/1e6:.2f} MSa/s"),
+            ("Configured Sample Rate", f"{results.get('sample_rate', 0)/1e6:.2f} MSa/s" if results.get('sample_rate', 0) > 0 else "Auto"),
+            ("Memory Depth", f"{results.get('memory_depth', 0):,.0f}" if results.get('memory_depth', 0) > 0 else "Auto"),
+            ("Acquisition Count", f"{results.get('acquisition_count', 0):,}"),
+            ("Channels", ", ".join([f"CH{ch}" for ch in results.get('channels', [])])),
+        ]
+        
+        # Add additional performance metrics if available
+        if hasattr(self._acquisition_thread, '_performance'):
+            perf = self._acquisition_thread._performance
+            
+            # Add CPU and memory usage
+            if perf.cpu_usage:
+                metrics.append(("Average CPU Usage", f"{np.mean(perf.cpu_usage):.1f}%"))
+                metrics.append(("Peak CPU Usage", f"{np.max(perf.cpu_usage):.1f}%"))
+            
+            if perf.memory_usage:
+                metrics.append(("Average Memory Usage", f"{np.mean(perf.memory_usage):.1f}%"))
+            
+            if perf.data_transfer_rate and len(perf.data_transfer_rate) > 1:
+                # Skip first element as it's always 0
+                transfer_rate = np.mean(perf.data_transfer_rate[1:]) / (1024 * 1024)  # Convert to MB/s
+                metrics.append(("Data Transfer Rate", f"{transfer_rate:.2f} MB/s"))
+            
+            metrics.append(("Identified Bottleneck", perf.bottleneck_identified))
+        
+        # Add rows to table
+        self._performance_table.setRowCount(len(metrics))
+        for i, (key, value) in enumerate(metrics):
+            self._performance_table.setItem(i, 0, QTableWidgetItem(key))
+            self._performance_table.setItem(i, 1, QTableWidgetItem(value))
+            
+        # Resize rows to contents
+        self._performance_table.resizeRowsToContents()
+    
+    def _update_benchmark_table(self):
+        """Update the benchmark table with file format benchmark results."""
+        # Clear previous data
+        self._benchmark_table.setRowCount(0)
+        
+        results = self._storage_manager.benchmark_results
+        if not results:
+            return
+        
+        # Find the largest file size for relative comparison
+        max_size = max(res['file_size'] for res in results.values())
+        
+        # Add rows to table
+        self._benchmark_table.setRowCount(len(results))
+        for i, (fmt, data) in enumerate(results.items()):
+            # Format data
+            size_mb = data['file_size'] / (1024 * 1024)
+            speed_mb = data['write_speed'] / (1024 * 1024)
+            rel_size = data['file_size'] / max_size if max_size > 0 else 0
+            
+            # Add to table
+            self._benchmark_table.setItem(i, 0, QTableWidgetItem(fmt.upper()))
+            self._benchmark_table.setItem(i, 1, QTableWidgetItem(f"{size_mb:.2f}"))
+            self._benchmark_table.setItem(i, 2, QTableWidgetItem(f"{speed_mb:.2f}"))
+            self._benchmark_table.setItem(i, 3, QTableWidgetItem(f"{rel_size:.2f}x"))
+        
+        # Resize rows to contents
+        self._benchmark_table.resizeRowsToContents()
+        
+        # Update recommendations label
+        fastest = max(results.items(), key=lambda x: x[1]['write_speed'])[0]
+        smallest = min(results.items(), key=lambda x: x[1]['file_size'])[0]
+        
+        if fastest == smallest:
+            recommendations = f"• Recommendation: Use <b>{fastest.upper()}</b> format for best overall performance."
+        else:
+            # Calculate balanced score
+            balance_score = {}
+            for fmt, res in results.items():
+                # Normalize metrics between 0 and 1
+                speed_score = res['write_speed'] / max(r['write_speed'] for r in results.values())
+                size_score = min(r['file_size'] for r in results.values()) / res['file_size']
+                # Combined score with more weight on speed
+                balance_score[fmt] = 0.7 * speed_score + 0.3 * size_score
+            
+            best_balance = max(balance_score.items(), key=lambda x: x[1])[0]
+            
+            recommendations = (
+                "<b>Recommendations:</b><br>"
+                f"• For maximum speed: <b>{fastest.upper()}</b><br>"
+                f"• For smallest file size: <b>{smallest.upper()}</b><br>"
+                f"• Best balance of speed and size: <b>{best_balance.upper()}</b>"
+            )
+        
+        self._benchmark_recommendations.setText(recommendations)
     
     @Slot(str)
     def _on_acquisition_error(self, error_msg):
@@ -1786,57 +2338,263 @@ class ContinuousAcquisitionApp(QMainWindow):
         self._plot_widget.clear_all()
         self._progress_bar.setValue(0)
         self._acquisition_status.setText("Ready to start acquisition.")
-        self._results_text.clear()
-        self._benchmark_text.clear()
+        
+        # Clear performance table
+        self._performance_table.setRowCount(0)
+        
+        # Clear benchmark table
+        self._benchmark_table.setRowCount(0)
+        
+        # Reset benchmark recommendations
+        self._benchmark_recommendations.setText("No benchmark data available.")
+        
+        # Disable export button
+        self._export_results_button.setEnabled(False)
     
     @Slot()
     def _export_results(self):
         """Export results to a report file."""
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save Results Report", "", "Text Files (*.txt);;All Files (*)"
+            self, "Save Results Report", "", "Text Files (*.txt);;HTML Files (*.html);;All Files (*)"
         )
         
         if file_path:
-            try:
-                with open(file_path, 'w') as f:
-                    # Write report header
-                    f.write("="*60 + "\n")
-                    f.write("OSCILLOSCOPE CONTINUOUS ACQUISITION TEST RESULTS\n")
-                    f.write("="*60 + "\n\n")
-                    
-                    # Add timestamp
-                    f.write(f"Report generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
-                    
-                    # Add device info
-                    f.write("DEVICE INFORMATION\n")
-                    f.write("-"*60 + "\n")
-                    f.write(self._device_info.toPlainText() + "\n\n")
-                    
-                    # Add performance results
-                    f.write("PERFORMANCE ANALYSIS\n")
-                    f.write("-"*60 + "\n")
-                    f.write(self._results_text.toPlainText() + "\n\n")
-                    
-                    # Add benchmark results
-                    f.write("FILE FORMAT BENCHMARK\n")
-                    f.write("-"*60 + "\n")
-                    f.write(self._benchmark_text.toPlainText() + "\n\n")
-                    
-                    # Add recommendations
-                    f.write("RECOMMENDATIONS\n")
-                    f.write("-"*60 + "\n")
-                    
-                    # Add specific recommendations based on results
-                    if self._storage_manager.benchmark_results:
-                        fastest = max(self._storage_manager.benchmark_results.items(), 
-                                    key=lambda x: x[1]['write_speed'])[0]
-                        f.write(f"Recommended file format for speed: {fastest.upper()}\n")
-                    
-                    # TODO: Add more specific recommendations based on identified bottlenecks
+            file_ext = os.path.splitext(file_path)[1].lower()
+            
+            if file_ext == '.html':
+                self._export_html_report(file_path)
+            else:
+                self._export_text_report(file_path)
+    
+    def _export_text_report(self, file_path):
+        """
+        Export results to a plain text report file.
+        
+        Args:
+            file_path (str): Path to save the report
+        """
+        try:
+            with open(file_path, 'w') as f:
+                # Write report header
+                f.write("="*60 + "\n")
+                f.write("OSCILLOSCOPE CONTINUOUS ACQUISITION TEST RESULTS\n")
+                f.write("="*60 + "\n\n")
                 
-                self._status_bar.showMessage(f"Results exported to {file_path}")
-            except Exception as e:
-                QMessageBox.warning(self, "Export Error", f"Error exporting results: {str(e)}")
+                # Add timestamp
+                f.write(f"Report generated: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+                
+                # Add device info
+                f.write("DEVICE INFORMATION\n")
+                f.write("-"*60 + "\n")
+                f.write(self._device_info.toPlainText() + "\n\n")
+                
+                # Add performance results
+                f.write("PERFORMANCE ANALYSIS\n")
+                f.write("-"*60 + "\n")
+                
+                # Extract data from performance table
+                for row in range(self._performance_table.rowCount()):
+                    metric = self._performance_table.item(row, 0).text()
+                    value = self._performance_table.item(row, 1).text()
+                    f.write(f"{metric}: {value}\n")
+                
+                f.write("\n")
+                
+                # Add benchmark results
+                f.write("FILE FORMAT BENCHMARK\n")
+                f.write("-"*60 + "\n")
+                
+                # First, write the table header
+                f.write(f"{'Format':<10} {'Size (MB)':<12} {'Speed (MB/s)':<14} {'Relative Size':<14}\n")
+                f.write("-"*50 + "\n")
+                
+                # Extract data from benchmark table
+                for row in range(self._benchmark_table.rowCount()):
+                    format_name = self._benchmark_table.item(row, 0).text()
+                    size_mb = self._benchmark_table.item(row, 1).text()
+                    speed_mb = self._benchmark_table.item(row, 2).text()
+                    rel_size = self._benchmark_table.item(row, 3).text()
+                    
+                    f.write(f"{format_name:<10} {size_mb:<12} {speed_mb:<14} {rel_size:<14}\n")
+                
+                f.write("\n")
+                
+                # Add recommendations
+                f.write("RECOMMENDATIONS\n")
+                f.write("-"*60 + "\n")
+                
+                # Get recommendation text (strip HTML tags for text report)
+                recommendations = self._benchmark_recommendations.text()
+                recommendations = recommendations.replace('<b>', '').replace('</b>', '')
+                recommendations = recommendations.replace('<br>', '\n')
+                
+                f.write(recommendations + "\n\n")
+                
+                # Add acquisition configuration
+                f.write("ACQUISITION CONFIGURATION\n")
+                f.write("-"*60 + "\n")
+                f.write(f"Duration: {self._duration_spin.value()} seconds\n")
+                f.write(f"Sample Rate: {self._sample_rate_combo.currentText()}\n")
+                f.write(f"Memory Depth: {self._memory_depth_combo.currentText()}\n")
+                f.write(f"File Format: {self._file_format_combo.currentText()}\n")
+                
+                # Add channels
+                channels = []
+                if self._ch1_checkbox.isChecked():
+                    channels.append("CH1")
+                if self._ch2_checkbox.isChecked():
+                    channels.append("CH2")
+                if self._ch3_checkbox.isChecked():
+                    channels.append("CH3")
+                if self._ch4_checkbox.isChecked():
+                    channels.append("CH4")
+                
+                f.write(f"Channels: {', '.join(channels)}\n")
+            
+            self._status_bar.showMessage(f"Results exported to {file_path}")
+        except Exception as e:
+            QMessageBox.warning(self, "Export Error", f"Error exporting results: {str(e)}")
+    
+    def _export_html_report(self, file_path):
+        """
+        Export results to an HTML report file.
+        
+        Args:
+            file_path (str): Path to save the report
+        """
+        try:
+            with open(file_path, 'w') as f:
+                # Write HTML header
+                f.write("""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Oscilloscope Continuous Acquisition Test Results</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #2980b9;
+            margin-top: 30px;
+            border-bottom: 1px solid #bdc3c7;
+            padding-bottom: 5px;
+        }
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f5f5f5;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .recommendations {
+            background-color: #f0f8ff;
+            padding: 15px;
+            border-left: 4px solid #3498db;
+            margin: 20px 0;
+        }
+        .footer {
+            margin-top: 30px;
+            color: #7f8c8d;
+            font-size: 0.9em;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+""")
+                
+                # Add header
+                f.write(f"<h1>Oscilloscope Continuous Acquisition Test Results</h1>\n")
+                f.write(f"<p>Report generated: {time.strftime('%Y-%m-%d %H:%M:%S')}</p>\n")
+                
+                # Add device info
+                f.write("<h2>Device Information</h2>\n")
+                f.write("<pre>" + self._device_info.toPlainText() + "</pre>\n")
+                
+                # Add performance results
+                f.write("<h2>Performance Analysis</h2>\n")
+                f.write("<table>\n")
+                f.write("  <tr><th>Metric</th><th>Value</th></tr>\n")
+                
+                # Extract data from performance table
+                for row in range(self._performance_table.rowCount()):
+                    metric = self._performance_table.item(row, 0).text()
+                    value = self._performance_table.item(row, 1).text()
+                    f.write(f"  <tr><td>{metric}</td><td>{value}</td></tr>\n")
+                
+                f.write("</table>\n")
+                
+                # Add benchmark results
+                f.write("<h2>File Format Benchmark</h2>\n")
+                f.write("<table>\n")
+                f.write("  <tr><th>Format</th><th>Size (MB)</th><th>Speed (MB/s)</th><th>Relative Size</th></tr>\n")
+                
+                # Extract data from benchmark table
+                for row in range(self._benchmark_table.rowCount()):
+                    format_name = self._benchmark_table.item(row, 0).text()
+                    size_mb = self._benchmark_table.item(row, 1).text()
+                    speed_mb = self._benchmark_table.item(row, 2).text()
+                    rel_size = self._benchmark_table.item(row, 3).text()
+                    
+                    f.write(f"  <tr><td>{format_name}</td><td>{size_mb}</td><td>{speed_mb}</td><td>{rel_size}</td></tr>\n")
+                
+                f.write("</table>\n")
+                
+                # Add recommendations
+                f.write("<h2>Recommendations</h2>\n")
+                f.write(f"<div class='recommendations'>{self._benchmark_recommendations.text()}</div>\n")
+                
+                # Add acquisition configuration
+                f.write("<h2>Acquisition Configuration</h2>\n")
+                f.write("<table>\n")
+                f.write(f"  <tr><td>Duration</td><td>{self._duration_spin.value()} seconds</td></tr>\n")
+                f.write(f"  <tr><td>Sample Rate</td><td>{self._sample_rate_combo.currentText()}</td></tr>\n")
+                f.write(f"  <tr><td>Memory Depth</td><td>{self._memory_depth_combo.currentText()}</td></tr>\n")
+                f.write(f"  <tr><td>File Format</td><td>{self._file_format_combo.currentText()}</td></tr>\n")
+                
+                # Add channels
+                channels = []
+                if self._ch1_checkbox.isChecked():
+                    channels.append("CH1")
+                if self._ch2_checkbox.isChecked():
+                    channels.append("CH2")
+                if self._ch3_checkbox.isChecked():
+                    channels.append("CH3")
+                if self._ch4_checkbox.isChecked():
+                    channels.append("CH4")
+                
+                f.write(f"  <tr><td>Channels</td><td>{', '.join(channels)}</td></tr>\n")
+                f.write("</table>\n")
+                
+                # Add footer
+                f.write("<div class='footer'><p>Generated by PySignalDecipher - Oscilloscope Continuous Acquisition Test</p></div>\n")
+                
+                # Close HTML
+                f.write("</body>\n</html>")
+            
+            self._status_bar.showMessage(f"HTML report exported to {file_path}")
+        except Exception as e:
+            QMessageBox.warning(self, "Export Error", f"Error exporting HTML report: {str(e)}")
     
     def _get_selected_channels(self):
         """
