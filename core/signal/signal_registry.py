@@ -1,0 +1,1 @@
+# Registry for all signal sources

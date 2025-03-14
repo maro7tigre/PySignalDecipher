@@ -1,0 +1,1 @@
+# Pattern recognition module

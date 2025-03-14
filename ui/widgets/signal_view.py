@@ -1,0 +1,1 @@
+# Signal visualization widget
