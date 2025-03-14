@@ -8,6 +8,7 @@ and capturing data, which can be used during development or by end users.
 """
 
 import sys
+import time
 import numpy as np
 import pyvisa
 import matplotlib
@@ -19,8 +20,10 @@ from PySide6.QtWidgets import (
     QPushButton, QComboBox, QLabel, QGroupBox, QTextEdit, QCheckBox,
     QStatusBar, QMessageBox, QFileDialog
 )
-from PySide6.QtCore import Qt, Slot, Signal, QThread
+from PySide6.QtCore import Qt, Slot, Signal, QThread, QTimer
 
+
+# MARK: - Thread Classes
 
 class OscilloscopeConnectionThread(QThread):
     """Thread for connecting to the oscilloscope without blocking the UI."""
@@ -36,14 +39,14 @@ class OscilloscopeConnectionThread(QThread):
             address (str): VISA address for the oscilloscope
         """
         super().__init__()
-        self.address = address
+        self._address = address
         
     def run(self):
         """Connect to the oscilloscope using PyVISA."""
         rm = pyvisa.ResourceManager()
         try:
             # Open a connection to the oscilloscope with appropriate settings
-            scope = rm.open_resource(self.address)
+            scope = rm.open_resource(self._address)
             
             # Configure for stable communication
             scope.timeout = 30000  # 30 seconds timeout for long operations
@@ -77,16 +80,16 @@ class WaveformCaptureThread(QThread):
             channel (int): Channel number to capture from
         """
         super().__init__()
-        self.scope = scope
-        self.channel = channel
+        self._scope = scope
+        self._channel = channel
         
     def run(self):
         """Capture waveform data from the specified channel."""
         try:
-            times, voltages = self._get_waveform_data(self.scope, self.channel)
-            self.capture_complete.emit((self.channel, times, voltages))
+            times, voltages = self._get_waveform_data(self._scope, self._channel)
+            self.capture_complete.emit((self._channel, times, voltages))
         except Exception as e:
-            self.capture_error.emit(str(self.channel), str(e))
+            self.capture_error.emit(str(self._channel), str(e))
             
     def _get_waveform_data(self, scope, channel):
         """
@@ -164,6 +167,8 @@ class WaveformCaptureThread(QThread):
         return times, voltages
 
 
+# MARK: - UI Components
+
 class WaveformPlotter(FigureCanvas):
     """Matplotlib canvas for plotting waveform data."""
     
@@ -182,11 +187,11 @@ class WaveformPlotter(FigureCanvas):
         self.setParent(parent)
         
         # Channel colors (oscilloscope standard colors)
-        self.colors = ['yellow', 'blue', 'red', 'green']
+        self._colors = ['yellow', 'blue', 'red', 'green']
         
         # Store channel data and axes objects
-        self.channel_data = {}
-        self.axes = {}
+        self._channel_data = {}
+        self._axes = {}
         
         # Initial setup with empty subplot area
         self.fig.tight_layout()
@@ -201,30 +206,30 @@ class WaveformPlotter(FigureCanvas):
             voltages (np.ndarray): Array of voltage values
         """
         # Store data
-        self.channel_data[channel] = (times, voltages)
+        self._channel_data[channel] = (times, voltages)
         
         # Adjust the subplot layout based on the number of channels
         self._adjust_layout()
         
         # Get or create axis for this channel
-        if channel not in self.axes:
+        if channel not in self._axes:
             # Create new subplot for this channel
-            idx = len(self.axes) + 1
-            ax = self.fig.add_subplot(len(self.channel_data), 1, idx)
-            self.axes[channel] = ax
+            idx = len(self._axes) + 1
+            ax = self.fig.add_subplot(len(self._channel_data), 1, idx)
+            self._axes[channel] = ax
         
         # Get color for this channel
-        color_idx = (channel - 1) % len(self.colors)
+        color_idx = (channel - 1) % len(self._colors)
         
         # Clear current axis and plot data
-        ax = self.axes[channel]
+        ax = self._axes[channel]
         ax.clear()
-        ax.plot(times, voltages, color=self.colors[color_idx])
+        ax.plot(times, voltages, color=self._colors[color_idx])
         ax.set_title(f'Channel {channel}')
         ax.set_ylabel('Voltage (V)')
         
         # Only show x-axis label on the bottom plot
-        if channel == max(self.channel_data.keys()):
+        if channel == max(self._channel_data.keys()):
             ax.set_xlabel('Time (s)')
         
         ax.grid(True)
@@ -236,22 +241,22 @@ class WaveformPlotter(FigureCanvas):
     def _adjust_layout(self):
         """Adjust the subplot layout based on the number of channels."""
         # Clear all existing axes
-        for ax in list(self.axes.values()):
+        for ax in list(self._axes.values()):
             self.fig.delaxes(ax)
         
         # Create new set of axes
-        self.axes = {}
+        self._axes = {}
         
         # Create a subplot for each channel
-        channel_nums = sorted(self.channel_data.keys())
+        channel_nums = sorted(self._channel_data.keys())
         for i, channel in enumerate(channel_nums):
             ax = self.fig.add_subplot(len(channel_nums), 1, i+1)
-            self.axes[channel] = ax
+            self._axes[channel] = ax
             
             # Plot data
-            times, voltages = self.channel_data[channel]
-            color_idx = (channel - 1) % len(self.colors)
-            ax.plot(times, voltages, color=self.colors[color_idx])
+            times, voltages = self._channel_data[channel]
+            color_idx = (channel - 1) % len(self._colors)
+            ax.plot(times, voltages, color=self._colors[color_idx])
             ax.set_title(f'Channel {channel}')
             ax.set_ylabel('Voltage (V)')
             
@@ -268,8 +273,8 @@ class WaveformPlotter(FigureCanvas):
         Args:
             channel (int): Channel number to remove
         """
-        if channel in self.channel_data:
-            del self.channel_data[channel]
+        if channel in self._channel_data:
+            del self._channel_data[channel]
             
             # Readjust the layout
             self._adjust_layout()
@@ -280,13 +285,13 @@ class WaveformPlotter(FigureCanvas):
     
     def clear_all(self):
         """Clear all channels from the plot."""
-        self.channel_data = {}
+        self._channel_data = {}
         
         # Clear all existing axes
-        for ax in list(self.axes.values()):
+        for ax in list(self._axes.values()):
             self.fig.delaxes(ax)
         
-        self.axes = {}
+        self._axes = {}
         self.draw()
     
     def save_plot(self, filename):
@@ -299,6 +304,8 @@ class WaveformPlotter(FigureCanvas):
         self.fig.savefig(filename, dpi=300, bbox_inches='tight')
 
 
+# MARK: - Main Application
+
 class QuickTestApp(QMainWindow):
     """Main application window for oscilloscope quick test."""
     
@@ -307,9 +314,12 @@ class QuickTestApp(QMainWindow):
         super().__init__()
         
         # Initialize instance variables
-        self.scope = None
-        self.capture_threads = []
-        self.current_capture_index = 0
+        self._scope = None
+        self._capture_threads = []
+        self._current_capture_index = 0
+        self._live_mode_enabled = False
+        self._live_update_timer = QTimer(self)
+        self._live_update_timer.timeout.connect(self._update_live_waveforms)
         
         # Set up the user interface
         self._setup_ui()
@@ -322,9 +332,9 @@ class QuickTestApp(QMainWindow):
     def _setup_ui(self):
         """Set up the user interface."""
         # Main widget and layout
-        self.central_widget = QWidget()
-        self.setCentralWidget(self.central_widget)
-        main_layout = QVBoxLayout(self.central_widget)
+        self._central_widget = QWidget()
+        self.setCentralWidget(self._central_widget)
+        main_layout = QVBoxLayout(self._central_widget)
         
         # Create the connection group
         connection_group = self._create_connection_group()
@@ -336,18 +346,18 @@ class QuickTestApp(QMainWindow):
         capture_group = self._create_capture_group()
         
         # Create the plot widget
-        self.plot_widget = WaveformPlotter(self.central_widget, width=8, height=4)
+        self._plot_widget = WaveformPlotter(self._central_widget, width=8, height=4)
         
         # Create status bar
-        self.status_bar = QStatusBar()
-        self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("Ready. Please connect to an oscilloscope.")
+        self._status_bar = QStatusBar()
+        self.setStatusBar(self._status_bar)
+        self._status_bar.showMessage("Ready. Please connect to an oscilloscope.")
         
         # Add widgets to main layout
         main_layout.addWidget(connection_group)
         main_layout.addWidget(device_group)
         main_layout.addWidget(capture_group)
-        main_layout.addWidget(self.plot_widget, 1)
+        main_layout.addWidget(self._plot_widget, 1)
     
     def _create_connection_group(self):
         """
@@ -361,21 +371,21 @@ class QuickTestApp(QMainWindow):
         
         # Device selection layout
         device_selection_layout = QHBoxLayout()
-        self.address_label = QLabel("Select Device:")
-        self.device_combo = QComboBox()
-        self.device_combo.setMinimumWidth(300)
-        self.refresh_button = QPushButton("Refresh Devices")
+        self._address_label = QLabel("Select Device:")
+        self._device_combo = QComboBox()
+        self._device_combo.setMinimumWidth(300)
+        self._refresh_button = QPushButton("Refresh Devices")
         
-        device_selection_layout.addWidget(self.address_label)
-        device_selection_layout.addWidget(self.device_combo, 1)
-        device_selection_layout.addWidget(self.refresh_button)
+        device_selection_layout.addWidget(self._address_label)
+        device_selection_layout.addWidget(self._device_combo, 1)
+        device_selection_layout.addWidget(self._refresh_button)
         
         # Connect button in its own row
-        self.connect_button = QPushButton("Connect")
-        self.connect_button.setMinimumHeight(30)
+        self._connect_button = QPushButton("Connect")
+        self._connect_button.setMinimumHeight(30)
         
         connection_layout.addLayout(device_selection_layout)
-        connection_layout.addWidget(self.connect_button)
+        connection_layout.addWidget(self._connect_button)
         connection_group.setLayout(connection_layout)
         
         return connection_group
@@ -390,11 +400,11 @@ class QuickTestApp(QMainWindow):
         device_group = QGroupBox("Device Information")
         device_layout = QVBoxLayout()
         
-        self.device_info = QTextEdit()
-        self.device_info.setReadOnly(True)
-        self.device_info.setMaximumHeight(100)
+        self._device_info = QTextEdit()
+        self._device_info.setReadOnly(True)
+        self._device_info.setMaximumHeight(100)
         
-        device_layout.addWidget(self.device_info)
+        device_layout.addWidget(self._device_info)
         device_group.setLayout(device_layout)
         
         return device_group
@@ -407,93 +417,109 @@ class QuickTestApp(QMainWindow):
             QGroupBox: The capture controls group box
         """
         capture_group = QGroupBox("Capture Controls")
-        capture_layout = QHBoxLayout()
+        capture_layout = QVBoxLayout()
         
-        self.ch1_checkbox = QCheckBox("Channel 1")
-        self.ch1_checkbox.setChecked(True)
-        self.ch2_checkbox = QCheckBox("Channel 2")
-        self.ch2_checkbox.setChecked(True)
-        self.ch3_checkbox = QCheckBox("Channel 3")
-        self.ch4_checkbox = QCheckBox("Channel 4")
-        self.capture_button = QPushButton("Capture Waveforms")
-        self.save_button = QPushButton("Save Plot")
-        self.clear_button = QPushButton("Clear Plot")
+        # Channel selection checkboxes
+        channel_layout = QHBoxLayout()
+        self._ch1_checkbox = QCheckBox("Channel 1")
+        self._ch1_checkbox.setChecked(True)
+        self._ch2_checkbox = QCheckBox("Channel 2")
+        self._ch2_checkbox.setChecked(True)
+        self._ch3_checkbox = QCheckBox("Channel 3")
+        self._ch4_checkbox = QCheckBox("Channel 4")
         
-        capture_layout.addWidget(self.ch1_checkbox)
-        capture_layout.addWidget(self.ch2_checkbox)
-        capture_layout.addWidget(self.ch3_checkbox)
-        capture_layout.addWidget(self.ch4_checkbox)
-        capture_layout.addWidget(self.capture_button)
-        capture_layout.addWidget(self.save_button)
-        capture_layout.addWidget(self.clear_button)
+        channel_layout.addWidget(self._ch1_checkbox)
+        channel_layout.addWidget(self._ch2_checkbox)
+        channel_layout.addWidget(self._ch3_checkbox)
+        channel_layout.addWidget(self._ch4_checkbox)
+        channel_layout.addStretch(1)
+        
+        # Button row
+        button_layout = QHBoxLayout()
+        self._capture_button = QPushButton("Capture Waveforms")
+        self._live_button = QPushButton("Live Mode: OFF")
+        self._live_button.setCheckable(True)
+        self._save_button = QPushButton("Save Plot")
+        self._clear_button = QPushButton("Clear Plot")
+        
+        button_layout.addWidget(self._capture_button)
+        button_layout.addWidget(self._live_button)
+        button_layout.addWidget(self._save_button)
+        button_layout.addWidget(self._clear_button)
+        
+        # Add layouts to main capture layout
+        capture_layout.addLayout(channel_layout)
+        capture_layout.addLayout(button_layout)
         capture_group.setLayout(capture_layout)
         
         # Initial state
-        self.capture_button.setEnabled(False)
-        self.save_button.setEnabled(False)
-        self.clear_button.setEnabled(False)
+        self._capture_button.setEnabled(False)
+        self._live_button.setEnabled(False)
+        self._save_button.setEnabled(False)
+        self._clear_button.setEnabled(False)
         
         return capture_group
     
     def _connect_signals(self):
         """Connect UI signals to slots."""
-        self.connect_button.clicked.connect(self._connect_to_scope)
-        self.refresh_button.clicked.connect(self._populate_device_list)
-        self.capture_button.clicked.connect(self._capture_waveforms)
-        self.save_button.clicked.connect(self._save_plot)
-        self.clear_button.clicked.connect(self._clear_plot)
+        self._connect_button.clicked.connect(self._connect_to_scope)
+        self._refresh_button.clicked.connect(self._populate_device_list)
+        self._capture_button.clicked.connect(self._capture_waveforms)
+        self._live_button.clicked.connect(self._toggle_live_mode)
+        self._save_button.clicked.connect(self._save_plot)
+        self._clear_button.clicked.connect(self._clear_plot)
     
     def _populate_device_list(self):
         """Populate the device combo box with available VISA resources."""
-        self.device_combo.clear()
-        self.status_bar.showMessage("Searching for devices...")
+        self._device_combo.clear()
+        self._status_bar.showMessage("Searching for devices...")
         
         try:
             rm = pyvisa.ResourceManager()
             devices = rm.list_resources()
             
             if not devices:
-                self.device_combo.addItem("No devices found")
-                self.status_bar.showMessage("No devices found.")
-                self.connect_button.setEnabled(False)
+                self._device_combo.addItem("No devices found")
+                self._status_bar.showMessage("No devices found.")
+                self._connect_button.setEnabled(False)
                 return
             
             # Add devices to combo box
             for device in devices:
-                self.device_combo.addItem(device)
+                self._device_combo.addItem(device)
                 
-            self.connect_button.setEnabled(True)
-            self.status_bar.showMessage(f"Found {len(devices)} device(s).")
+            self._connect_button.setEnabled(True)
+            self._status_bar.showMessage(f"Found {len(devices)} device(s).")
             
             # Display in device info text area as well
             device_text = "Available devices:\n" + "\n".join(devices)
-            self.device_info.setText(device_text)
+            self._device_info.setText(device_text)
             
         except Exception as e:
-            self.device_info.setText(f"Error finding devices: {str(e)}")
-            self.status_bar.showMessage("Error finding devices.")
-            self.connect_button.setEnabled(False)
+            self._device_info.setText(f"Error finding devices: {str(e)}")
+            self._status_bar.showMessage("Error finding devices.")
+            self._connect_button.setEnabled(False)
     
     @Slot()
     def _connect_to_scope(self):
         """Connect to the oscilloscope using the selected address."""
-        if self.device_combo.count() == 0 or self.device_combo.currentText() == "No devices found":
+        if self._device_combo.count() == 0 or self._device_combo.currentText() == "No devices found":
             QMessageBox.warning(self, "Connection Error", "No devices available to connect.")
             return
         
-        address = self.device_combo.currentText()
+        address = self._device_combo.currentText()
         if not address:
             QMessageBox.warning(self, "Connection Error", "Please select a device.")
             return
         
-        self.status_bar.showMessage("Connecting to oscilloscope...")
-        self.connect_button.setEnabled(False)
+        self._status_bar.showMessage("Connecting to oscilloscope...")
+        self._connect_button.setEnabled(False)
         
         # Connect to the oscilloscope in a separate thread
-        self.connection_thread = OscilloscopeConnectionThread(address)
-        self.connection_thread.connection_successful.connect(self._on_connection_successful)
-        self.connection_thread.connection_failed.connect(self._on_connection_failed)
-        self.connection_thread.start()
+        self._connection_thread = OscilloscopeConnectionThread(address)
+        self._connection_thread.connection_successful.connect(self._on_connection_successful)
+        self._connection_thread.connection_failed.connect(self._on_connection_failed)
+        self._connection_thread.start()
     
     @Slot(object, str)
     def _on_connection_successful(self, scope, idn):
@@ -504,29 +530,30 @@ class QuickTestApp(QMainWindow):
             scope: The connected oscilloscope resource
             idn (str): Identification string from the oscilloscope
         """
-        self.scope = scope
-        self.device_info.setText(f"Connected to: {idn}\nAddress: {self.device_combo.currentText()}")
-        self.status_bar.showMessage("Connected to oscilloscope.")
+        self._scope = scope
+        self._device_info.setText(f"Connected to: {idn}\nAddress: {self._device_combo.currentText()}")
+        self._status_bar.showMessage("Connected to oscilloscope.")
         
         # Enable capture controls
-        self.capture_button.setEnabled(True)
-        self.save_button.setEnabled(True)
-        self.clear_button.setEnabled(True)
-        self.connect_button.setText("Disconnect")
-        self.connect_button.setEnabled(True)
-        self.connect_button.clicked.disconnect(self._connect_to_scope)
-        self.connect_button.clicked.connect(self._disconnect_from_scope)
+        self._capture_button.setEnabled(True)
+        self._live_button.setEnabled(True)
+        self._save_button.setEnabled(True)
+        self._clear_button.setEnabled(True)
+        self._connect_button.setText("Disconnect")
+        self._connect_button.setEnabled(True)
+        self._connect_button.clicked.disconnect(self._connect_to_scope)
+        self._connect_button.clicked.connect(self._disconnect_from_scope)
         
         # Configure oscilloscope for optimal performance
         try:
             # Clear any pending operations
-            self.scope.write('*CLS')
+            self._scope.write('*CLS')
             
             # Run acquisition to get fresh data
-            self.scope.write(':RUN')
+            self._scope.write(':RUN')
             
             # Update status message
-            self.status_bar.showMessage("Connected and configured for acquisition.")
+            self._status_bar.showMessage("Connected and configured for acquisition.")
         except Exception as e:
             print(f"Error configuring scope: {e}")
             # This is not fatal, so we continue
@@ -549,38 +576,172 @@ class QuickTestApp(QMainWindow):
         error_box.setIcon(QMessageBox.Warning)
         error_box.exec_()
         
-        self.status_bar.showMessage("Connection failed.")
-        self.connect_button.setEnabled(True)
+        self._status_bar.showMessage("Connection failed.")
+        self._connect_button.setEnabled(True)
     
     @Slot()
     def _disconnect_from_scope(self):
         """Disconnect from the oscilloscope."""
-        if self.scope:
+        # Stop live mode if running
+        if self._live_mode_enabled:
+            self._toggle_live_mode()
+        
+        if self._scope:
             try:
                 # Return to local control before closing
-                self.scope.write(':KEY:FORC')
+                self._scope.write(':KEY:FORC')
                 
                 # Close the connection
-                self.scope.close()
+                self._scope.close()
             except:
                 pass
-            self.scope = None
+            self._scope = None
         
         # Update UI
-        self.device_info.clear()
-        self.capture_button.setEnabled(False)
-        self.save_button.setEnabled(False)
-        self.clear_button.setEnabled(False)
-        self.connect_button.setText("Connect")
-        self.connect_button.clicked.disconnect(self._disconnect_from_scope)
-        self.connect_button.clicked.connect(self._connect_to_scope)
+        self._device_info.clear()
+        self._capture_button.setEnabled(False)
+        self._live_button.setEnabled(False)
+        self._save_button.setEnabled(False)
+        self._clear_button.setEnabled(False)
+        self._connect_button.setText("Connect")
+        self._connect_button.clicked.disconnect(self._disconnect_from_scope)
+        self._connect_button.clicked.connect(self._connect_to_scope)
         
-        self.status_bar.showMessage("Disconnected from oscilloscope.")
+        self._status_bar.showMessage("Disconnected from oscilloscope.")
+    
+    @Slot()
+    def _toggle_live_mode(self):
+        """Toggle the live mode on/off."""
+        if not self._scope:
+            return
+        
+        if not self._live_mode_enabled:
+            # Start live mode
+            # Get selected channels
+            channels = self._get_selected_channels()
+            
+            if not channels:
+                QMessageBox.warning(self, "Live Mode Error", "Please select at least one channel.")
+                self._live_button.setChecked(False)
+                return
+            
+            # Filter enabled channels
+            enabled_channels = self._filter_enabled_channels(channels)
+            
+            if not enabled_channels:
+                QMessageBox.warning(self, "Live Mode Error", 
+                                   "None of the selected channels are enabled on the oscilloscope. "
+                                   "Please enable at least one channel from the oscilloscope's front panel.")
+                self._live_button.setChecked(False)
+                return
+            
+            # Store selected channels
+            self._live_channels = enabled_channels
+            
+            # Make sure scope is running
+            try:
+                self._scope.write(':RUN')
+            except Exception as e:
+                print(f"Error setting scope to RUN: {e}")
+            
+            # Start the timer
+            self._live_update_timer.start(200)  # Update every 200ms
+            self._live_mode_enabled = True
+            self._live_button.setText("Live Mode: ON")
+            
+            # Disable capture button while live mode is on
+            self._capture_button.setEnabled(False)
+            
+            self._status_bar.showMessage("Live mode started.")
+        else:
+            # Stop live mode
+            self._live_update_timer.stop()
+            self._live_mode_enabled = False
+            self._live_button.setText("Live Mode: OFF")
+            
+            # Re-enable capture button
+            self._capture_button.setEnabled(True)
+            
+            self._status_bar.showMessage("Live mode stopped.")
+    
+    def _update_live_waveforms(self):
+        """Update the waveforms in live mode."""
+        if not self._scope or not self._live_mode_enabled:
+            return
+        
+        try:
+            # Process each enabled channel
+            for channel in self._live_channels:
+                try:
+                    # Get waveform data - using simplified version for speed
+                    times, voltages = self._get_waveform_data_fast(channel)
+                    
+                    # Update the plot
+                    self._plot_widget.update_plot(channel, times, voltages)
+                except Exception as e:
+                    print(f"Error updating channel {channel}: {e}")
+                    # Don't show error message in status bar during live updates
+                    # to avoid flickering, just print to console
+            
+            # Process application events to keep UI responsive
+            QApplication.processEvents()
+            
+        except Exception as e:
+            print(f"Error in live update: {e}")
+            # If there's a critical error, stop live mode
+            self._toggle_live_mode()
+            self._status_bar.showMessage(f"Live mode stopped due to error: {e}")
+    
+    def _get_waveform_data_fast(self, channel):
+        """
+        Simplified waveform data acquisition for live mode (optimized for speed).
+        
+        Args:
+            channel (int): Channel to capture
+            
+        Returns:
+            tuple: (times, voltages) arrays
+        """
+        # Configure waveform acquisition (minimal commands)
+        self._scope.write(f":WAV:SOUR CHAN{channel}")
+        self._scope.write(":WAV:FORM BYTE")
+        
+        # Get the preamble only if needed (cache it for performance)
+        preamble_str = self._scope.query(":WAV:PRE?")
+        preamble = preamble_str.strip().split(',')
+        
+        # Extract scaling factors
+        x_increment = float(preamble[4])
+        x_origin = float(preamble[5])
+        y_increment = float(preamble[7])
+        y_origin = float(preamble[8])
+        y_reference = float(preamble[9])
+        
+        # Get the raw data
+        self._scope.write(":WAV:DATA?")
+        raw_data = self._scope.read_raw()
+        
+        # Process header
+        n = int(raw_data[1:2])
+        data_size = int(raw_data[2:2+n])
+        header_len = 2 + n
+        
+        # Extract and convert data
+        data = raw_data[header_len:header_len+data_size]
+        data_array = np.frombuffer(data, dtype=np.uint8)
+        
+        # Convert to voltages
+        voltages = (data_array - y_origin - y_reference) * y_increment
+        
+        # Generate time axis
+        times = np.arange(0, len(voltages)) * x_increment + x_origin
+        
+        return times, voltages
     
     @Slot()
     def _capture_waveforms(self):
         """Capture waveforms from the selected channels."""
-        if not self.scope:
+        if not self._scope:
             return
         
         # Get selected channels
@@ -600,29 +761,29 @@ class QuickTestApp(QMainWindow):
             return
         
         # Disable capture button during capture
-        self.capture_button.setEnabled(False)
-        self.status_bar.showMessage(f"Capturing data from channels {enabled_channels}...")
+        self._capture_button.setEnabled(False)
+        self._status_bar.showMessage(f"Capturing data from channels {enabled_channels}...")
         
         # Stop acquisition first to ensure stable data during retrieval
         try:
-            self.scope.write(':STOP')
+            self._scope.write(':STOP')
         except Exception as e:
             print(f"Error stopping acquisition: {e}")
         
         # Start capture threads sequentially to avoid resource conflicts
-        self.capture_threads = []
+        self._capture_threads = []
         
         # Create all threads first without starting them
         for channel in enabled_channels:
-            thread = WaveformCaptureThread(self.scope, channel)
+            thread = WaveformCaptureThread(self._scope, channel)
             thread.capture_complete.connect(self._on_capture_complete)
             thread.capture_error.connect(self._on_capture_error)
-            self.capture_threads.append(thread)
+            self._capture_threads.append(thread)
         
         # Start the first thread
-        if self.capture_threads:
-            self.current_capture_index = 0
-            self.capture_threads[0].start()
+        if self._capture_threads:
+            self._current_capture_index = 0
+            self._capture_threads[0].start()
     
     def _get_selected_channels(self):
         """
@@ -632,13 +793,13 @@ class QuickTestApp(QMainWindow):
             list: Channel numbers that are selected
         """
         channels = []
-        if self.ch1_checkbox.isChecked():
+        if self._ch1_checkbox.isChecked():
             channels.append(1)
-        if self.ch2_checkbox.isChecked():
+        if self._ch2_checkbox.isChecked():
             channels.append(2)
-        if self.ch3_checkbox.isChecked():
+        if self._ch3_checkbox.isChecked():
             channels.append(3)
-        if self.ch4_checkbox.isChecked():
+        if self._ch4_checkbox.isChecked():
             channels.append(4)
         return channels
     
@@ -656,13 +817,17 @@ class QuickTestApp(QMainWindow):
         try:
             for channel in channels:
                 try:
-                    channel_state = self.scope.query(f":CHAN{channel}:DISP?").strip()
+                    channel_state = self._scope.query(f":CHAN{channel}:DISP?").strip()
                     if channel_state == "1" or channel_state.lower() == "on":
                         enabled_channels.append(channel)
                     else:
-                        self.status_bar.showMessage(f"Channel {channel} is not enabled on the oscilloscope.", 3000)
+                        self._status_bar.showMessage(f"Channel {channel} is not enabled on the oscilloscope.", 3000)
                 except Exception as e:
                     print(f"Error checking channel {channel} state: {e}")
+                except Exception as e:
+                    # If we can't check, proceed with user selection
+                    print(f"Error checking channel states: {e}")
+                    return channels
             return enabled_channels
         except Exception as e:
             # If we can't check, proceed with user selection
@@ -681,16 +846,16 @@ class QuickTestApp(QMainWindow):
         
         # Check if we actually got data
         if len(times) == 0 or len(voltages) == 0:
-            self.status_bar.showMessage(f"No data received from channel {channel}.")
+            self._status_bar.showMessage(f"No data received from channel {channel}.")
         else:
-            self.plot_widget.update_plot(channel, times, voltages)
-            self.status_bar.showMessage(f"Captured data from channel {channel}.")
+            self._plot_widget.update_plot(channel, times, voltages)
+            self._status_bar.showMessage(f"Captured data from channel {channel}.")
         
         # Start the next thread if there are more channels to process
-        self.current_capture_index += 1
-        if self.current_capture_index < len(self.capture_threads):
+        self._current_capture_index += 1
+        if self._current_capture_index < len(self._capture_threads):
             # Start the next thread
-            self.capture_threads[self.current_capture_index].start()
+            self._capture_threads[self._current_capture_index].start()
         else:
             # All threads have been processed
             self._finish_capture_process()
@@ -708,10 +873,10 @@ class QuickTestApp(QMainWindow):
                            f"Error capturing data from channel {channel}: {error_msg}")
         
         # Continue to the next thread even if this one failed
-        self.current_capture_index += 1
-        if self.current_capture_index < len(self.capture_threads):
+        self._current_capture_index += 1
+        if self._current_capture_index < len(self._capture_threads):
             # Start the next thread
-            self.capture_threads[self.current_capture_index].start()
+            self._capture_threads[self._current_capture_index].start()
         else:
             # All threads have been processed
             self._finish_capture_process(has_errors=True)
@@ -725,15 +890,15 @@ class QuickTestApp(QMainWindow):
         """
         # Resume acquisition
         try:
-            self.scope.write(':RUN')
+            self._scope.write(':RUN')
         except Exception as e:
             print(f"Error resuming acquisition: {e}")
             
-        self.capture_button.setEnabled(True)
+        self._capture_button.setEnabled(True)
         if has_errors:
-            self.status_bar.showMessage("Capture completed with errors.")
+            self._status_bar.showMessage("Capture completed with errors.")
         else:
-            self.status_bar.showMessage("Capture complete.")
+            self._status_bar.showMessage("Capture complete.")
     
     @Slot()
     def _save_plot(self):
@@ -744,16 +909,16 @@ class QuickTestApp(QMainWindow):
         
         if file_path:
             try:
-                self.plot_widget.save_plot(file_path)
-                self.status_bar.showMessage(f"Plot saved to {file_path}")
+                self._plot_widget.save_plot(file_path)
+                self._status_bar.showMessage(f"Plot saved to {file_path}")
             except Exception as e:
                 QMessageBox.warning(self, "Save Error", f"Error saving plot: {str(e)}")
     
     @Slot()
     def _clear_plot(self):
         """Clear the current plot."""
-        self.plot_widget.clear_all()
-        self.status_bar.showMessage("Plot cleared.")
+        self._plot_widget.clear_all()
+        self._status_bar.showMessage("Plot cleared.")
     
     def closeEvent(self, event):
         """
@@ -762,11 +927,15 @@ class QuickTestApp(QMainWindow):
         Args:
             event: Close event from the window system
         """
-        if self.scope:
+        # Stop live mode if running
+        if self._live_mode_enabled:
+            self._toggle_live_mode()
+            
+        if self._scope:
             try:
                 # Return to local control before closing
-                self.scope.write(':KEY:FORC')
-                self.scope.close()
+                self._scope.write(':KEY:FORC')
+                self._scope.close()
             except:
                 pass
         
