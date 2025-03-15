@@ -57,14 +57,66 @@ class StyleManager(QObject):
         Load style definitions from JSON files in the styles directory.
         """
         if not os.path.exists(self._styles_dir):
-            # Log a warning that the styles directory doesn't exist
-            print(f"Warning: Styles directory not found: {self._styles_dir}")
+            # Create the directory if it doesn't exist
+            os.makedirs(self._styles_dir, exist_ok=True)
+            print(f"Created styles directory: {self._styles_dir}")
+            
+            # Create default style definitions
+            self._create_default_style_definitions()
             return
             
-        for filename in os.listdir(self._styles_dir):
+        files = os.listdir(self._styles_dir) if os.path.exists(self._styles_dir) else []
+        if not any(f.endswith("_styles.json") for f in files):
+            # Create default style definitions if none exist
+            self._create_default_style_definitions()
+            return
+            
+        for filename in files:
             if filename.endswith("_styles.json"):
                 style_name = filename.replace("_styles.json", "")
                 self._load_style_definition(style_name)
+                
+    def _create_default_style_definitions(self) -> None:
+        """Create default style definition files if they don't exist."""
+        # Create the styles directory
+        os.makedirs(self._styles_dir, exist_ok=True)
+        
+        # Create default control styles
+        control_styles = {
+            "button": {
+                "border_radius": "4px",
+                "padding": "6px 12px",
+                "font_weight": "normal"
+            },
+            "label": {
+                "padding": "2px",
+                "font_weight": "normal"
+            },
+            "slider": {
+                "groove_height": "4px",
+                "handle_size": "16px"
+            }
+        }
+        
+        # Create default graph styles
+        graph_styles = {
+            "plot": {
+                "background": "background.primary",
+                "foreground": "text.primary",
+                "grid": "grid.major"
+            }
+        }
+        
+        # Save the default styles
+        with open(os.path.join(self._styles_dir, "control_styles.json"), "w") as f:
+            json.dump(control_styles, f, indent=4)
+            
+        with open(os.path.join(self._styles_dir, "graph_styles.json"), "w") as f:
+            json.dump(graph_styles, f, indent=4)
+            
+        # Load the style definitions
+        self._style_definitions["control"] = control_styles
+        self._style_definitions["graph"] = graph_styles
                 
     def _load_style_definition(self, style_name: str) -> bool:
         """
@@ -186,13 +238,96 @@ class StyleManager(QObject):
         controls = self._style_definitions["control"]
         style_sheet = ""
         
-        # Example: Style for QPushButton
+        # Style for QWidget (base)
+        style_sheet += "QWidget {\n"
+        style_sheet += f"    background-color: {self._color_manager.get_color('background.primary')};\n"
+        style_sheet += f"    color: {self._color_manager.get_color('text.primary')};\n"
+        style_sheet += "}\n\n"
+        
+        # Style for QMainWindow
+        style_sheet += "QMainWindow {\n"
+        style_sheet += f"    background-color: {self._color_manager.get_color('background.primary')};\n"
+        style_sheet += "}\n\n"
+        
+        # Style for QMenuBar
+        style_sheet += "QMenuBar {\n"
+        style_sheet += f"    background-color: {self._color_manager.get_color('background.secondary')};\n"
+        style_sheet += f"    color: {self._color_manager.get_color('text.primary')};\n"
+        style_sheet += "}\n\n"
+        
+        # Style for QMenuBar::item
+        style_sheet += "QMenuBar::item {\n"
+        style_sheet += f"    background-color: transparent;\n"
+        style_sheet += "    padding: 4px 8px;\n"
+        style_sheet += "}\n\n"
+        
+        # Style for QMenuBar::item:selected
+        style_sheet += "QMenuBar::item:selected {\n"
+        style_sheet += f"    background-color: {self._color_manager.get_color('selection.background')};\n"
+        style_sheet += f"    color: {self._color_manager.get_color('text.primary')};\n"
+        style_sheet += "}\n\n"
+        
+        # Style for QMenu
+        style_sheet += "QMenu {\n"
+        style_sheet += f"    background-color: {self._color_manager.get_color('background.secondary')};\n"
+        style_sheet += f"    color: {self._color_manager.get_color('text.primary')};\n"
+        style_sheet += f"    border: 1px solid {self._color_manager.get_color('border.inactive')};\n"
+        style_sheet += "}\n\n"
+        
+        # Style for QMenu::item
+        style_sheet += "QMenu::item {\n"
+        style_sheet += f"    background-color: transparent;\n"
+        style_sheet += "    padding: 4px 20px 4px 24px;\n"
+        style_sheet += "}\n\n"
+        
+        # Style for QMenu::item:selected
+        style_sheet += "QMenu::item:selected {\n"
+        style_sheet += f"    background-color: {self._color_manager.get_color('selection.background')};\n"
+        style_sheet += f"    color: {self._color_manager.get_color('text.primary')};\n"
+        style_sheet += "}\n\n"
+        
+        # Style for QMenu::separator
+        style_sheet += "QMenu::separator {\n"
+        style_sheet += f"    height: 1px;\n"
+        style_sheet += f"    background: {self._color_manager.get_color('border.inactive')};\n"
+        style_sheet += "    margin: 4px 8px;\n"
+        style_sheet += "}\n\n"
+        
+        # Style for QStatusBar
+        style_sheet += "QStatusBar {\n"
+        style_sheet += f"    background-color: {self._color_manager.get_color('background.secondary')};\n"
+        style_sheet += f"    color: {self._color_manager.get_color('text.secondary')};\n"
+        style_sheet += "}\n\n"
+        
+        # Style for QTabWidget
+        style_sheet += "QTabWidget::pane {\n"
+        style_sheet += f"    border: 1px solid {self._color_manager.get_color('border.inactive')};\n"
+        style_sheet += "}\n\n"
+        
+        # Style for QTabBar
+        style_sheet += "QTabBar::tab {\n"
+        style_sheet += f"    background-color: {self._color_manager.get_color('background.tertiary')};\n"
+        style_sheet += f"    color: {self._color_manager.get_color('text.primary')};\n"
+        style_sheet += "    padding: 8px 12px;\n"
+        style_sheet += f"    border: 1px solid {self._color_manager.get_color('border.inactive')};\n"
+        style_sheet += "    border-bottom: none;\n"
+        style_sheet += "    border-top-left-radius: 4px;\n"
+        style_sheet += "    border-top-right-radius: 4px;\n"
+        style_sheet += "}\n\n"
+        
+        # Style for QTabBar::tab:selected
+        style_sheet += "QTabBar::tab:selected {\n"
+        style_sheet += f"    background-color: {self._color_manager.get_color('background.primary')};\n"
+        style_sheet += f"    border-bottom: none;\n"
+        style_sheet += "}\n\n"
+        
+        # Style for QPushButton
         if "button" in controls:
             button_style = controls["button"]
             style_sheet += "QPushButton {\n"
             style_sheet += f"    background-color: {self._color_manager.get_color('background.secondary')};\n"
             style_sheet += f"    color: {self._color_manager.get_color('text.primary')};\n"
-            style_sheet += f"    border: 1px solid {self._color_manager.get_color('accent.primary')};\n"
+            style_sheet += f"    border: 1px solid {self._color_manager.get_color('border.inactive')};\n"
             
             if "border_radius" in button_style:
                 style_sheet += f"    border-radius: {button_style['border_radius']};\n"
@@ -208,7 +343,8 @@ class StyleManager(QObject):
             # Hover state
             style_sheet += "QPushButton:hover {\n"
             style_sheet += f"    background-color: {self._color_manager.get_color('accent.primary')};\n"
-            style_sheet += f"    color: {self._color_manager.get_color('background.primary')};\n"
+            style_sheet += f"    color: {self._color_manager.get_color('text.primary')};\n"
+            style_sheet += f"    border: 1px solid {self._color_manager.get_color('border.active')};\n"
             style_sheet += "}\n\n"
             
             # Pressed state
@@ -216,7 +352,7 @@ class StyleManager(QObject):
             style_sheet += f"    background-color: {self._color_manager.get_color('accent.secondary')};\n"
             style_sheet += "}\n\n"
             
-        # Example: Style for QLabel
+        # Style for QLabel
         if "label" in controls:
             label_style = controls["label"]
             style_sheet += "QLabel {\n"
@@ -230,7 +366,7 @@ class StyleManager(QObject):
                 
             style_sheet += "}\n\n"
             
-        # Example: Style for QSlider
+        # Style for QSlider
         if "slider" in controls:
             slider_style = controls["slider"]
             style_sheet += "QSlider::groove:horizontal {\n"
@@ -293,10 +429,6 @@ class StyleManager(QObject):
             Complete style sheet as a string
         """
         style_sheet = ""
-        
-        # Add global application styles
-        style_sheet += "/* Global Application Styles */\n"
-        style_sheet += f"QWidget {{ background-color: {self._color_manager.get_color('background.primary')}; }}\n\n"
         
         # Add control styles
         style_sheet += "/* Control Styles */\n"

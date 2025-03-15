@@ -2,12 +2,14 @@
     "background": {
         "primary": "#1E1E1E",
         "secondary": "#252526",
-        "tertiary": "#2D2D30"
+        "tertiary": "#2D2D30",
+        "input": "#3C3C3C"
     },
     "text": {
         "primary": "#E8E8E8",
-        "secondary": "#BBBBBB",
-        "disabled": "#777777"
+        "secondary": "#CCCCCC",
+        "disabled": "#888888",
+        "link": "#3794FF"
     },
     "accent": {
         "primary": "#007ACC",
@@ -15,11 +17,23 @@
         "warning": "#FF8C00",
         "error": "#E51400"
     },
-    "grid": "#3F3F3F",
     "signal": {
-        "channel1": "#FF4081",
-        "channel2": "#00E5FF",
-        "channel3": "#FFEB3B",
-        "channel4": "#00E676"
+        "ch1": "#FF5555",
+        "ch2": "#55FF55",
+        "ch3": "#5555FF",
+        "ch4": "#FFFF55",
+        "reference": "#FF55FF"
+    },
+    "grid": {
+        "major": "#3F3F3F",
+        "minor": "#2A2A2A"
+    },
+    "selection": {
+        "background": "#264F78",
+        "border": "#3399FF"
+    },
+    "border": {
+        "active": "#007ACC",
+        "inactive": "#3C3C3C"
     }
 }

@@ -40,6 +40,12 @@ class ThemeManager(QObject):
         Args:
             scheme_name: Name of the new color scheme
         """
+        # Apply the styles
+        self.apply_theme()
+        
+        # Save theme preference
+        self.save_theme_preferences()
+        
         # Forward the signal
         self.theme_changed.emit(scheme_name)
         
@@ -73,7 +79,12 @@ class ThemeManager(QObject):
         Returns:
             bool: True if the theme was activated successfully, False otherwise
         """
-        return self._color_manager.set_active_scheme(theme_name)
+        success = self._color_manager.set_active_scheme(theme_name)
+        if success:
+            # This will trigger _on_color_scheme_changed through the signal connection
+            # Apply the theme explicitly to ensure it's applied
+            self.apply_theme()
+        return success
         
     def apply_theme(self) -> None:
         """
@@ -81,6 +92,7 @@ class ThemeManager(QObject):
         
         This should be called after initializing the theme system.
         """
+        # Apply the application style
         self._style_manager.apply_application_style()
         
     def get_color(self, color_path: str, default: str = "#000000") -> str:

@@ -21,6 +21,9 @@ def main():
     style_manager = StyleManager(color_manager)
     theme_manager = ThemeManager(color_manager, style_manager, preferences_manager)
     
+    # Apply theme preferences
+    theme_manager.load_theme_preferences()
+    
     # Create and show the main window
     main_window = MainWindow(theme_manager, preferences_manager)
     main_window.show()
