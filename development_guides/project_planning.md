@@ -89,11 +89,46 @@ Users will be able to:
 - Create and save custom themes
 - Export themes for sharing and import themes from files
 
-### 2.2 Window Management System (PLANNED)
+### 2.2 Tab-Based Workspace System (IMPLEMENTED)
 
-The application will use a flexible docking system that allows users to arrange tools according to their workflow needs.
+The application implements a tab-based workspace system that organizes different functional areas into separate workspaces.
 
-#### 2.2.1 Docking Architecture
+#### 2.2.1 Workspace Structure
+
+- **Left-Side Tabs**: Workspace tabs are positioned on the left side of the application for improved usability and space efficiency on widescreen monitors
+- **Themed Tab Widget**: Custom `ThemedTab` component extending QTabWidget with theme-awareness and enhanced functionality
+- **Workspace Inheritance**: All workspace tabs inherit from a common `BaseWorkspace` class
+
+#### 2.2.2 Workspace Types
+
+The application provides several specialized workspaces:
+
+1. **Basic Signal Analysis**: For fundamental signal visualization and analysis
+2. **Protocol Decoder**: For identifying and decoding communication protocols
+3. **Pattern Recognition**: For detecting and analyzing signal patterns
+4. **Signal Separation**: For separating mixed signals into components
+5. **Signal Origin**: For analyzing signal source and direction
+6. **Advanced Analysis**: For complex transforms and in-depth analysis
+
+#### 2.2.3 Workspace Features
+
+- **State Persistence**: Workspace layouts and settings are saved between sessions
+- **Theme Integration**: All workspace components automatically update when theme changes
+- **Menu Integration**: Workspaces can be switched via the Workspace menu or keyboard shortcuts
+- **Extensibility**: New workspaces can be added through the plugin system
+
+#### 2.2.4 Workspace Architecture
+
+- **BaseWorkspace Class**: Provides common functionality and theme integration
+- **Workspace-Specific Classes**: Extend BaseWorkspace for specialized functionality
+- **Workspace Registry**: Tracks available workspaces and their capabilities
+- **State Management**: Uses PreferencesManager for persistent storage of workspace state
+
+### 2.3 Window Management System (PLANNED)
+
+The application will use a flexible docking system within each workspace that allows users to arrange tools according to their workflow needs.
+
+#### 2.3.1 Docking Architecture
 
 - Based on Qt's QDockWidget system with enhanced functionality
 - Windows can be:
@@ -102,20 +137,20 @@ The application will use a flexible docking system that allows users to arrange 
   - Tabbed (stacked within a dock area)
   - Minimized (as tabs in a dock bar)
 
-#### 2.2.2 Layout Management
+#### 2.3.2 Layout Management
 
-- **Default Layouts**: Each module (tab) will have sensible default layouts
+- **Default Layouts**: Each workspace will have sensible default layouts
 - **Custom Layouts**: Users can create and save custom layouts
 - **Layout Persistence**: Window arrangements are saved between sessions
 - **Layout Sharing**: Layouts can be exported and imported
 
-#### 2.2.3 Context-Sensitive Tool Availability
+#### 2.3.3 Context-Sensitive Tool Availability
 
 - Tools relevant to the current task are prominently displayed
 - Less-used tools can be hidden but easily accessible
 - Tool visibility can be toggled through View menu
 
-#### 2.2.4 Implementation Strategy
+#### 2.3.4 Implementation Strategy
 
 - Create a LayoutManager class to handle saving/loading layouts
 - Use Qt's state saving/restoration mechanism
@@ -149,15 +184,61 @@ Individual components can be saved separately for reuse across projects:
 
 ### 3.3 Export Formats
 
-For sharing and external use, data can be exported to standard formats.
+For sharing and external use, data can be exported to standard formats:
+
+#### 3.3.1 Signal Data Exports
+
+- **CSV**: Time-amplitude data for spreadsheet analysis
+- **WAV**: Audio representation of signals
+- **NumPy**: .npy/.npz files for Python processing
+- **MATLAB**: .mat files for MATLAB/Octave
+- **HDF5 (.h5)**: Hierarchical data format for efficient storage
+- **Custom Binary**: Efficient binary format with headers
+
+It's within our plan to research and develop a more ideal format to store compressed signal data more efficiently, especially for large datasets with high sampling rates.
+
+#### 3.3.2 Visual Exports
+
+- **PNG/JPEG**: Static screenshots with configurable resolution
+- **SVG**: Vector graphics for publication-quality figures
+- **PDF**: Publication-ready vector output
+- **EPS**: For scientific publication
+- **MP4/GIF**: Animated visualizations of time-domain data
+
+#### 3.3.3 Analysis Results
+
+- **JSON/XML**: Structured analysis data
+- **CSV**: Tabular results
+- **HTML**: Formatted reports with embedded graphics
+- **Markdown**: Text-based reports for documentation
 
 ### 3.4 Import Capabilities
 
-The system will support importing from various sources.
+The system will support importing from various sources:
+
+#### 3.4.1 Signal Data Import
+
+- **Oscilloscope Formats**: Various vendor-specific formats (Tektronix, Keysight, etc.)
+- **Standard Formats**: CSV, WAV, NumPy, MATLAB, HDF5
+- **Raw Binary**: With configurable headers and data types
+- **IQ Data**: For RF signal analysis
+- **SDR Formats**: Common Software-Defined Radio formats
+
+#### 3.4.2 Protocol Definitions
+
+- **Standard Protocol Libraries**: Import from common protocol definition databases
+- **Custom Protocol Definitions**: User-defined protocol specifications
+- **Script-Based Decoders**: Python scripts that implement custom decoders
+
+#### 3.4.3 External Resources
+
+- **Signal Pattern Libraries**: Pre-defined signal patterns for recognition
+- **Reference Waveforms**: For comparison and analysis
+- **External Configuration**: Settings files from other tools
 
 ## 4. Project Structure
 
-The project is organized into the following directory structure. Note the modifications (marked with [MODIFIED]) to reflect the implemented theme system and preferences manager:
+The project is organized into the following directory structure. Note the modifications to reflect the implemented theme system, preferences manager, and tab-based workspace system:
 
 ```
 pysignaldecipher/
@@ -166,7 +247,7 @@ pysignaldecipher/
 ├── quick_test.py              # Standalone script for rapid device testing
 ├── assets/                    # Static resources
 │   ├── icons/
-│   ├── themes/                # [MODIFIED] Theme files
+│   ├── themes/                # [IMPLEMENTED] Theme files
 │   │   ├── colors/            # Color definitions
 │   │   │   ├── dark_colors.json
 │   │   │   └── light_colors.json
@@ -209,20 +290,21 @@ pysignaldecipher/
 │       └── history.py
 ├── ui/                        # User interface
 │   ├── __init__.py
-│   ├── main_window.py
-│   ├── theme/                 # Theme management system
+│   ├── main_window.py         # [IMPLEMENTED] Main application window
+│   ├── theme/                 # [IMPLEMENTED] Theme management system
 │   │   ├── __init__.py
 │   │   ├── color_manager.py   # Color scheme management
 │   │   ├── style_manager.py   # Style generation and application
 │   │   ├── theme_manager.py   # Coordinates theming system
 │   │   └── theme_editor.py    # Theme customization dialog
 │   ├── layout_manager.py
-│   ├── themed_widgets/        # Theme-aware widgets
+│   ├── themed_widgets/        # [IMPLEMENTED] Theme-aware widgets
 │   │   ├── __init__.py
 │   │   ├── base_themed_widget.py
 │   │   ├── themed_button.py
 │   │   ├── themed_label.py
-│   │   └── themed_slider.py
+│   │   ├── themed_slider.py
+│   │   └── themed_tab.py      # [IMPLEMENTED] Themed tab widget
 │   ├── widgets/               # Custom widgets
 │   │   ├── __init__.py
 │   │   ├── signal_view.py
@@ -233,16 +315,31 @@ pysignaldecipher/
 │   │   ├── settings_dialog.py
 │   │   ├── export_dialog.py
 │   │   └── ...
-│   └── workspaces/            # Tab-specific UIs
+│   ├── menus/                 # [IMPLEMENTED] Menu system
+│   │   ├── __init__.py
+│   │   ├── menu_manager.py
+│   │   ├── menu_actions.py
+│   │   ├── file_menu.py
+│   │   ├── edit_menu.py
+│   │   ├── view_menu.py
+│   │   ├── workspace_menu.py
+│   │   ├── window_menu.py
+│   │   ├── tools_menu.py
+│   │   └── help_menu.py
+│   └── workspaces/            # [IMPLEMENTED] Tab-specific UIs
 │       ├── __init__.py
+│       ├── base_workspace.py  # Base class for all workspaces
 │       ├── basic_workspace.py
 │       ├── protocol_workspace.py
-│       └── ...
+│       ├── pattern_workspace.py
+│       ├── separation_workspace.py
+│       ├── origin_workspace.py
+│       └── advanced_workspace.py
 ├── utils/                     # Utility functions and helpers
 │   ├── __init__.py
 │   ├── config.py
 │   ├── logger.py
-│   ├── preferences_manager.py # User preference management
+│   ├── preferences_manager.py # [IMPLEMENTED] User preference management
 │   └── math_utils.py
 └── plugins/                   # Plugin system
     ├── __init__.py
@@ -267,7 +364,7 @@ pysignaldecipher/
 │   └── test_helpers/          # Test utilities and mock objects
 │       ├── mock_oscilloscope.py
 │       └── sample_signals.py
-├── development/           # Developer guides
+├── development/               # Developer guides
 │   ├── coding_standards.md
 │   ├── project_planning.md
 │   ├── project_proposal.md
@@ -344,7 +441,75 @@ theme_manager.apply_theme()  # Apply the current theme
 - Handles theme preferences persistence
 - Coordinates theme changes across the application
 
-### 5.2 PreferencesManager Implementation Details (IMPLEMENTED)
+### 5.2 Tab-Based Workspace System Implementation Details (IMPLEMENTED)
+
+The workspace system organizes the application's functionality into specialized areas:
+
+#### 5.2.1 ThemedTab Widget
+
+The `ThemedTab` (`ui/themed_widgets/themed_tab.py`) provides a theme-aware tab widget:
+
+```python
+# Example usage
+tab_widget = ThemedTab(parent)
+tab_widget.addTab(workspace, "Workspace Title")
+tab_widget.set_theme(theme_manager)
+```
+
+**Key features**:
+- Extends QTabWidget with theme awareness
+- Positions tabs on the left side for better space utilization
+- Automatically propagates theme changes to child widgets
+- Supports tab movement and reordering
+- Emits signals when tabs are moved or selected
+
+#### 5.2.2 BaseWorkspace
+
+The `BaseWorkspace` (`ui/workspaces/base_workspace.py`) provides a common foundation for all workspaces:
+
+```python
+# Example usage (in a subclass)
+class CustomWorkspace(BaseWorkspace):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        
+    def _initialize_workspace(self):
+        # Add workspace-specific components
+        pass
+        
+    def get_workspace_id(self):
+        return "custom"
+```
+
+**Key features**:
+- Inherits from BaseThemedWidget for theme integration
+- Provides standard layout management
+- Handles preference persistence
+- Defines common interface for all workspaces
+- Abstracts workspace initialization
+
+#### 5.2.3 Specialized Workspaces
+
+Each workspace inherits from BaseWorkspace and specializes for specific tasks:
+
+```python
+# Example specialized workspaces
+class BasicSignalWorkspace(BaseWorkspace): ...
+class ProtocolDecoderWorkspace(BaseWorkspace): ...
+class PatternRecognitionWorkspace(BaseWorkspace): ...
+class SignalSeparationWorkspace(BaseWorkspace): ...
+class SignalOriginWorkspace(BaseWorkspace): ...
+class AdvancedAnalysisWorkspace(BaseWorkspace): ...
+```
+
+**Key features**:
+- Task-specific UI components and tools
+- Custom layouts optimized for specific workflows
+- Specialized data models and presentation
+- Focused functionality with reduced complexity
+- Common interface for consistent user experience
+
+### 5.3 PreferencesManager Implementation Details (IMPLEMENTED)
 
 The `PreferencesManager` (`utils/preferences_manager.py`) manages user preferences:
 
@@ -376,7 +541,11 @@ The development of PySignalDecipher is organized into clear phases:
 - ✅ Preferences management system (COMPLETED)
   - User preference storage and retrieval
   - Window state persistence
-- 🔄 Window management framework (IN PROGRESS)
+- ✅ Tab-based workspace system (COMPLETED)
+  - Themed tab widget
+  - Base workspace framework
+  - Specialized workspace templates
+- 🔄 Window management framework (PLANNED)
   - Docking system
   - Layout persistence
 - ⏳ Signal data model (PLANNED)
@@ -445,12 +614,52 @@ For reusable widgets that need theme awareness, extend from the base themed widg
 from ui.themed_widgets.base_themed_widget import BaseThemedWidget
 
 class MyThemedWidget(BaseThemedWidget):
-    def __init__(self, theme_manager):
-        super().__init__(theme_manager)
+    def __init__(self, parent=None):
+        super().__init__(parent)
         # Widget-specific initialization
+        
+    def _apply_theme_impl(self):
+        # Apply theme-specific styling
+        bg_color = self.get_color("background.primary")
+        text_color = self.get_color("text.primary")
+        self.setStyleSheet(f"background-color: {bg_color}; color: {text_color};")
 ```
 
-### 7.3 Using StyleManager for Custom Styles
+### 7.3 Creating Custom Workspace Tabs
+
+For new workspaces, extend from the BaseWorkspace class:
+
+```python
+from ui.workspaces.base_workspace import BaseWorkspace
+
+class CustomWorkspace(BaseWorkspace):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        
+    def _initialize_workspace(self):
+        # Add workspace-specific UI components
+        self._some_widget = SomeWidget()
+        self._main_layout.addWidget(self._some_widget)
+        
+    def get_workspace_id(self):
+        return "custom"
+        
+    def _load_workspace_state(self):
+        # Load workspace-specific preferences
+        if self._preferences_manager:
+            state = self._preferences_manager.get_preference("workspaces/custom/state")
+            if state:
+                # Apply the saved state
+                pass
+                
+    def _save_workspace_state(self):
+        # Save workspace-specific preferences
+        if self._preferences_manager:
+            state = {}  # Collect state data
+            self._preferences_manager.set_preference("workspaces/custom/state", state)
+```
+
+### 7.4 Using StyleManager for Custom Styles
 
 For complex components that need specialized styling:
 
@@ -475,7 +684,7 @@ class ComplexWidget(QWidget):
         self._style_manager.unregister_observer("my_widget")
 ```
 
-### 7.4 Using PreferencesManager
+### 7.5 Using PreferencesManager
 
 For components that need to save/restore state:
 
@@ -499,6 +708,6 @@ class StatefulWidget(QWidget):
 
 ## 8. Conclusion
 
-This updated planning document reflects the current state of PySignalDecipher development. The theme system and preferences manager have been successfully implemented, providing a solid foundation for the remaining components. The modular architecture and clear separation of concerns continue to guide development, ensuring maintainability and extensibility as the project grows.
+This updated planning document reflects the current state of PySignalDecipher development. The theme system, preferences manager, and tab-based workspace system have been successfully implemented, providing a solid foundation for the remaining components. The modular architecture and clear separation of concerns continue to guide development, ensuring maintainability and extensibility as the project grows.
 
 Developers should refer to this document for guidance on the project structure, implementation details of existing components, and guidelines for implementing new features that integrate properly with the established architecture.
