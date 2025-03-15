@@ -1,0 +1,25 @@
+{
+    "background": {
+        "primary": "#F8F8F8",
+        "secondary": "#ECECEC",
+        "tertiary": "#DDDDDD"
+    },
+    "text": {
+        "primary": "#333333",
+        "secondary": "#555555",
+        "disabled": "#999999"
+    },
+    "accent": {
+        "primary": "#0078D7",
+        "secondary": "#107C10",
+        "warning": "#FF8C00",
+        "error": "#E81123"
+    },
+    "grid": "#CCCCCC",
+    "signal": {
+        "channel1": "#D81B60",
+        "channel2": "#0091EA",
+        "channel3": "#FFC107",
+        "channel4": "#00C853"
+    }
+}

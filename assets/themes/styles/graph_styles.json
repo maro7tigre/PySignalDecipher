@@ -1,0 +1,13 @@
+{
+    "grid": {
+        "line_style": "dotted",
+        "line_width": "1px"
+    },
+    "axis": {
+        "line_width": "1px",
+        "text_padding": "4px"
+    },
+    "plot_area": {
+        "padding": "10px"
+    }
+}

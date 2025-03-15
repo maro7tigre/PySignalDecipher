@@ -1,0 +1,15 @@
+{
+    "button": {
+        "border_radius": "4px",
+        "padding": "6px 12px",
+        "font_weight": "normal"
+    },
+    "label": {
+        "padding": "2px",
+        "font_weight": "normal"
+    },
+    "slider": {
+        "handle_size": "16px",
+        "groove_height": "6px"
+    }
+}
