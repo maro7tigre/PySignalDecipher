@@ -310,6 +310,25 @@ pysignaldecipher/
 │   │   ├── themed_label.py
 │   │   ├── themed_slider.py
 │   │   └── themed_tab.py      # [IMPLEMENTED] Themed tab widget
+│   ├── utility_panel/
+│   │   ├── __init__.py
+│   │   ├── utility_panel.py               # Main container class
+│   │   ├── hardware_utility.py            # Static hardware connection panel
+│   │   ├── workspace_utility_manager.py   # Manages workspace-specific utilities
+│   │   ├── widget_utility_manager.py      # Manages selected widget utilities
+│   │   └── workspace_utilities/           # Folder for workspace-specific utilities
+│   │       ├── __init__.py
+│   │       ├── base_workspace_utility.py  # Base class for all workspace utilities
+│   │       ├── basic_workspace_utility.py # Basic Signal Analysis workspace utilities
+│   │       ├── protocol_workspace_utility.py
+│   │       ├── pattern_workspace_utility.py
+│   │       └── ...                        # Other workspace utilities
+│   ├── widget_utilities/                  # Folder for widget-specific utilities
+│   │   ├── __init__.py
+│   │   ├── base_widget_utility.py         # Base class for all widget utilities
+│   │   ├── signal_view_utility.py         # Utilities for signal view widgets
+│   │   ├── spectrum_view_utility.py       # Utilities for spectrum view widgets
+│   │   └── ...                            # Other widget utilities
 │   ├── widgets/               # Custom widgets
 │   │   ├── __init__.py
 │   │   ├── signal_view.py
