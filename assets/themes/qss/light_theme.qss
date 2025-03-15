@@ -1,0 +1,221 @@
+/* Light Theme QSS for PySignalDecipher */
+
+/* Global Styles */
+QWidget {
+    background-color: #F0F0F0;
+    color: #000000;
+    font-size: 14px;
+}
+
+/* QMainWindow */
+QMainWindow {
+    background-color: #F0F0F0;
+}
+
+QMainWindow::separator {
+    background-color: #E5E5E5;
+    width: 1px;
+    height: 1px;
+}
+
+/* QTabWidget */
+QTabWidget::pane {
+    background-color: #E5E5E5;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+}
+
+QTabBar::tab {
+    background-color: #E5E5E5;
+    color: #333333;
+    border: 1px solid #CCCCCC;
+    padding: 8px 12px;
+}
+
+QTabBar::tab:hover {
+    background-color: #DDDDDD;
+    color: #000000;
+    border: 1px solid #CCCCCC;
+}
+
+QTabBar::tab:selected {
+    background-color: #FFFFFF;
+    color: #000000;
+    border: 1px solid #CCCCCC;
+}
+
+/* QMenuBar */
+QMenuBar {
+    background-color: #E5E5E5;
+    color: #000000;
+}
+
+QMenuBar::item {
+    background-color: transparent;
+    padding: 4px 8px;
+}
+
+QMenuBar::item:selected {
+    background-color: #ADD6FF;
+    color: #000000;
+}
+
+/* QMenu */
+QMenu {
+    background-color: #E5E5E5;
+    color: #000000;
+    border: 1px solid #CCCCCC;
+}
+
+QMenu::item {
+    background-color: transparent;
+    padding: 4px 20px 4px 24px;
+}
+
+QMenu::item:selected {
+    background-color: #ADD6FF;
+    color: #000000;
+}
+
+QMenu::separator {
+    height: 1px;
+    background: #CCCCCC;
+    margin: 4px 8px;
+}
+
+/* QStatusBar */
+QStatusBar {
+    background-color: #E5E5E5;
+    color: #333333;
+    border-top: 1px solid #CCCCCC;
+}
+
+QStatusBar::item {
+    border: none;
+}
+
+/* QPushButton - Default */
+QPushButton {
+    background-color: #E5E5E5;
+    color: #000000;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    padding: 6px 12px;
+    min-width: 80px;
+}
+
+QPushButton:hover {
+    background-color: #DDDDDD;
+    color: #000000;
+    border: 1px solid #0078D7;
+}
+
+QPushButton:pressed {
+    background-color: #0078D7;
+    color: #FFFFFF;
+    border: 1px solid #0078D7;
+}
+
+QPushButton:disabled {
+    background-color: #E5E5E5;
+    color: #999999;
+    border: 1px solid #CCCCCC;
+}
+
+/* Green Buttons */
+QPushButton.green {
+    background-color: #E5E5E5;
+    color: #2E8631;
+    border: 2px solid #2E8631;
+}
+
+QPushButton.green:hover {
+    background-color: #DDDDDD;
+    color: #34A33A;
+    border: 2px solid #34A33A;
+}
+
+QPushButton.green:pressed {
+    background-color: #2E8631;
+    color: #FFFFFF;
+    border: 2px solid #2E8631;
+}
+
+/* Red Buttons */
+QPushButton.red {
+    background-color: #E5E5E5;
+    color: #CC0000;
+    border: 2px solid #CC0000;
+}
+
+QPushButton.red:hover {
+    background-color: #DDDDDD;
+    color: #FF0000;
+    border: 2px solid #FF0000;
+}
+
+QPushButton.red:pressed {
+    background-color: #CC0000;
+    color: #FFFFFF;
+    border: 2px solid #CC0000;
+}
+
+/* QLineEdit */
+QLineEdit {
+    background-color: #FFFFFF;
+    color: #000000;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    padding: 4px;
+}
+
+QLineEdit:focus {
+    border: 1px solid #0078D7;
+}
+
+/* QComboBox */
+QComboBox {
+    background-color: #FFFFFF;
+    color: #000000;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    padding: 4px 8px;
+    min-width: 6em;
+}
+
+QComboBox::drop-down {
+    subcontrol-origin: padding;
+    subcontrol-position: top right;
+    width: 20px;
+    border-left: 1px solid #CCCCCC;
+}
+
+QComboBox QAbstractItemView {
+    background-color: #FFFFFF;
+    color: #000000;
+    border: 1px solid #CCCCCC;
+    selection-background-color: #ADD6FF;
+}
+
+/* QGroupBox */
+QGroupBox {
+    background-color: #E5E5E5;
+    color: #000000;
+    border: 1px solid #CCCCCC;
+    border-radius: 4px;
+    margin-top: 1ex;
+    padding-top: 10px;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 5px;
+    color: #000000;
+}
+
+/* QLabel */
+QLabel {
+    background-color: transparent;
+    color: #000000;
+}
