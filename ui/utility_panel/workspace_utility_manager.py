@@ -6,13 +6,11 @@ that dynamically changes based on the active workspace.
 """
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QStackedWidget
+    QWidget, QVBoxLayout, QStackedWidget
 )
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt
 
 # Import workspace utilities
-from .workspace_utilities.base_workspace_utility import BaseWorkspaceUtility
 from .workspace_utilities.basic_workspace_utility import BasicWorkspaceUtility
 from .workspace_utilities.protocol_workspace_utility import ProtocolWorkspaceUtility
 from .workspace_utilities.pattern_workspace_utility import PatternWorkspaceUtility
@@ -43,6 +41,7 @@ class WorkspaceUtilityManager(QWidget):
         
         # Create workspace utility instances
         self._workspace_utilities = {}
+        self._active_workspace_id = None
         
         # Set up the manager UI
         self._setup_ui()
@@ -52,8 +51,8 @@ class WorkspaceUtilityManager(QWidget):
         
     def _setup_ui(self):
         """Set up the user interface for the workspace utility manager."""
-        # Main layout
-        self._main_layout = QHBoxLayout(self)  # Changed to horizontal for better space utilization
+        # Use a vertical layout to fill the available space
+        self._main_layout = QVBoxLayout(self)
         self._main_layout.setContentsMargins(0, 0, 0, 0)
         self._main_layout.setSpacing(0)
         
@@ -82,9 +81,7 @@ class WorkspaceUtilityManager(QWidget):
         # Create a default widget for fallback
         default_widget = QWidget()
         default_layout = QVBoxLayout(default_widget)
-        default_label = QLabel("No workspace-specific utilities")
-        default_label.setAlignment(Qt.AlignCenter)
-        default_layout.addWidget(default_label)
+        default_layout.setAlignment(Qt.AlignCenter)
         
         self._stacked_widget.addWidget(default_widget)
         self._stacked_widget.setCurrentWidget(default_widget)
@@ -97,10 +94,15 @@ class WorkspaceUtilityManager(QWidget):
             workspace_id: ID of the active workspace
             workspace_widget: Reference to the workspace widget
         """
+        # Store the active workspace ID
+        self._active_workspace_id = workspace_id
+        
         if workspace_id in self._workspace_utilities:
             utility = self._workspace_utilities[workspace_id]
             utility.set_workspace(workspace_widget)
             self._stacked_widget.setCurrentWidget(utility)
+            
+            # No need to call methods - BaseWorkspaceUtility handles resizing automatically
         else:
             # Show the default widget if no specific utility is available
             self._stacked_widget.setCurrentIndex(self._stacked_widget.count() - 1)

@@ -4,8 +4,6 @@ Pattern workspace utility for PySignalDecipher.
 This module provides utilities specific to the Pattern Recognition workspace.
 """
 
-from PySide6.QtWidgets import QComboBox, QSpinBox
-
 from .base_workspace_utility import BaseWorkspaceUtility
 
 
@@ -25,42 +23,138 @@ class PatternWorkspaceUtility(BaseWorkspaceUtility):
             parent: Parent widget
         """
         super().__init__(theme_manager, parent)
+    
+    def register_controls(self):
+        """Register all controls for the pattern workspace utility."""
+        # Pattern recognition method
+        self.add_combo_box(
+            id="method",
+            label="Method:",
+            items=["Correlation", "Feature Matching", "Template Matching", "Machine Learning"],
+            callback=self._method_changed
+        )
         
-        # Set up the UI
-        self._setup_ui()
+        # Similarity metric selection
+        self.add_combo_box(
+            id="similarity",
+            label="Similarity:",
+            items=["Euclidean", "Manhattan", "Cosine", "Pearson"]
+        )
         
-    def _setup_ui(self):
-        """Set up the user interface for the pattern workspace utility."""
-        # Create pattern method selection
-        method_combo = self._create_combo_box([
-            "Correlation", 
-            "Feature Matching", 
-            "Template Matching"
-        ])
-        self._create_control_pair("Method:", method_combo)
+        # Threshold control
+        self.add_spin_box(
+            id="threshold",
+            label="Threshold:",
+            minimum=50,
+            maximum=100,
+            value=75
+        )
         
-        # Create threshold control
-        threshold_spin = QSpinBox()
-        threshold_spin.setRange(50, 100)
-        threshold_spin.setValue(75)
-        threshold_spin.setSuffix("%")
-        self._create_control_pair("Threshold:", threshold_spin)
+        # Window size control
+        self.add_spin_box(
+            id="window_size",
+            label="Window Size:",
+            minimum=8,
+            maximum=1024,
+            value=64
+        )
         
-        # Create detect button
-        self._create_button("Detect Patterns")
+        # Template selection
+        self.add_combo_box(
+            id="template",
+            label="Template:",
+            items=["None", "Custom", "Square Wave", "Sine Wave", "BPSK", "QPSK"]
+        )
         
-        # Create save button
-        self._create_button("Save Pattern")
+        # Tolerance control
+        self.add_spin_box(
+            id="tolerance",
+            label="Tolerance:",
+            minimum=1,
+            maximum=100,
+            value=10
+        )
         
-        # Update the layout to distribute controls
-        self._update_layout()
+        # Normalize checkbox
+        self.add_check_box(
+            id="normalize",
+            text="Normalize Signal",
+            checked=True
+        )
         
+        # Highlight matches checkbox
+        self.add_check_box(
+            id="highlight",
+            text="Highlight Matches",
+            checked=True
+        )
+        
+        # Detect patterns button
+        self.add_button(
+            id="detect",
+            text="Detect Patterns",
+            callback=self._detect_patterns
+        )
+        
+        # Save pattern button
+        self.add_button(
+            id="save",
+            text="Save Pattern",
+            callback=self._save_pattern
+        )
+        
+        # Load pattern button
+        self.add_button(
+            id="load",
+            text="Load Pattern",
+            callback=self._load_pattern
+        )
+        
+        # Clear button
+        self.add_button(
+            id="clear",
+            text="Clear",
+            callback=self._clear
+        )
+    
+    def _method_changed(self, method):
+        """
+        Handle changes to the selected pattern recognition method.
+        
+        Args:
+            method: Name of the selected method
+        """
+        # Enable/disable controls based on selected method
+        is_ml = method == "Machine Learning"
+        is_template = method == "Template Matching"
+        
+        self.get_control("template").setEnabled(is_template)
+        self.get_control("similarity").setEnabled(not is_ml)
+    
+    def _detect_patterns(self):
+        """Handle detect patterns button click."""
+        # Implementation would go here
+        pass
+    
+    def _save_pattern(self):
+        """Handle save pattern button click."""
+        # Implementation would go here
+        pass
+    
+    def _load_pattern(self):
+        """Handle load pattern button click."""
+        # Implementation would go here
+        pass
+    
+    def _clear(self):
+        """Handle clear button click."""
+        # Implementation would go here
+        pass
+    
     def _workspace_updated(self):
         """
         Handle updates when the workspace is set or changed.
         """
-        # Update controls based on workspace state if needed
         if self._workspace:
-            # This would typically query the workspace for its current state
-            # and update the UI controls accordingly
+            # Update from workspace state if needed
             pass

@@ -1,11 +1,14 @@
 """
 Base workspace utility for PySignalDecipher.
 
-This module provides a base class for workspace-specific utilities with a dynamic
-grid layout system that distributes controls evenly across available space.
+This module provides a base class for workspace-specific utilities with a
+standardized approach to control creation and automatic distribution.
 """
 
-from PySide6.QtWidgets import QWidget, QGridLayout, QLabel, QPushButton, QComboBox, QSpinBox, QCheckBox
+from PySide6.QtWidgets import (
+    QWidget, QGridLayout, QLabel, QPushButton, 
+    QComboBox, QSpinBox, QDoubleSpinBox, QCheckBox
+)
 from PySide6.QtCore import Qt, QEvent
 
 
@@ -13,8 +16,9 @@ class BaseWorkspaceUtility(QWidget):
     """
     Base class for workspace-specific utilities.
     
-    Provides a dynamic grid layout system that automatically distributes
-    controls evenly across the available width.
+    Provides a standardized approach for creating and distributing controls
+    in a grid layout. Subclasses only need to define their controls in
+    register_controls() without worrying about layout management.
     """
     
     def __init__(self, theme_manager, parent=None):
@@ -33,48 +37,41 @@ class BaseWorkspaceUtility(QWidget):
         # Reference to the workspace widget
         self._workspace = None
         
-        # List to store all controls for dynamic layout
-        self._controls = []
+        # Minimum control height
+        self._min_control_height = 28
         
-        # Default item height
-        self._item_height = 30
+        # Fixed label width for alignment
+        self._label_width = 80
+        
+        # Dictionary to store all created controls by their IDs
+        self._control_widgets = {}
+        
+        # Control definition list
+        self._control_definitions = []
+        
+        # Layout properties
+        self._max_columns = 4
         
         # Set up the base UI
         self._setup_base_ui()
         
-    @property
-    def item_height(self):
-        """Get the height for all items."""
-        return self._item_height
+        # Register controls (to be implemented by subclasses)
+        self.register_controls()
         
-    @item_height.setter
-    def item_height(self, value):
-        """Set the height for all items."""
-        self._item_height = value
-        self._update_control_heights()
-        self._update_layout()  # Update layout when height changes
-        
-    def _update_control_heights(self):
-        """Update the height of all controls."""
-        for control_type, control in self._controls:
-            if control_type in ["label", "button", "combo", "spin", "check"]:
-                control.setFixedHeight(self.item_height)
-            elif control_type == "pair":
-                label, widget = control
-                label.setFixedHeight(self.item_height)
-                widget.setFixedHeight(self.item_height)
+        # Build the layout
+        self._build_layout()
         
     def _setup_base_ui(self):
         """Set up the base user interface for workspace utilities."""
-        # Main layout - using grid for dynamic spacing
+        # Main layout - using grid for precise positioning
         self._grid_layout = QGridLayout(self)
         self._grid_layout.setContentsMargins(8, 8, 8, 8)
-        self._grid_layout.setHorizontalSpacing(15)
+        self._grid_layout.setHorizontalSpacing(12)
         self._grid_layout.setVerticalSpacing(8)
         
     def _create_label(self, text):
         """
-        Create a label without adding it to the layout.
+        Create a label with consistent styling.
         
         Args:
             text: Text for the label
@@ -83,185 +80,369 @@ class BaseWorkspaceUtility(QWidget):
             QLabel: The created label
         """
         label = QLabel(text)
-        label.setFixedHeight(self.item_height)
-        self._controls.append(("label", label))
+        label.setMinimumHeight(self._min_control_height)
+        label.setFixedWidth(self._label_width)
+        label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         return label
-        
-    def _create_button(self, text, callback=None):
+    
+    def add_combo_box(self, id, label, items=None, enabled=True, callback=None):
         """
-        Create a button without adding it to the layout.
+        Add a combo box control definition.
         
         Args:
-            text: Text for the button
-            callback: Function to call when button is clicked
-            
-        Returns:
-            QPushButton: The created button
-        """
-        button = QPushButton(text)
-        button.setFixedHeight(self.item_height)
-        if callback:
-            button.clicked.connect(callback)
-        self._controls.append(("button", button))
-        return button
-        
-    def _create_combo_box(self, items=None):
-        """
-        Create a combo box without adding it to the layout.
-        
-        Args:
+            id: Unique identifier for this control
+            label: Label text for the control
             items: List of items to add to the combo box
-            
-        Returns:
-            QComboBox: The created combo box
+            enabled: Whether the control is initially enabled
+            callback: Function to call when selection changes
         """
-        combo = QComboBox()
-        combo.setFixedHeight(self.item_height)
-        if items:
-            for item in items:
-                combo.addItem(item)
-        self._controls.append(("combo", combo))
-        return combo
+        self._control_definitions.append({
+            "type": "combo",
+            "id": id,
+            "label": label,
+            "items": items or [],
+            "enabled": enabled,
+            "callback": callback
+        })
         
-    def _create_spin_box(self, minimum=0, maximum=100, value=0):
+    def add_spin_box(self, id, label, minimum=0, maximum=100, value=0, enabled=True, callback=None):
         """
-        Create a spin box without adding it to the layout.
+        Add a spin box control definition.
         
         Args:
+            id: Unique identifier for this control
+            label: Label text for the control
             minimum: Minimum value
             maximum: Maximum value
             value: Initial value
-            
-        Returns:
-            QSpinBox: The created spin box
+            enabled: Whether the control is initially enabled
+            callback: Function to call when value changes
         """
-        spin = QSpinBox()
-        spin.setFixedHeight(self.item_height)
-        spin.setRange(minimum, maximum)
-        spin.setValue(value)
-        self._controls.append(("spin", spin))
-        return spin
+        self._control_definitions.append({
+            "type": "spin",
+            "id": id,
+            "label": label,
+            "minimum": minimum,
+            "maximum": maximum,
+            "value": value,
+            "enabled": enabled,
+            "callback": callback
+        })
         
-    def _create_check_box(self, text, checked=False):
+    def add_double_spin_box(self, id, label, minimum=0.0, maximum=100.0, value=0.0, 
+                           decimals=2, suffix=None, enabled=True, callback=None):
         """
-        Create a check box without adding it to the layout.
-        
-        Args:
-            text: Text for the checkbox
-            checked: Initial checked state
-            
-        Returns:
-            QCheckBox: The created check box
-        """
-        check = QCheckBox(text)
-        check.setFixedHeight(self.item_height)
-        check.setChecked(checked)
-        self._controls.append(("check", check))
-        return check
-        
-    def _create_control_pair(self, label_text, control):
-        """
-        Create a label-control pair without adding it to the layout.
+        Add a double spin box control definition.
         
         Args:
-            label_text: Text for the label
-            control: Control widget
-            
-        Returns:
-            tuple: (QLabel, control widget)
+            id: Unique identifier for this control
+            label: Label text for the control
+            minimum: Minimum value
+            maximum: Maximum value
+            value: Initial value
+            decimals: Number of decimal places to display
+            suffix: Optional suffix text (e.g., " MHz")
+            enabled: Whether the control is initially enabled
+            callback: Function to call when value changes
         """
-        label = QLabel(label_text)
-        label.setFixedHeight(self.item_height)
-        # Control's height is already set when it was created
-        self._controls.append(("pair", (label, control)))
-        return label, control
+        self._control_definitions.append({
+            "type": "double_spin",
+            "id": id,
+            "label": label,
+            "minimum": minimum,
+            "maximum": maximum,
+            "value": value,
+            "decimals": decimals,
+            "suffix": suffix,
+            "enabled": enabled,
+            "callback": callback
+        })
         
-    def _update_layout(self):
+    def add_check_box(self, id, text, checked=False, enabled=True, callback=None):
         """
-        Update the layout to distribute controls evenly.
-        This should be called after all controls have been created.
-        Fills columns from top to bottom, then left to right.
+        Add a check box control definition.
+        
+        Args:
+            id: Unique identifier for this control
+            text: Text for the check box
+            checked: Whether the check box is initially checked
+            enabled: Whether the control is initially enabled
+            callback: Function to call when checked state changes
         """
-        # Clear the existing layout
+        self._control_definitions.append({
+            "type": "check",
+            "id": id,
+            "text": text,
+            "checked": checked,
+            "enabled": enabled,
+            "callback": callback
+        })
+        
+    def add_button(self, id, text, enabled=True, callback=None):
+        """
+        Add a button control definition.
+        
+        Args:
+            id: Unique identifier for this control
+            text: Text for the button
+            enabled: Whether the button is initially enabled
+            callback: Function to call when button is clicked
+        """
+        self._control_definitions.append({
+            "type": "button",
+            "id": id,
+            "text": text,
+            "enabled": enabled,
+            "callback": callback
+        })
+        
+    def register_controls(self):
+        """
+        Register all controls for this workspace utility.
+        
+        To be overridden by subclasses. Subclasses should call add_*
+        methods to define their controls.
+        """
+        pass
+    
+    def _build_layout(self):
+        """
+        Build the layout by creating and positioning all controls.
+        """
+        # Clear existing layout
+        self._clear_layout()
+        
+        # Clear widget references
+        self._control_widgets = {}
+        
+        # Determine number of columns based on width
+        self._calculate_columns()
+        
+        # Create and position all controls
+        self._create_and_position_controls()
+        
+        # Set up column stretching
+        self._setup_column_stretching()
+    
+    def _clear_layout(self):
+        """
+        Clear the existing layout.
+        """
         while self._grid_layout.count():
             item = self._grid_layout.takeAt(0)
             if item.widget():
                 item.widget().setParent(None)
-        
-        # Number of controls
-        num_controls = len(self._controls)
-        if num_controls == 0:
-            return
-            
-        # Calculate optimal grid dimensions based on available width
-        width = self.width()
-        if width < 50:  # Not yet properly sized
-            width = 600  # Reasonable default
-            
-        # Determine number of columns based on available width
-        if width < 300:
-            cols = 1
-        elif width < 550:
-            cols = 2
-        elif width < 800:
-            cols = 3
-        else:
-            cols = 4
-            
-        # Count the total number of rows needed based on controls
-        # Label-control pairs count as 2 rows
-        total_rows = 0
-        for control_type, _ in self._controls:
-            if control_type == "pair":
-                total_rows += 2  # Label and control need separate rows
-            else:
-                total_rows += 1
-        
-        # Calculate rows per column - distribute evenly across columns
-        rows_per_col = max(1, (total_rows + cols - 1) // cols)  # Ceiling division
-        
-        # Add all controls to the grid, filling columns from top to bottom
-        curr_row, curr_col = 0, 0
-        for control_type, control in self._controls:
-            if control_type in ["label", "button", "combo", "spin", "check"]:
-                # Add a single widget
-                self._grid_layout.addWidget(control, curr_row, curr_col)
-                curr_row += 1
-            elif control_type == "pair":
-                # For pairs, add label and control in consecutive rows
-                label, widget = control
-                self._grid_layout.addWidget(label, curr_row, curr_col)
-                curr_row += 1
-                self._grid_layout.addWidget(widget, curr_row, curr_col)
-                curr_row += 1
-                
-            # If we've filled this column, move to the next column
-            if curr_row >= rows_per_col:
-                curr_row = 0
-                curr_col += 1
-        
-        # Add column stretches to distribute space evenly
-        for c in range(cols):
-            self._grid_layout.setColumnStretch(c, 1)
-            
-    def eventFilter(self, obj, event):
+    
+    def _calculate_columns(self):
         """
-        Event filter to catch resize events.
+        Calculate the number of columns based on available width.
+        """
+        width = self.width()
+        
+        if width < 300:
+            self._max_columns = 1
+        elif width < 550:
+            self._max_columns = 2
+        elif width < 800:
+            self._max_columns = 3
+        else:
+            self._max_columns = 4
+    
+    def _create_and_position_controls(self):
+        """
+        Create and position all controls based on their definitions.
+        """
+        # Calculate positions
+        row = 0
+        col = 0
+        
+        # Create each control and add to layout
+        for definition in self._control_definitions:
+            if definition["type"] == "combo":
+                self._create_combo_box(definition, row, col)
+            elif definition["type"] == "spin":
+                self._create_spin_box(definition, row, col)
+            elif definition["type"] == "double_spin":
+                self._create_double_spin_box(definition, row, col)
+            elif definition["type"] == "check":
+                self._create_check_box(definition, row, col)
+            elif definition["type"] == "button":
+                self._create_button(definition, row, col)
+            
+            # Move to next position
+            col += 1
+            if col >= self._max_columns:
+                col = 0
+                row += 1
+    
+    def _create_combo_box(self, definition, row, col):
+        """
+        Create and position a combo box based on its definition.
         
         Args:
-            obj: Object that generated the event
-            event: The event that occurred
+            definition: Control definition
+            row: Row position
+            col: Column position
+        """
+        label = self._create_label(definition["label"])
+        
+        combo = QComboBox()
+        combo.setMinimumHeight(self._min_control_height)
+        
+        # Add items
+        for item in definition["items"]:
+            combo.addItem(item)
+        
+        # Set enabled state
+        combo.setEnabled(definition["enabled"])
+        
+        # Connect callback if provided
+        if definition["callback"]:
+            combo.currentTextChanged.connect(definition["callback"])
+        
+        # Add to layout
+        grid_col = col * 2  # Each logical column uses 2 grid columns
+        self._grid_layout.addWidget(label, row, grid_col)
+        self._grid_layout.addWidget(combo, row, grid_col + 1)
+        
+        # Store reference
+        self._control_widgets[definition["id"]] = combo
+    
+    def _create_spin_box(self, definition, row, col):
+        """
+        Create and position a spin box based on its definition.
+        
+        Args:
+            definition: Control definition
+            row: Row position
+            col: Column position
+        """
+        label = self._create_label(definition["label"])
+        
+        spin = QSpinBox()
+        spin.setMinimumHeight(self._min_control_height)
+        spin.setRange(definition["minimum"], definition["maximum"])
+        spin.setValue(definition["value"])
+        spin.setEnabled(definition["enabled"])
+        
+        # Connect callback if provided
+        if definition["callback"]:
+            spin.valueChanged.connect(definition["callback"])
+        
+        # Add to layout
+        grid_col = col * 2
+        self._grid_layout.addWidget(label, row, grid_col)
+        self._grid_layout.addWidget(spin, row, grid_col + 1)
+        
+        # Store reference
+        self._control_widgets[definition["id"]] = spin
+    
+    def _create_double_spin_box(self, definition, row, col):
+        """
+        Create and position a double spin box based on its definition.
+        
+        Args:
+            definition: Control definition
+            row: Row position
+            col: Column position
+        """
+        label = self._create_label(definition["label"])
+        
+        spin = QDoubleSpinBox()
+        spin.setMinimumHeight(self._min_control_height)
+        spin.setRange(definition["minimum"], definition["maximum"])
+        spin.setValue(definition["value"])
+        spin.setDecimals(definition["decimals"])
+        
+        if definition["suffix"]:
+            spin.setSuffix(definition["suffix"])
+            
+        spin.setEnabled(definition["enabled"])
+        
+        # Connect callback if provided
+        if definition["callback"]:
+            spin.valueChanged.connect(definition["callback"])
+        
+        # Add to layout
+        grid_col = col * 2
+        self._grid_layout.addWidget(label, row, grid_col)
+        self._grid_layout.addWidget(spin, row, grid_col + 1)
+        
+        # Store reference
+        self._control_widgets[definition["id"]] = spin
+    
+    def _create_check_box(self, definition, row, col):
+        """
+        Create and position a check box based on its definition.
+        
+        Args:
+            definition: Control definition
+            row: Row position
+            col: Column position
+        """
+        check = QCheckBox(definition["text"])
+        check.setMinimumHeight(self._min_control_height)
+        check.setChecked(definition["checked"])
+        check.setEnabled(definition["enabled"])
+        
+        # Connect callback if provided
+        if definition["callback"]:
+            check.stateChanged.connect(definition["callback"])
+        
+        # Add to layout - spans 2 columns
+        grid_col = col * 2
+        self._grid_layout.addWidget(check, row, grid_col, 1, 2)
+        
+        # Store reference
+        self._control_widgets[definition["id"]] = check
+    
+    def _create_button(self, definition, row, col):
+        """
+        Create and position a button based on its definition.
+        
+        Args:
+            definition: Control definition
+            row: Row position
+            col: Column position
+        """
+        button = QPushButton(definition["text"])
+        button.setMinimumHeight(self._min_control_height)
+        button.setEnabled(definition["enabled"])
+        
+        # Connect callback if provided
+        if definition["callback"]:
+            button.clicked.connect(definition["callback"])
+        
+        # Add to layout - spans 2 columns for consistency
+        grid_col = col * 2
+        self._grid_layout.addWidget(button, row, grid_col, 1, 2)
+        
+        # Store reference
+        self._control_widgets[definition["id"]] = button
+    
+    def _setup_column_stretching(self):
+        """
+        Set up column stretching for even distribution of space.
+        """
+        for col in range(self._max_columns * 2):
+            # For odd columns (control columns), give stretch
+            if col % 2 == 1:
+                self._grid_layout.setColumnStretch(col, 1)
+            else:
+                self._grid_layout.setColumnStretch(col, 0)  # No stretch for label columns
+    
+    def get_control(self, id):
+        """
+        Get a control widget by its ID.
+        
+        Args:
+            id: ID of the control to get
             
         Returns:
-            bool: True if the event was handled, False to pass it on
+            The control widget, or None if not found
         """
-        if obj == self and event.type() == QEvent.Resize:
-            # Update layout when widget is resized
-            self._update_layout()
-            return True
-            
-        return super().eventFilter(obj, event)
-        
+        return self._control_widgets.get(id)
+    
     def resizeEvent(self, event):
         """
         Handle resize events.
@@ -270,17 +451,15 @@ class BaseWorkspaceUtility(QWidget):
             event: Resize event
         """
         super().resizeEvent(event)
-        self._update_layout()
+        
+        # Check if we need to redistribute controls
+        old_max_columns = self._max_columns
+        self._calculate_columns()
+        
+        if old_max_columns != self._max_columns:
+            # Only rebuild if the number of columns changed
+            self._build_layout()
     
-    def _setup_ui(self):
-        """
-        Set up the user interface for this specific workspace utility.
-        
-        To be overridden by subclasses. After implementing this method,
-        subclasses should call _update_layout() to distribute controls.
-        """
-        pass
-        
     def set_workspace(self, workspace):
         """
         Set the workspace associated with this utility panel.
@@ -290,9 +469,6 @@ class BaseWorkspaceUtility(QWidget):
         """
         self._workspace = workspace
         self._workspace_updated()
-        
-        # Install event filter to catch resize events
-        self.installEventFilter(self)
         
     def _workspace_updated(self):
         """

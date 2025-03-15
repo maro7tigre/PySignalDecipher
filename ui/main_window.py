@@ -105,8 +105,8 @@ class MainWindow(QMainWindow):
         """Set up the utility panel above the tabs."""
         self._utility_panel = UtilityPanel(self._theme_manager, self)
         
-        # Set fixed height for the utility panel (can be adjusted as needed)
-        self._utility_panel.setMaximumHeight(150)
+        # Provide preferences manager to utility panel for height persistence
+        self._utility_panel.set_preferences_manager(self._preferences_manager)
         
         # Add utility panel to the main layout (at the top)
         self._main_layout.addWidget(self._utility_panel)

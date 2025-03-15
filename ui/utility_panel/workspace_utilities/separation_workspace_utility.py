@@ -4,8 +4,6 @@ Separation workspace utility for PySignalDecipher.
 This module provides utilities specific to the Signal Separation workspace.
 """
 
-from PySide6.QtWidgets import QComboBox, QSpinBox
-
 from .base_workspace_utility import BaseWorkspaceUtility
 
 
@@ -25,41 +23,150 @@ class SeparationWorkspaceUtility(BaseWorkspaceUtility):
             parent: Parent widget
         """
         super().__init__(theme_manager, parent)
+    
+    def register_controls(self):
+        """Register all controls for the separation workspace utility."""
+        # Separation method
+        self.add_combo_box(
+            id="method",
+            label="Method:",
+            items=[
+                "Frequency Domain Filtering", 
+                "Independent Component Analysis", 
+                "Wavelet Decomposition",
+                "Blind Source Separation",
+                "Neural Network"
+            ],
+            callback=self._method_changed
+        )
         
-        # Set up the UI
-        self._setup_ui()
+        # Components control
+        self.add_spin_box(
+            id="components",
+            label="Components:",
+            minimum=2,
+            maximum=10,
+            value=3
+        )
         
-    def _setup_ui(self):
-        """Set up the user interface for the separation workspace utility."""
-        # Create separation method selection
-        method_combo = self._create_combo_box([
-            "Frequency Domain Filtering", 
-            "Independent Component Analysis", 
-            "Wavelet Decomposition"
-        ])
-        self._create_control_pair("Method:", method_combo)
+        # Filter type selection
+        self.add_combo_box(
+            id="filter_type",
+            label="Filter Type:",
+            items=[
+                "Bandpass", "Lowpass", "Highpass", "Bandstop", "Custom"
+            ]
+        )
         
-        # Create component count control
-        component_spin = QSpinBox()
-        component_spin.setRange(2, 10)
-        component_spin.setValue(3)
-        self._create_control_pair("Components:", component_spin)
+        # Iterations control
+        self.add_spin_box(
+            id="iterations",
+            label="Iterations:",
+            minimum=1,
+            maximum=100,
+            value=10
+        )
         
-        # Create separate button
-        self._create_button("Separate")
+        # Minimum frequency control
+        self.add_spin_box(
+            id="min_freq",
+            label="Min Freq:",
+            minimum=0,
+            maximum=5000,
+            value=100
+        )
         
-        # Create export button
-        self._create_button("Export")
+        # Maximum frequency control
+        self.add_spin_box(
+            id="max_freq",
+            label="Max Freq:",
+            minimum=0,
+            maximum=5000,
+            value=1000
+        )
         
-        # Update the layout to distribute controls
-        self._update_layout()
+        # Auto-detect components checkbox
+        self.add_check_box(
+            id="auto_detect",
+            text="Auto-detect Components",
+            checked=True
+        )
         
+        # Preview separation checkbox
+        self.add_check_box(
+            id="preview",
+            text="Preview Separation",
+            checked=True
+        )
+        
+        # Separate button
+        self.add_button(
+            id="separate",
+            text="Separate",
+            callback=self._separate
+        )
+        
+        # Export button
+        self.add_button(
+            id="export",
+            text="Export",
+            callback=self._export
+        )
+        
+        # Reset button
+        self.add_button(
+            id="reset",
+            text="Reset",
+            callback=self._reset
+        )
+        
+        # Advanced settings button
+        self.add_button(
+            id="advanced",
+            text="Advanced...",
+            callback=self._show_advanced
+        )
+    
+    def _method_changed(self, method):
+        """
+        Handle changes to the selected separation method.
+        
+        Args:
+            method: Name of the selected method
+        """
+        # Enable/disable controls based on selected method
+        is_freq = method == "Frequency Domain Filtering"
+        is_ica = method == "Independent Component Analysis"
+        
+        self.get_control("filter_type").setEnabled(is_freq)
+        self.get_control("min_freq").setEnabled(is_freq)
+        self.get_control("max_freq").setEnabled(is_freq)
+        self.get_control("iterations").setEnabled(is_ica)
+    
+    def _separate(self):
+        """Handle separate button click."""
+        # Implementation would go here
+        pass
+    
+    def _export(self):
+        """Handle export button click."""
+        # Implementation would go here
+        pass
+    
+    def _reset(self):
+        """Handle reset button click."""
+        # Implementation would go here
+        pass
+    
+    def _show_advanced(self):
+        """Handle advanced settings button click."""
+        # Implementation would go here
+        pass
+    
     def _workspace_updated(self):
         """
         Handle updates when the workspace is set or changed.
         """
-        # Update controls based on workspace state if needed
         if self._workspace:
-            # This would typically query the workspace for its current state
-            # and update the UI controls accordingly
+            # Update from workspace state if needed
             pass

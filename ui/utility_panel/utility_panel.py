@@ -8,13 +8,92 @@ and widget-specific utilities.
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QGroupBox, QTabWidget, QSizePolicy
+    QGroupBox, QTabWidget, QSizePolicy, QSplitter
 )
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt, Signal, Slot, QSize
+from PySide6.QtGui import QCursor
 
 from .hardware_utility import HardwareUtilityPanel
 from .workspace_utility_manager import WorkspaceUtilityManager
 from .widget_utility_manager import WidgetUtilityManager
+
+
+class ResizeHandle(QWidget):
+    """
+    A custom resize handle widget that allows users to resize the utility panel.
+    """
+    
+    def __init__(self, parent=None):
+        """
+        Initialize the resize handle.
+        
+        Args:
+            parent: Parent widget
+        """
+        super().__init__(parent)
+        
+        # Set fixed height but expand horizontally
+        self.setFixedHeight(8)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        
+        # Set cursor to indicate resizing
+        self.setCursor(QCursor(Qt.SizeVerCursor))
+        
+        # Track mouse press state
+        self._pressed = False
+        
+    def paintEvent(self, event):
+        """Draw the handle with subtle indicators for user feedback."""
+        from PySide6.QtGui import QPainter, QColor, QPen
+        
+        painter = QPainter(self)
+        painter.setPen(QPen(QColor(120, 120, 120, 100), 1))
+        
+        # Draw three horizontal lines as a visual indicator
+        height = self.height()
+        width = self.width()
+        
+        for i in range(3):
+            y = height // 2 - 3 + (i * 3)
+            painter.drawLine(20, y, width - 20, y)
+            
+    def mousePressEvent(self, event):
+        """Handle mouse press events."""
+        if event.button() == Qt.LeftButton:
+            self._pressed = True
+            # Store global cursor position
+            self._start_pos = event.globalPosition().toPoint()
+            # Store parent's height
+            self._start_height = self.parent().height()
+            event.accept()
+        else:
+            super().mousePressEvent(event)
+            
+    def mouseMoveEvent(self, event):
+        """Handle mouse move events for resizing."""
+        if self._pressed:
+            # Calculate vertical movement
+            delta = event.globalPosition().toPoint().y() - self._start_pos.y()
+            # Apply new height to parent, ensuring it stays within limits
+            new_height = max(100, min(400, self._start_height + delta))
+            self.parent().setFixedHeight(new_height)
+            
+            # Store the new height in settings
+            if hasattr(self.parent(), '_preferences_manager'):
+                self.parent()._preferences_manager.set_preference(
+                    "ui/utility_panel_height", new_height)
+                
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
+            
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release events."""
+        if event.button() == Qt.LeftButton and self._pressed:
+            self._pressed = False
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
 
 
 class UtilityPanel(QWidget):
@@ -38,19 +117,28 @@ class UtilityPanel(QWidget):
         
         # Store references
         self._theme_manager = theme_manager
+        self._preferences_manager = None
         
         # Set up the panel layout and sections
         self._setup_ui()
         
         # Set size policy
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.setMinimumHeight(100)
-        self.setMaximumHeight(150)
+        
+        # Default height
+        self._default_height = 150
+        self.setFixedHeight(self._default_height)
         
     def _setup_ui(self):
         """Set up the user interface for the utility panel."""
-        # Main layout (horizontal layout for sections side by side)
-        self._main_layout = QHBoxLayout(self)
+        # Main layout (vertical to include resize handle)
+        self._outer_layout = QVBoxLayout(self)
+        self._outer_layout.setContentsMargins(0, 0, 0, 0)
+        self._outer_layout.setSpacing(0)
+        
+        # Content layout (horizontal layout for sections side by side)
+        self._content_widget = QWidget()
+        self._main_layout = QHBoxLayout(self._content_widget)
         self._main_layout.setContentsMargins(4, 4, 4, 4)
         self._main_layout.setSpacing(8)
 
@@ -81,7 +169,29 @@ class UtilityPanel(QWidget):
         widget_layout.addWidget(self._widget_utility_manager)
         self._widget_utility_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self._main_layout.addWidget(self._widget_utility_group, 1)  # Give stretch for widget utilities
+        
+        # Add content to the outer layout
+        self._outer_layout.addWidget(self._content_widget)
+        
+        # Add resize handle at the bottom
+        self._resize_handle = ResizeHandle()
+        self._outer_layout.addWidget(self._resize_handle)
 
+    def set_preferences_manager(self, preferences_manager):
+        """
+        Set the preferences manager to store panel height.
+        
+        Args:
+            preferences_manager: Reference to the PreferencesManager
+        """
+        self._preferences_manager = preferences_manager
+        
+        # Restore saved height if available
+        saved_height = self._preferences_manager.get_preference("ui/utility_panel_height")
+        if saved_height is not None:
+            # Ensure the height is within reasonable bounds
+            self.setFixedHeight(max(100, min(400, saved_height)))
+        
     def set_active_workspace(self, workspace_id, workspace_widget):
         """
         Update the workspace utility section based on the active workspace.
@@ -115,3 +225,7 @@ class UtilityPanel(QWidget):
         self._hardware_utility.apply_theme(theme_manager)
         self._workspace_utility_manager.apply_theme(theme_manager)
         self._widget_utility_manager.apply_theme(theme_manager)
+        
+        # Apply theme to resize handle
+        handle_color = self._theme_manager.get_color("border.inactive", "#CCCCCC")
+        self._resize_handle.setStyleSheet(f"background-color: {handle_color};")

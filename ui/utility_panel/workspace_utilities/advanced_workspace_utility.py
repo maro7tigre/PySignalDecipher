@@ -4,8 +4,6 @@ Advanced workspace utility for PySignalDecipher.
 This module provides utilities specific to the Advanced Analysis workspace.
 """
 
-from PySide6.QtWidgets import QComboBox, QCheckBox
-
 from .base_workspace_utility import BaseWorkspaceUtility
 
 
@@ -25,42 +23,161 @@ class AdvancedWorkspaceUtility(BaseWorkspaceUtility):
             parent: Parent widget
         """
         super().__init__(theme_manager, parent)
+    
+    def register_controls(self):
+        """Register all controls for the advanced workspace utility."""
+        # Transform selection
+        self.add_combo_box(
+            id="transform",
+            label="Transform:",
+            items=[
+                "Fourier Transform", 
+                "Wavelet Transform", 
+                "Hilbert Transform", 
+                "Z-Transform",
+                "Short-Time Fourier Transform",
+                "Custom Transform"
+            ],
+            callback=self._transform_changed
+        )
         
-        # Set up the UI
-        self._setup_ui()
+        # Window selection
+        self.add_combo_box(
+            id="window",
+            label="Window:",
+            items=[
+                "Rectangular", 
+                "Hamming", 
+                "Hanning", 
+                "Blackman", 
+                "Kaiser",
+                "Gaussian"
+            ]
+        )
         
-    def _setup_ui(self):
-        """Set up the user interface for the advanced workspace utility."""
-        # Create transform selection
-        transform_combo = self._create_combo_box([
-            "Fourier Transform", 
-            "Wavelet Transform", 
-            "Hilbert Transform", 
-            "Z-Transform"
-        ])
-        self._create_control_pair("Transform:", transform_combo)
+        # Resolution control
+        self.add_spin_box(
+            id="resolution",
+            label="Resolution:",
+            minimum=64,
+            maximum=16384,
+            value=1024
+        )
         
-        # Create window checkbox
-        self._create_check_box("Apply Window")
+        # Overlap control
+        self.add_spin_box(
+            id="overlap",
+            label="Overlap %:",
+            minimum=0,
+            maximum=99,
+            value=50
+        )
         
-        # Create normalize checkbox
-        self._create_check_box("Normalize")
+        # Parameters selection
+        self.add_combo_box(
+            id="parameters",
+            label="Parameters:",
+            items=[
+                "Default", 
+                "Custom",
+                "High Resolution",
+                "Low Latency"
+            ]
+        )
         
-        # Create analyze button
-        self._create_button("Analyze")
+        # Method selection
+        self.add_combo_box(
+            id="method",
+            label="Method:",
+            items=[
+                "Standard", 
+                "Welch's Method", 
+                "Multitaper",
+                "Burg's Method"
+            ]
+        )
         
-        # Create export button
-        self._create_button("Export")
+        # Normalize checkbox
+        self.add_check_box(
+            id="normalize",
+            text="Normalize",
+            checked=True
+        )
         
-        # Update the layout to distribute controls
-        self._update_layout()
+        # Show magnitude checkbox
+        self.add_check_box(
+            id="magnitude",
+            text="Show Magnitude",
+            checked=True
+        )
         
+        # Analyze button
+        self.add_button(
+            id="analyze",
+            text="Analyze",
+            callback=self._analyze
+        )
+        
+        # Export button
+        self.add_button(
+            id="export",
+            text="Export",
+            callback=self._export
+        )
+        
+        # Script button
+        self.add_button(
+            id="script",
+            text="Script...",
+            callback=self._show_script
+        )
+        
+        # Settings button
+        self.add_button(
+            id="settings",
+            text="Settings...",
+            callback=self._show_settings
+        )
+    
+    def _transform_changed(self, transform):
+        """
+        Handle changes to the selected transform.
+        
+        Args:
+            transform: Name of the selected transform
+        """
+        # Enable/disable controls based on selected transform
+        is_fourier = transform in ["Fourier Transform", "Short-Time Fourier Transform"]
+        is_wavelet = transform == "Wavelet Transform"
+        
+        self.get_control("window").setEnabled(is_fourier)
+        self.get_control("overlap").setEnabled(is_fourier)
+        self.get_control("parameters").setEnabled(is_wavelet)
+    
+    def _analyze(self):
+        """Handle analyze button click."""
+        # Implementation would go here
+        pass
+    
+    def _export(self):
+        """Handle export button click."""
+        # Implementation would go here
+        pass
+    
+    def _show_script(self):
+        """Handle script button click."""
+        # Implementation would go here
+        pass
+    
+    def _show_settings(self):
+        """Handle settings button click."""
+        # Implementation would go here
+        pass
+    
     def _workspace_updated(self):
         """
         Handle updates when the workspace is set or changed.
         """
-        # Update controls based on workspace state if needed
         if self._workspace:
-            # This would typically query the workspace for its current state
-            # and update the UI controls accordingly
+            # Update from workspace state if needed
             pass
