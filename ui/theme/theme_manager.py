@@ -1,5 +1,6 @@
+import os
 from typing import Dict, Any, Optional, List
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, QFile, QTextStream
 from PySide6.QtWidgets import QApplication
 
 
@@ -30,9 +31,19 @@ class ThemeManager(QObject):
         self._style_manager = style_manager
         self._preferences_manager = preferences_manager
         
+        # QSS styles directory
+        self._qss_dir = os.path.join("assets", "themes", "qss")
+        
+        # Dictionary to store loaded QSS styles
+        self._qss_styles = {}
+        
         # Connect signals
         self._color_manager.color_scheme_changed.connect(self._on_color_scheme_changed)
         
+        # Ensure QSS directory exists
+        if not os.path.exists(self._qss_dir):
+            os.makedirs(self._qss_dir, exist_ok=True)
+            
     def _on_color_scheme_changed(self, scheme_name: str) -> None:
         """
         Handle color scheme changes.
@@ -92,8 +103,62 @@ class ThemeManager(QObject):
         
         This should be called after initializing the theme system.
         """
-        # Apply the application style
-        self._style_manager.apply_application_style()
+        active_theme = self.get_active_theme()
+        
+        # First try to apply QSS if available
+        if self.apply_qss_theme(active_theme):
+            # QSS theme applied successfully
+            pass
+        else:
+            # Fall back to StyleManager for style generation
+            self._style_manager.apply_application_style()
+            
+    def load_qss_theme(self, theme_name: str) -> str:
+        """
+        Load a QSS theme file.
+        
+        Args:
+            theme_name: Name of the theme to load
+            
+        Returns:
+            str: QSS content or empty string if not found
+        """
+        # Check if already loaded
+        if theme_name in self._qss_styles:
+            return self._qss_styles[theme_name]
+            
+        # Try to load from file
+        file_path = os.path.join(self._qss_dir, f"{theme_name}_theme.qss")
+        if os.path.exists(file_path):
+            try:
+                with open(file_path, 'r') as f:
+                    qss_content = f.read()
+                    self._qss_styles[theme_name] = qss_content
+                    return qss_content
+            except IOError:
+                # Log error
+                print(f"Error: Could not load QSS file: {file_path}")
+                
+        return ""
+        
+    def apply_qss_theme(self, theme_name: str) -> bool:
+        """
+        Apply a QSS theme.
+        
+        Args:
+            theme_name: Name of the theme to apply
+            
+        Returns:
+            bool: True if the QSS theme was applied, False otherwise
+        """
+        qss_content = self.load_qss_theme(theme_name)
+        if qss_content:
+            # Apply QSS to application
+            app = QApplication.instance()
+            if app:
+                app.setStyleSheet(qss_content)
+                return True
+        return False
         
     def get_color(self, color_path: str, default: str = "#000000") -> str:
         """

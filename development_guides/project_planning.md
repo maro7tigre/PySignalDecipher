@@ -64,10 +64,12 @@ The theme system has been implemented as a modular, three-tier architecture:
    - Provides a simplified API for theme operations
    - Acts as a facade for the theme system
    - Handles theme preferences with PreferencesManager
+   - Supports direct QSS stylesheet application for static themes
 
 4. **Theme Files**:
-   - Color schemes: `assets/themes/colors/dark_colors.json` and `light_colors.json`
+   - Color schemes: `assets/themes/colors/dark_colors.json`, `light_colors.json`, and `purple_colors.json`
    - Style definitions: `assets/themes/styles/control_styles.json` and `graph_styles.json`
+   - QSS stylesheets: `assets/themes/qss/purple_theme.qss`
 
 5. **Themed Widgets**:
    - Custom widget classes in `ui/themed_widgets/`
@@ -250,10 +252,13 @@ pysignaldecipher/
 │   ├── themes/                # [IMPLEMENTED] Theme files
 │   │   ├── colors/            # Color definitions
 │   │   │   ├── dark_colors.json
-│   │   │   └── light_colors.json
-│   │   └── styles/            # Style definitions
-│   │       ├── control_styles.json
-│   │       └── graph_styles.json
+│   │   │   ├── light_colors.json
+│   │   │   └── purple_colors.json
+│   │   ├── styles/            # Style definitions
+│   │   │   ├── control_styles.json
+│   │   │   └── graph_styles.json
+│   │   └── qss/               # QSS stylesheets
+│   │       └── purple_theme.qss
 │   └── defaults/
 ├── core/                      # Core application logic
 │   ├── __init__.py
@@ -440,6 +445,20 @@ theme_manager.apply_theme()  # Apply the current theme
 - Provides a simplified API for theme operations
 - Handles theme preferences persistence
 - Coordinates theme changes across the application
+
+### 5.1.4 QSS-Based Theme Implementation
+
+The theme system now supports static QSS-based themes alongside dynamically generated styles:
+
+```python
+# Example usage
+theme_manager = ThemeManager(color_manager, style_manager, preferences_manager)
+
+# Apply theme using either QSS (if available) or StyleManager
+theme_manager.apply_theme()
+
+# Explicitly load a QSS theme
+qss_content = theme_manager.load_qss_theme("purple")
 
 ### 5.2 Tab-Based Workspace System Implementation Details (IMPLEMENTED)
 
