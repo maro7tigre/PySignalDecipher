@@ -1,17 +1,17 @@
 from .base_workspace import BaseWorkspace
 
 
-class BasicSignalWorkspace(BaseWorkspace):
+class SignalSeparationWorkspace(BaseWorkspace):
     """
-    Workspace for basic signal analysis.
+    Workspace for signal separation and isolation.
     
-    Provides tools for visualizing and analyzing signal data with fundamental
-    signal processing operations.
+    Provides tools for separating mixed signals into their component parts
+    and analyzing individual signal components.
     """
     
     def __init__(self, parent=None):
         """
-        Initialize the basic signal workspace.
+        Initialize the signal separation workspace.
         
         Args:
             parent: Parent widget
@@ -36,4 +36,4 @@ class BasicSignalWorkspace(BaseWorkspace):
         Returns:
             str: Unique ID for this workspace
         """
-        return "basic"
+        return "separation"

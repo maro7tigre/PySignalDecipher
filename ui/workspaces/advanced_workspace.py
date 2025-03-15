@@ -1,17 +1,17 @@
 from .base_workspace import BaseWorkspace
 
 
-class BasicSignalWorkspace(BaseWorkspace):
+class AdvancedAnalysisWorkspace(BaseWorkspace):
     """
-    Workspace for basic signal analysis.
+    Workspace for advanced signal analysis.
     
-    Provides tools for visualizing and analyzing signal data with fundamental
-    signal processing operations.
+    Provides sophisticated tools for in-depth signal analysis, including
+    advanced transforms, statistical analysis, and custom algorithms.
     """
     
     def __init__(self, parent=None):
         """
-        Initialize the basic signal workspace.
+        Initialize the advanced analysis workspace.
         
         Args:
             parent: Parent widget
@@ -36,4 +36,4 @@ class BasicSignalWorkspace(BaseWorkspace):
         Returns:
             str: Unique ID for this workspace
         """
-        return "basic"
+        return "advanced"

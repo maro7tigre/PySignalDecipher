@@ -1,17 +1,17 @@
 from .base_workspace import BaseWorkspace
 
 
-class BasicSignalWorkspace(BaseWorkspace):
+class PatternRecognitionWorkspace(BaseWorkspace):
     """
-    Workspace for basic signal analysis.
+    Workspace for pattern recognition within signals.
     
-    Provides tools for visualizing and analyzing signal data with fundamental
-    signal processing operations.
+    Provides tools for identifying, analyzing, and categorizing recurring
+    patterns within signal data.
     """
     
     def __init__(self, parent=None):
         """
-        Initialize the basic signal workspace.
+        Initialize the pattern recognition workspace.
         
         Args:
             parent: Parent widget
@@ -36,4 +36,4 @@ class BasicSignalWorkspace(BaseWorkspace):
         Returns:
             str: Unique ID for this workspace
         """
-        return "basic"
+        return "pattern"

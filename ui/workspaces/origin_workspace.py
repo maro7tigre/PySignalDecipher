@@ -1,17 +1,17 @@
 from .base_workspace import BaseWorkspace
 
 
-class BasicSignalWorkspace(BaseWorkspace):
+class SignalOriginWorkspace(BaseWorkspace):
     """
-    Workspace for basic signal analysis.
+    Workspace for signal origin analysis.
     
-    Provides tools for visualizing and analyzing signal data with fundamental
-    signal processing operations.
+    Provides tools for identifying and analyzing the source and origin
+    of signals, including direction finding and localization techniques.
     """
     
     def __init__(self, parent=None):
         """
-        Initialize the basic signal workspace.
+        Initialize the signal origin workspace.
         
         Args:
             parent: Parent widget
@@ -36,4 +36,4 @@ class BasicSignalWorkspace(BaseWorkspace):
         Returns:
             str: Unique ID for this workspace
         """
-        return "basic"
+        return "origin"
