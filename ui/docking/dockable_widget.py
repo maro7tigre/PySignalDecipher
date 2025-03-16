@@ -5,7 +5,7 @@ This module provides the base class for all dockable widgets in the application,
 with support for serialization, theming, and workspace-specific behavior.
 """
 
-from PySide6.QtWidgets import QDockWidget, QWidget, QMenu
+from PySide6.QtWidgets import QDockWidget, QWidget, QMenu, QApplication
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt, Signal, QEvent
 
@@ -65,9 +65,15 @@ class DockableWidget(QDockWidget):
         self._theme_manager.theme_changed.connect(self._on_theme_changed)
         
         # Default attributes
+        self._active = False
         self._can_close = True
+        self._color_option = None
         self._workspace_type = None
-        
+
+        # Set focus policies so that focus events are generated
+        self.setFocusPolicy(Qt.StrongFocus)
+        self._content_widget.setFocusPolicy(Qt.StrongFocus)
+
         # Connect signals
         self._connect_signals()
         
@@ -77,6 +83,10 @@ class DockableWidget(QDockWidget):
         
         # Clear any local stylesheet to ensure QSS theme takes precedence
         self.setStyleSheet("")
+        
+        # Install event filter to handle focus events
+        self.installEventFilter(self)
+        self._content_widget.installEventFilter(self)
     
     def _connect_signals(self):
         """Connect internal signals."""
@@ -179,6 +189,95 @@ class DockableWidget(QDockWidget):
         
         # Call the parent class method
         super().closeEvent(event)
+
+    def mousePressEvent(self, event):
+        """
+        Explicitly set focus when the widget is clicked.
+        """
+        self.setFocus(Qt.MouseFocusReason)
+        super().mousePressEvent(event)
+        
+    def eventFilter(self, obj, event):
+        """
+        Filter events for this widget.
+        
+        Args:
+            obj: Object that triggered the event
+            event: Event object
+            
+        Returns:
+            bool: True if the event was handled, False to continue processing
+        """
+        if obj == self or obj == self._content_widget:
+            if event.type() == QEvent.FocusIn:
+                self.set_active(True)
+                print(f"Active state set to: {self._active} for: {self._widget_id}")
+            elif event.type() == QEvent.FocusOut:
+                # Only deactivate if focus is leaving the dock widget
+                # and not going to one of its children
+                current_focus = QApplication.focusWidget()
+                if not self.isAncestorOf(current_focus):
+                    self.set_active(False)
+                    print(f"Active state set to: {self._active} for: {self._widget_id}")
+                else:
+                    print(f"Focus is going to child: {current_focus} for: {self._widget_id}")
+        
+        # Continue event processing
+        return super().eventFilter(obj, event)
+    
+    def set_active(self, active):
+        """
+        Set this dock widget as active/inactive.
+        
+        Args:
+            active: Whether the widget is active
+        """
+        if self._active != active:
+            self._active = active
+            self.setProperty("active", "true" if active else "false")
+            
+            # Force style update
+            self.style().unpolish(self)
+            self.style().polish(self)
+            self.update()
+    
+    def is_active(self):
+        """
+        Check if this dock widget is active.
+        
+        Returns:
+            bool: True if active, False otherwise
+        """
+        return self._active
+    
+    def set_color_option(self, color_option):
+        """
+        Set the color option for this dock widget.
+        
+        Args:
+            color_option: Color option (blue, green, red, neutral, or None)
+        """
+        if self._color_option != color_option:
+            self._color_option = color_option
+            
+            if color_option:
+                self.setProperty("color-option", color_option)
+            else:
+                self.setProperty("color-option", "")
+                
+            # Force style update
+            self.style().unpolish(self)
+            self.style().polish(self)
+            self.update()
+    
+    def get_color_option(self):
+        """
+        Get the current color option.
+        
+        Returns:
+            str: Color option or None
+        """
+        return self._color_option
     
     def _show_context_menu(self, pos):
         """
@@ -195,6 +294,49 @@ class DockableWidget(QDockWidget):
         float_action.setChecked(self.isFloating())
         float_action.triggered.connect(lambda checked: self.setFloating(checked))
         menu.addAction(float_action)
+        
+        # Color submenu
+        color_menu = QMenu("Color Option", self)
+        
+        # Default color action
+        default_action = QAction("Default", color_menu)
+        default_action.setCheckable(True)
+        default_action.setChecked(self._color_option is None)
+        default_action.triggered.connect(lambda: self.set_color_option(None))
+        color_menu.addAction(default_action)
+        
+        # Blue color action
+        blue_action = QAction("Blue", color_menu)
+        blue_action.setCheckable(True)
+        blue_action.setChecked(self._color_option == "blue")
+        blue_action.triggered.connect(lambda: self.set_color_option("blue"))
+        color_menu.addAction(blue_action)
+        
+        # Green color action
+        green_action = QAction("Green", color_menu)
+        green_action.setCheckable(True)
+        green_action.setChecked(self._color_option == "green")
+        green_action.triggered.connect(lambda: self.set_color_option("green"))
+        color_menu.addAction(green_action)
+        
+        # Red color action
+        red_action = QAction("Red", color_menu)
+        red_action.setCheckable(True)
+        red_action.setChecked(self._color_option == "red")
+        red_action.triggered.connect(lambda: self.set_color_option("red"))
+        color_menu.addAction(red_action)
+        
+        # Neutral color action
+        neutral_action = QAction("Neutral", color_menu)
+        neutral_action.setCheckable(True)
+        neutral_action.setChecked(self._color_option == "neutral")
+        neutral_action.triggered.connect(lambda: self.set_color_option("neutral"))
+        color_menu.addAction(neutral_action)
+        
+        menu.addMenu(color_menu)
+        
+        # Add separator
+        menu.addSeparator()
         
         # Close action (if closable)
         if self._can_close:
@@ -234,7 +376,8 @@ class DockableWidget(QDockWidget):
             "geometry": self.saveGeometry().toBase64().data().decode('ascii'),
             "floating": self.isFloating(),
             "visible": self.isVisible(),
-            "workspace_type": self._workspace_type
+            "workspace_type": self._workspace_type,
+            "color_option": self._color_option
         }
     
     def restore_state(self, state):
@@ -262,6 +405,9 @@ class DockableWidget(QDockWidget):
         if "workspace_type" in state:
             self._workspace_type = state["workspace_type"]
             
+        if "color_option" in state:
+            self.set_color_option(state["color_option"])
+            
         # Restore geometry if present
         if "geometry" in state:
             from PySide6.QtCore import QByteArray
@@ -284,9 +430,6 @@ class DockableWidget(QDockWidget):
         if theme_manager:
             self._theme_manager = theme_manager
             
-        # The actual styling is handled by the QSS files now,
-        # but we can set some specific properties if needed
-        
         # Apply theme to the content widget if it supports it
         content = self.widget()
         if content and hasattr(content, 'apply_theme') and callable(content.apply_theme):
