@@ -33,7 +33,8 @@ pysignaldecipher/
 │   │       ├── dark_theme.qss
 │   │       ├── light_theme.qss
 │   │       └── purple_theme.qss
-│   └── defaults/
+│   └── layouts/                   # [IMPLEMENTED] Saved workspace layouts
+│       └── *.layout
 ├── core/                          # [IMPLEMENTED] Core application logic
 │   ├── __init__.py                # [PLACEHOLDER] Core application logic
 │   ├── service_registry.py        # [IMPLEMENTED] Central registry for application services
@@ -79,7 +80,12 @@ pysignaldecipher/
 │   │   ├── style_manager.py       # [IMPLEMENTED] Style generation and application
 │   │   ├── theme_manager.py       # [IMPLEMENTED] Coordinates theming system
 │   │   └── theme_editor.py        # [PLACEHOLDER] Theme customization dialog
-│   ├── layout_manager.py          # [PLACEHOLDER] Window layout management
+│   ├── docking/                   # [IMPLEMENTED] Docking system
+│   │   ├── __init__.py            # [PLACEHOLDER] Docking module API
+│   │   ├── dock_manager.py        # [IMPLEMENTED] Manages dock widgets and their state
+│   │   ├── dockable_widget.py     # [IMPLEMENTED] Base class for dockable widgets
+│   │   └── signal_view_dock.py    # [IMPLEMENTED] Signal visualization dock widget
+│   ├── layout_manager.py          # [IMPLEMENTED] Window layout management
 │   ├── themed_widgets/            # [UNFINISHED] Theme-aware widgets
 │   │   ├── __init__.py            # [IMPLEMENTED] Themed widgets module API
 │   │   ├── base_themed_widget.py  # [IMPLEMENTED] Base class for themed widgets
@@ -96,12 +102,12 @@ pysignaldecipher/
 │   │   └── workspace_utilities/   # [IMPLEMENTED] Folder for workspace-specific utilities
 │   │       ├── __init__.py        # [PLACEHOLDER] Workspace utilities init
 │   │       ├── base_workspace_utility.py  # [IMPLEMENTED] Base class using Service Registry
-│   │       ├── basic_workspace_utility.py # [MOCK] Basic Signal Analysis workspace utilities
-│   │       ├── protocol_workspace_utility.py  # [MOCK] Protocol workspace utilities
-│   │       ├── pattern_workspace_utility.py   # [MOCK] Pattern workspace utilities
-│   │       ├── separation_workspace_utility.py # [MOCK] Separation workspace utilities
-│   │       ├── origin_workspace_utility.py   # [MOCK] Origin workspace utilities
-│   │       └── advanced_workspace_utility.py # [MOCK] Advanced workspace utilities
+│   │       ├── basic_workspace_utility.py # [IMPLEMENTED] Basic Signal Analysis workspace utilities
+│   │       ├── protocol_workspace_utility.py  # [IMPLEMENTED] Protocol workspace utilities
+│   │       ├── pattern_workspace_utility.py   # [IMPLEMENTED] Pattern workspace utilities
+│   │       ├── separation_workspace_utility.py # [IMPLEMENTED] Separation workspace utilities
+│   │       ├── origin_workspace_utility.py   # [IMPLEMENTED] Origin workspace utilities
+│   │       └── advanced_workspace_utility.py # [IMPLEMENTED] Advanced workspace utilities
 │   ├── widget_utilities/          # [PLACEHOLDER] Folder for widget-specific utilities
 │   │   ├── __init__.py            # [PLACEHOLDER] Widget utilities init
 │   │   ├── base_widget_utility.py # [PLACEHOLDER] Base class for all widget utilities
@@ -126,15 +132,15 @@ pysignaldecipher/
 │   │   ├── window_menu.py         # [IMPLEMENTED] Window menu implementation
 │   │   ├── tools_menu.py          # [IMPLEMENTED] Tools menu implementation
 │   │   └── help_menu.py           # [IMPLEMENTED] Help menu implementation
-│   └── workspaces/                # [UNFINISHED] Tab-specific UIs
-│       ├── __init__.py            # [IMPLEMENTED] Workspace tabs package
-│       ├── base_workspace.py      # [IMPLEMENTED] Base class for all workspaces
-│       ├── basic_workspace.py     # [STUB] Basic signal analysis workspace
-│       ├── protocol_workspace.py  # [STUB] Protocol decoder workspace
-│       ├── pattern_workspace.py   # [STUB] Pattern recognition workspace
-│       ├── separation_workspace.py # [STUB] Signal separation workspace
-│       ├── origin_workspace.py    # [STUB] Signal origin workspace
-│       └── advanced_workspace.py  # [STUB] Advanced analysis workspace
+│   └── workspaces/                # [IMPLEMENTED] Tab-specific UIs
+│       ├── __init__.py            # [PLACEHOLDER] Workspace tabs package
+│       ├── base_workspace.py      # [PLACEHOLDER] Base class for all workspaces
+│       ├── basic_workspace.py     # [PLACEHOLDER] Basic signal analysis workspace
+│       ├── protocol_workspace.py  # [PLACEHOLDER] Protocol decoder workspace
+│       ├── pattern_workspace.py   # [PLACEHOLDER] Pattern recognition workspace
+│       ├── separation_workspace.py # [PLACEHOLDER] Signal separation workspace
+│       ├── origin_workspace.py    # [PLACEHOLDER] Signal origin workspace
+│       └── advanced_workspace.py  # [PLACEHOLDER] Advanced analysis workspace
 ├── utils/                         # [UNFINISHED] Utility functions and helpers
 │   ├── __init__.py                # [PLACEHOLDER] Utility functions and helpers
 │   ├── config.py                  # [PLACEHOLDER] Configuration management

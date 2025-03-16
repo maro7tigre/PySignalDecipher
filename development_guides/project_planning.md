@@ -38,7 +38,9 @@ ServiceRegistry.initialize(
     style_manager=style_manager,
     preferences_manager=preferences_manager,
     theme_manager=theme_manager,
-    device_manager=device_manager
+    device_manager=device_manager,
+    layout_manager=layout_manager,
+    dock_manager=dock_manager
 )
 
 # Access in any component
@@ -48,6 +50,7 @@ class SomeComponent:
     def __init__(self):
         self._theme_manager = ServiceRegistry.get_theme_manager()
         self._device_manager = ServiceRegistry.get_device_manager()
+        self._dock_manager = ServiceRegistry.get_dock_manager()
 ```
 
 #### 2.1.2 Available Services
@@ -58,6 +61,8 @@ Currently, the Service Registry provides access to:
 - `ThemeManager`: Coordinates color and style changes
 - `PreferencesManager`: Manages persistent user preferences
 - `DeviceManager`: Handles hardware device discovery and communication
+- `LayoutManager`: Manages workspace layouts and their persistence
+- `DockManager`: Manages dockable widgets within workspaces
 
 #### 2.1.3 Adding New Services
 
@@ -227,22 +232,122 @@ class CustomWorkspace(BaseWorkspace):
         return "custom"
 ```
 
-### 3.4 Window Management System (PLANNED)
+### 3.4 Docking System (IMPLEMENTED)
 
-The application will use a flexible docking system within each workspace that allows users to arrange tools according to their workflow needs.
+The application uses a flexible docking system within each workspace that allows users to arrange tools according to their workflow needs.
 
-#### 3.4.1 Planned Components
+#### 3.4.1 Key Components
 
-- Dockable windows using Qt's QDockWidget system
-- Layout management for saving and loading window arrangements
-- Floating, tabbed, and minimized window states
+- **DockManager**: Central manager for dock widgets across the application
+- **DockableWidget**: Base class for all dockable widgets with common functionality
+- **SignalViewDock**: Example implementation for signal visualization
+
+#### 3.4.2 Features
+
+- Support for floating, docking, and tabbed arrangements of widgets
+- Customizable dock appearance including color options
+- Persistent state including position, size, and visibility
+- Context menu for dock operations
+- Workspace-specific dock management
+
+#### 3.4.3 How to Use the Docking System
+
+```python
+from core.service_registry import ServiceRegistry
+
+# Get the dock manager
+dock_manager = ServiceRegistry.get_dock_manager()
+
+# Create a new dock widget in a workspace
+signal_view = dock_manager.create_dock(
+    workspace_id="basic",
+    dock_type="signal_view",
+    title="Time Domain",
+    area=Qt.RightDockWidgetArea
+)
+
+# Get an existing dock widget
+existing_dock = dock_manager.get_dock("basic", "signal_view_1")
+
+# Remove a dock widget
+dock_manager.remove_dock("basic", "signal_view_1")
+
+# Get all docks for a workspace
+workspace_docks = dock_manager.get_docks_for_workspace("basic")
+```
+
+#### 3.4.4 Creating Custom Dock Widgets
+
+To create a custom dock widget:
+
+1. Create a new class that extends `DockableWidget`
+2. Implement the content in `_setup_content()`
+3. Register the dock type with the DockManager
+
+```python
+from ui.docking.dockable_widget import DockableWidget
+
+class MyCustomDock(DockableWidget):
+    def __init__(self, title="My Dock", parent=None, widget_id=None):
+        super().__init__(title, parent, widget_id)
+        
+    def _setup_content(self):
+        # Create and set up the content widget
+        layout = QVBoxLayout(self._content_widget)
+        layout.addWidget(MyCustomWidget())
+
+# Register with dock manager
+dock_manager.register_dock_type("my_custom", MyCustomDock)
+```
+
+### 3.5 Layout Management System (IMPLEMENTED)
+
+The LayoutManager provides functionality for creating, saving, and restoring workspace layouts.
+
+#### 3.5.1 Key Components
+
+- **LayoutManager**: Main class for layout management
+- **LayoutDefinition**: Data class representing a complete layout
+- **DockWidgetState**: Data class representing dock widget state
+- **LayoutManagerDialog**: Dialog for managing layouts
+
+#### 3.5.2 Features
+
+- Save and restore complete workspace layouts
 - Default layouts for each workspace type
+- User-defined layouts with custom names
+- Layout persistence to files
+- Dialog for managing layouts
 
-#### 3.4.2 Implementation Strategy
+#### 3.5.3 How to Use the Layout Manager
 
-- Create a LayoutManager class to handle saving/loading layouts
-- Use Qt's state saving/restoration mechanism
-- Implement custom serialization for complex dock arrangements
+```python
+from core.service_registry import ServiceRegistry
+
+# Get the layout manager
+layout_manager = ServiceRegistry.get_layout_manager()
+
+# Create a new layout
+layout_id = layout_manager.create_layout(
+    workspace_type="basic",
+    name="My Custom Layout",
+    main_window=main_window,
+    is_default=False
+)
+
+# Apply a layout
+layout_manager.apply_layout(
+    workspace_type="basic",
+    layout_id=layout_id,
+    main_window=main_window
+)
+
+# Get the default layout
+default_layout = layout_manager.get_default_layout("basic")
+
+# Set a layout as the default
+layout_manager.set_layout_as_default("basic", layout_id)
+```
 
 ## 4. Save/Export/Load/Import System (PLANNED)
 
@@ -333,7 +438,8 @@ The development of PySignalDecipher is organized into clear phases:
 - ✅ Device Management system - Complete with connection handling and device discovery
 - ✅ Utility Panel system - Implemented with specialized panels for different workspaces
 - ✅ Menu system - Fully implemented with proper organization and handlers
-- 🔄 Window management framework (PLANNED) - Basic structure in place, refinement needed
+- ✅ Docking system - Implemented with DockManager, DockableWidget, and support for layouts
+- ✅ Layout management system - Complete with saving, loading, and UI for managing layouts
 - 🔄 Signal data model (PLANNED) - File structure defined, implementation pending
 - 🔄 Core project structure (PARTIALLY IMPLEMENTED) - Basic structure in place, needs completion
 
@@ -377,6 +483,7 @@ class MyComponent:
         self._theme_manager = ServiceRegistry.get_theme_manager()
         self._device_manager = ServiceRegistry.get_device_manager()
         self._preferences_manager = ServiceRegistry.get_preferences_manager()
+        self._dock_manager = ServiceRegistry.get_dock_manager()
         
         # Initialize with the services
         self._setup_ui()
@@ -416,50 +523,78 @@ class MyWorkspaceUtility(BaseWorkspaceUtility):
         pass
 ```
 
-### 7.4 Adding New Services
+### 7.4 Docking System Integration
 
-When adding a new service to the application:
-
-1. Create the service class in the appropriate module:
+When creating new dock widgets, extend `DockableWidget`:
 
 ```python
-# core/my_feature/my_service.py
-class MyService:
-    def __init__(self):
-        # Initialize service
-        pass
+from ui.docking.dockable_widget import DockableWidget
+
+class MyDockWidget(DockableWidget):
+    def __init__(self, title="My Dock", parent=None, widget_id=None):
+        super().__init__(title, parent, widget_id)
         
-    def do_something(self):
-        # Service functionality
-        pass
+    def _setup_content(self):
+        # Set up the dock content here
+        layout = QVBoxLayout(self._content_widget)
+        # Add widgets to the layout
+        
+    def _add_context_menu_items(self, menu):
+        # Add dock-specific context menu items
+        action = QAction("My Custom Action", menu)
+        action.triggered.connect(self._my_custom_action)
+        menu.addAction(action)
+        
+    def save_state(self):
+        # Save dock-specific state
+        state = super().save_state()
+        state["my_custom_setting"] = self._my_setting
+        return state
+        
+    def restore_state(self, state):
+        # Restore dock-specific state
+        result = super().restore_state(state)
+        if "my_custom_setting" in state:
+            self._my_setting = state["my_custom_setting"]
+        return result
 ```
 
-2. Update the ServiceRegistry:
+### 7.5 Using the Layout Manager
+
+To integrate with the layout manager:
 
 ```python
-# core/service_registry.py
-@classmethod
-def get_my_service(cls):
-    """Get the My Service instance."""
-    if cls._my_service is None:
-        raise RuntimeError("MyService not initialized in ServiceRegistry")
-    return cls._my_service
-```
+from core.service_registry import ServiceRegistry
 
-3. Initialize the service in main.py:
+# Create a layout manager dialog
+from ui.layout_manager import LayoutManagerDialog
 
-```python
-# main.py
-my_service = MyService()
-
-ServiceRegistry.initialize(
-    # ... other services ...
-    my_service=my_service
-)
+def manage_layouts(self):
+    # Get the layout manager
+    layout_manager = ServiceRegistry.get_layout_manager()
+    
+    # Create and show the dialog
+    dialog = LayoutManagerDialog(
+        self,
+        layout_manager,
+        workspace_type="my_workspace"
+    )
+    dialog.exec_()
+    
+def save_layout(self):
+    # Get the layout manager
+    layout_manager = ServiceRegistry.get_layout_manager()
+    
+    # Create a new layout
+    layout_manager.create_layout(
+        workspace_type="my_workspace",
+        name="My Layout",
+        main_window=self._main_window
+    )
 ```
 
 ## 8. Conclusion
 
-This updated planning document reflects the current state of PySignalDecipher development. The core infrastructure components are taking shape, with the Service Registry, Device Management system, Theme system, and Utility Panel system now implemented. These provide a solid foundation for the remaining components that will be developed in future phases.
+This updated planning document reflects the current state of PySignalDecipher development. Significant progress has been made in implementing the core infrastructure components, with the Service Registry, Device Management system, Theme system, Utility Panel system, Docking system, and Layout Management system now fully implemented. These provide a solid foundation for the remaining components that will be developed in future phases.
 
 Developers should refer to this document for guidance on the project structure, implementation details of existing components, and guidelines for implementing new features that integrate properly with the established architecture.
