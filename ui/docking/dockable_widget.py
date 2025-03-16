@@ -5,7 +5,7 @@ This module provides the base class for all dockable widgets in the application,
 with support for serialization, theming, and workspace-specific behavior.
 """
 
-from PySide6.QtWidgets import QDockWidget, QWidget, QMenu, QApplication
+from PySide6.QtWidgets import QDockWidget, QWidget, QMenu, QApplication, QVBoxLayout, QFrame
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt, Signal, QEvent
 
@@ -38,14 +38,33 @@ class DockableWidget(QDockWidget):
         """
         super().__init__(title, parent)
         
+        # Create a container frame that will receive styling
+        self._style_container = QFrame()
+        self._style_container.setObjectName("dockStyleContainer")
+        self._style_container.setFrameShape(QFrame.NoFrame)
+        self._style_container.setAutoFillBackground(True)  # Important for background color
+        
+        # Create layout for the style container
+        self._container_layout = QVBoxLayout(self._style_container)
+        self._container_layout.setContentsMargins(0, 0, 0, 0)
+        self._container_layout.setSpacing(0)
+        
         # Initialize with an empty content widget
         # (subclasses will set their own content)
         self._content_widget = QWidget()
         
+        # Make sure content widget is transparent to allow container's background to show
+        self._content_widget.setAutoFillBackground(False)
+        self._content_widget.setAttribute(Qt.WA_TranslucentBackground, True)
+        
         # Set the ObjectName for the content widget to allow QSS targeting
         self._content_widget.setObjectName("dockContent")
         
-        self.setWidget(self._content_widget)
+        # Add content widget to the style container
+        self._container_layout.addWidget(self._content_widget)
+        
+        # Set the style container as the dock widget's widget
+        self.setWidget(self._style_container)
         
         # Set up object name as widget ID for layout management
         self._widget_id = widget_id or self.__class__.__name__
@@ -73,6 +92,7 @@ class DockableWidget(QDockWidget):
         # Set focus policies so that focus events are generated
         self.setFocusPolicy(Qt.StrongFocus)
         self._content_widget.setFocusPolicy(Qt.StrongFocus)
+        self._style_container.setFocusPolicy(Qt.StrongFocus)
 
         # Connect signals
         self._connect_signals()
@@ -81,12 +101,10 @@ class DockableWidget(QDockWidget):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._show_context_menu)
         
-        # Clear any local stylesheet to ensure QSS theme takes precedence
-        self.setStyleSheet("")
-        
         # Install event filter to handle focus events
         self.installEventFilter(self)
         self._content_widget.installEventFilter(self)
+        self._style_container.installEventFilter(self)
     
     def _connect_signals(self):
         """Connect internal signals."""
@@ -208,19 +226,15 @@ class DockableWidget(QDockWidget):
         Returns:
             bool: True if the event was handled, False to continue processing
         """
-        if obj == self or obj == self._content_widget:
+        if obj == self or obj == self._content_widget or obj == self._style_container:
             if event.type() == QEvent.FocusIn:
                 self.set_active(True)
-                print(f"Active state set to: {self._active} for: {self._widget_id}")
             elif event.type() == QEvent.FocusOut:
                 # Only deactivate if focus is leaving the dock widget
                 # and not going to one of its children
                 current_focus = QApplication.focusWidget()
                 if not self.isAncestorOf(current_focus):
                     self.set_active(False)
-                    print(f"Active state set to: {self._active} for: {self._widget_id}")
-                else:
-                    print(f"Focus is going to child: {current_focus} for: {self._widget_id}")
         
         # Continue event processing
         return super().eventFilter(obj, event)
@@ -234,12 +248,20 @@ class DockableWidget(QDockWidget):
         """
         if self._active != active:
             self._active = active
-            self.setProperty("active", "true" if active else "false")
             
-            # Force style update
+            # Set property on both the dock widget and the style container for QSS targeting
+            self.setProperty("active", "true" if active else "false")
+            self._style_container.setProperty("active", "true" if active else "false")
+            
+            # Force style update on both widgets
             self.style().unpolish(self)
             self.style().polish(self)
+            self._style_container.style().unpolish(self._style_container)
+            self._style_container.style().polish(self._style_container)
+            
+            # Update both widgets
             self.update()
+            self._style_container.update()
     
     def is_active(self):
         """
@@ -260,15 +282,23 @@ class DockableWidget(QDockWidget):
         if self._color_option != color_option:
             self._color_option = color_option
             
+            # Set property on both the dock widget and the style container for QSS targeting
             if color_option:
                 self.setProperty("color-option", color_option)
+                self._style_container.setProperty("color-option", color_option)
             else:
                 self.setProperty("color-option", "")
-                
-            # Force style update
+                self._style_container.setProperty("color-option", "")
+            
+            # Force style update on both widgets
             self.style().unpolish(self)
             self.style().polish(self)
+            self._style_container.style().unpolish(self._style_container)
+            self._style_container.style().polish(self._style_container)
+            
+            # Update both widgets
             self.update()
+            self._style_container.update()
     
     def get_color_option(self):
         """
@@ -427,10 +457,13 @@ class DockableWidget(QDockWidget):
         Args:
             theme_manager: Optional theme manager reference
         """
-        if theme_manager:
+        if theme_manager and not isinstance(theme_manager, str):
             self._theme_manager = theme_manager
             
         # Apply theme to the content widget if it supports it
-        content = self.widget()
-        if content and hasattr(content, 'apply_theme') and callable(content.apply_theme):
-            content.apply_theme(self._theme_manager)
+        content = self._content_widget
+        if content and hasattr(content, 'apply_theme') and callable(getattr(content, 'apply_theme', None)):
+            try:
+                content.apply_theme(self._theme_manager)
+            except Exception as e:
+                print(f"Error applying theme to content widget: {e}")

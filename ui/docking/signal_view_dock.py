@@ -46,45 +46,24 @@ class SignalViewDock(DockableWidget):
             "y_scale": "linear"
         }
         
-        # Store reference to placeholder for theme updates
-        self._placeholder = None
-        
         # Set up the content widget
         self._setup_content()
     
     def _setup_content(self):
         """Set up the content widget with signal visualization."""
-        # Create a widget to hold the layout
-        container = QWidget()
-        layout = QVBoxLayout(container)
+        # Create a layout for the content widget
+        layout = QVBoxLayout(self._content_widget)
         layout.setContentsMargins(0, 0, 0, 0)
         
         # Placeholder for actual signal view
         # In a real implementation, this would be a custom signal visualization widget
-        self._placeholder = QLabel("Signal Visualization Widget Placeholder")
-        self._placeholder.setAlignment(Qt.AlignCenter)
+        placeholder = QLabel("Signal Visualization Widget Placeholder")
+        placeholder.setAlignment(Qt.AlignCenter)
+        placeholder.setAutoFillBackground(False)  # Important: Keep transparent to show parent background
+        placeholder.setAttribute(Qt.WA_TranslucentBackground, True)  # Ensure transparency
         
-        # Initial styling will be applied in _apply_custom_theme
-        layout.addWidget(self._placeholder)
-        
-        # Set as the dock's widget
-        self.setWidget(container)
-    
-    def _update_placeholder_styling(self):
-        """Update the placeholder styling based on current theme."""
-        if self._placeholder and self._theme_manager:
-            bg_color = self._theme_manager.get_color("background.tertiary") 
-            text_color = self._theme_manager.get_color("text.primary")
-            self._placeholder.setStyleSheet(f"background-color: {bg_color}; color: {text_color}; padding: 20px;")
-    
-    def _apply_custom_theme(self):
-        """
-        Apply custom theme elements for the signal view dock.
-        
-        Overrides the method from DockableWidget.
-        """
-        # Update placeholder styling
-        self._update_placeholder_styling()
+        # No direct styling - rely on QSS
+        layout.addWidget(placeholder)
     
     def _add_context_menu_items(self, menu):
         """

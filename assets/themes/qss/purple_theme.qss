@@ -375,63 +375,49 @@ QDockWidget::title {
     text-align: left;
 }
 
-/* Basic styling for the dock widget contents */
-QDockWidget QWidget {
-    border: 1px solid #44475c; /* Subtle default border */
-    background-color: #282a36; /* Default background color */
+/* Style container frame */
+QFrame#dockStyleContainer {
+    border: 1px solid #44475c;
+    background-color: #282a36;
 }
 
-/* Only apply green border to the active/focused dock widget */
-QDockWidget[active="true"] QWidget {
-    border: 2px solid #23c87b; /* Green border only for active dock */
+/* Active dock styling */
+QDockWidget[active="true"] QFrame#dockStyleContainer {
+    border: 2px solid #23c87b;
 }
 
-/* Color options for dock widgets - controlled via the "color-option" property */
-/* Option 1: Default (already defined above) */
-
-/* Option 2: Blue */
-QDockWidget[color-option="blue"] QWidget {
+/* Color options for dock widgets */
+QDockWidget[color-option="blue"] QFrame#dockStyleContainer {
     background-color: #1E2A4A;
 }
 
-/* Option 3: Green */
-QDockWidget[color-option="green"] QWidget {
+QDockWidget[color-option="green"] QFrame#dockStyleContainer {
     background-color: #1A2E20;
 }
 
-/* Option 4: Red */
-QDockWidget[color-option="red"] QWidget {
+QDockWidget[color-option="red"] QFrame#dockStyleContainer {
     background-color: #2E1A1A;
 }
 
-/* Option 5: Neutral */
-QDockWidget[color-option="neutral"] QWidget {
+QDockWidget[color-option="neutral"] QFrame#dockStyleContainer {
     background-color: #323240;
 }
 
 /* Ensure active border is visible for all color options */
-QDockWidget[active="true"][color-option="blue"] QWidget {
+QDockWidget[active="true"][color-option="blue"] QFrame#dockStyleContainer {
     border: 2px solid #23c87b;
 }
 
-QDockWidget[active="true"][color-option="green"] QWidget {
+QDockWidget[active="true"][color-option="green"] QFrame#dockStyleContainer {
     border: 2px solid #23c87b;
 }
 
-QDockWidget[active="true"][color-option="red"] QWidget {
+QDockWidget[active="true"][color-option="red"] QFrame#dockStyleContainer {
     border: 2px solid #23c87b;
 }
 
-QDockWidget[active="true"][color-option="neutral"] QWidget {
+QDockWidget[active="true"][color-option="neutral"] QFrame#dockStyleContainer {
     border: 2px solid #23c87b;
-}
-
-QDockWidget::title {
-    background-color: #1d1f28;
-    color: #ffffff;
-    padding: 6px;
-    border-bottom: 1px solid #44475c;
-    text-align: left;
 }
 
 QDockWidget::close-button, QDockWidget::float-button {
