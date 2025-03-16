@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
+from core.service_registry import ServiceRegistry
+
 # Import workspace utilities
 from .workspace_utilities.basic_workspace_utility import BasicWorkspaceUtility
 from .workspace_utilities.protocol_workspace_utility import ProtocolWorkspaceUtility
@@ -26,18 +28,17 @@ class WorkspaceUtilityManager(QWidget):
     Dynamically changes the displayed utilities based on the active workspace.
     """
     
-    def __init__(self, theme_manager, parent=None):
+    def __init__(self, parent=None):
         """
         Initialize the workspace utility manager.
         
         Args:
-            theme_manager: Reference to the ThemeManager
             parent: Parent widget
         """
         super().__init__(parent)
         
-        # Store references
-        self._theme_manager = theme_manager
+        # Get theme manager from registry
+        self._theme_manager = ServiceRegistry.get_theme_manager()
         
         # Create workspace utility instances
         self._workspace_utilities = {}
@@ -101,21 +102,20 @@ class WorkspaceUtilityManager(QWidget):
             utility = self._workspace_utilities[workspace_id]
             utility.set_workspace(workspace_widget)
             self._stacked_widget.setCurrentWidget(utility)
-            
-            # No need to call methods - BaseWorkspaceUtility handles resizing automatically
         else:
             # Show the default widget if no specific utility is available
             self._stacked_widget.setCurrentIndex(self._stacked_widget.count() - 1)
             
-    def apply_theme(self, theme_manager):
+    def apply_theme(self, theme_manager=None):
         """
         Apply the current theme to all workspace utilities.
         
         Args:
-            theme_manager: Reference to the ThemeManager
+            theme_manager: Optional theme manager reference (uses registry if None)
         """
-        self._theme_manager = theme_manager
+        if theme_manager:
+            self._theme_manager = theme_manager
         
         # Apply theme to all workspace utilities
         for utility in self._workspace_utilities.values():
-            utility.apply_theme(theme_manager)
+            utility.apply_theme(self._theme_manager)

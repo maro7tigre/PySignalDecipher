@@ -1,18 +1,18 @@
-# PySignalDecipher: Project Planning Document
+# PySignalDecipher: Updated Project Planning Document
 
 ## 1. Project Development Approach
 
-PySignalDecipher will be developed as a modular, extensible platform that follows modern software engineering principles. This document defines our development approach, including UI/UX guidelines, code organization, and project structure.
+PySignalDecipher is being developed as a modular, extensible platform following modern software engineering principles. This document defines our development approach, including project architecture, component organization, and implementation status.
 
 ### 1.1 Development Philosophy
 
-- **User-Centric Design**: All features should prioritize the engineer's workflow and mental model
+- **User-Centric Design**: All features prioritize the engineer's workflow and mental model
 - **Progressive Disclosure**: Show simple interfaces by default, reveal complexity as needed
 - **Modularity**: Maintain strong separation between system components
 - **Testability**: Design components that can be tested in isolation
 - **Extensibility**: Enable future additions through plugins and extension points
 
-### 1.2 Technology Stack Confirmation
+### 1.2 Technology Stack (IMPLEMENTED)
 
 - **Core Language**: Python 3.9+
 - **GUI Framework**: PySide6 (Qt for Python)
@@ -21,492 +21,200 @@ PySignalDecipher will be developed as a modular, extensible platform that follow
 - **Data Visualization**: PyQtGraph for performance-critical displays
 - **Data Storage**: HDF5 for signal data, JSON for configurations
 
-## 2. UI/UX Design Specifications
+## 2. Core Architecture Components
 
-### 2.1 Theme System (IMPLEMENTED)
+### 2.1 Service Registry System (IMPLEMENTED)
+
+The Service Registry provides centralized access to application-wide services and managers, making them available throughout the application without excessive parameter passing.
+
+#### 2.1.1 How to Use the Service Registry
+
+Services are initialized in `main.py` and registered with the `ServiceRegistry` class. Components can then access needed services anywhere in the application:
+
+```python
+# Initialize in main.py
+ServiceRegistry.initialize(
+    color_manager=color_manager,
+    style_manager=style_manager,
+    preferences_manager=preferences_manager,
+    theme_manager=theme_manager,
+    device_manager=device_manager
+)
+
+# Access in any component
+from core.service_registry import ServiceRegistry
+
+class SomeComponent:
+    def __init__(self):
+        self._theme_manager = ServiceRegistry.get_theme_manager()
+        self._device_manager = ServiceRegistry.get_device_manager()
+```
+
+#### 2.1.2 Available Services
+
+Currently, the Service Registry provides access to:
+- `ColorManager`: Manages color schemes for the application
+- `StyleManager`: Handles UI style generation and application
+- `ThemeManager`: Coordinates color and style changes
+- `PreferencesManager`: Manages persistent user preferences
+- `DeviceManager`: Handles hardware device discovery and communication
+
+#### 2.1.3 Adding New Services
+
+When adding new application-wide services:
+1. Create the service class in the appropriate module
+2. Add a reference variable and getter method in `ServiceRegistry`
+3. Update the `initialize` method to accept and store the new service
+4. Initialize the service in `main.py` and pass it to the registry
+
+### 2.2 Device Management System (IMPLEMENTED)
+
+The Device Management System provides abstraction for hardware interaction through the `DeviceManager` class.
+
+#### 2.2.1 How to Use the DeviceManager
+
+```python
+from core.service_registry import ServiceRegistry
+
+# Get the device manager
+device_manager = ServiceRegistry.get_device_manager()
+
+# Connect to a device
+device_manager.connect_device("USB0:Device123")
+
+# Send commands
+device_manager.send_command("*IDN?")
+response = device_manager.query("MEAS:VOLT?")
+
+# Disconnect
+device_manager.disconnect_device()
+```
+
+#### 2.2.2 Features
+
+- Device discovery and connection management
+- Friendly device naming system
+- Asynchronous connection using QThread
+- Signal-based connection status notification
+- Direct command and query methods
+
+### 2.3 Preferences Management System (IMPLEMENTED)
+
+The `PreferencesManager` provides a centralized interface for storing and retrieving user preferences using Qt's QSettings.
+
+#### 2.3.1 How to Use the PreferencesManager
+
+```python
+from core.service_registry import ServiceRegistry
+
+# Get the preferences manager
+prefs = ServiceRegistry.get_preferences_manager()
+
+# Store a preference
+prefs.set_preference("workspace/active_tab", 2)
+
+# Retrieve a preference (with default)
+active_tab = prefs.get_preference("workspace/active_tab", 0)
+
+# Store and restore window state
+prefs.save_window_state(window)
+prefs.restore_window_state(window)
+```
+
+## 3. UI Components
+
+### 3.1 Theme System (IMPLEMENTED)
 
 PySignalDecipher implements a comprehensive theming system that allows full customization while providing sensible defaults.
 
-#### 2.1.1 Default Theme
+#### 3.1.1 Key Components
 
-The application uses a dark theme by default, optimized for signal analysis work:
+- **ColorManager**: Loads colors from JSON files and provides path-based access
+- **StyleManager**: Compiles Qt stylesheets based on current colors
+- **ThemeManager**: Coordinates color and style changes throughout the application
 
-- **Background Colors**: Dark grays (#1E1E1E, #252526, #2D2D30)
-- **Text**: Off-white (#E8E8E8) with high contrast for readability
-- **Accent Colors**: 
-  - Primary: Blue (#007ACC) for selection, focus and primary actions
-  - Secondary: Green (#3F9142) for confirmation and success indicators
-  - Warning: Amber (#FF8C00) for cautions
-  - Error: Red (#E51400) for errors and critical warnings
-- **Signal Display**: High-contrast colors for waveforms against dark backgrounds
-- **Grid Lines**: Subtle, non-distracting grid lines (#3F3F3F)
-
-#### 2.1.2 Theme System Architecture (IMPLEMENTED)
-
-The theme system has been implemented as a modular, three-tier architecture:
-
-1. **ColorManager**:
-   - Loads color schemes from JSON files in `assets/themes/colors/`
-   - Provides colors via a path-based API (e.g., `get_color("background.primary")`)
-   - Manages active color scheme switching
-   - Notifies observers when color schemes change
-   - Supports custom color schemes
-
-2. **StyleManager**:
-   - Compiles Qt stylesheets using colors from ColorManager
-   - Applies styles to the application or specific widgets
-   - Manages style preferences and overrides
-   - Provides style snippets for different UI components
-   - Reacts to color scheme changes
-
-3. **ThemeManager**:
-   - Coordinates ColorManager and StyleManager
-   - Provides a simplified API for theme operations
-   - Acts as a facade for the theme system
-   - Handles theme preferences with PreferencesManager
-   - Supports direct QSS stylesheet application for static themes
-
-4. **Theme Files**:
-   - Color schemes: `assets/themes/colors/dark_colors.json`, `light_colors.json`, and `purple_colors.json`
-   - Style definitions: `assets/themes/styles/control_styles.json` and `graph_styles.json`
-   - QSS stylesheets: `assets/themes/qss/purple_theme.qss`
-
-5. **Themed Widgets**:
-   - Custom widget classes in `ui/themed_widgets/`
-   - Automatically adapt to theme changes
-
-#### 2.1.3 Theme System Implementation Notes
-
-- **Signal/Slot Pattern**: Uses Qt's signal/slot mechanism for theme change notifications
-- **Observer Pattern**: Components can register as observers for theme changes
-- **Path-Based Access**: Colors are accessed using dot notation (e.g., "background.primary")
-- **Qt Stylesheets**: Styles are applied using Qt's stylesheet mechanism
-- **Preference Persistence**: Theme choices are saved using the PreferencesManager
-
-#### 2.1.4 Theme Customization (PLANNED)
-
-Users will be able to:
-- Select from built-in themes (Dark, Light)
-- Customize individual theme elements
-- Create and save custom themes
-- Export themes for sharing and import themes from files
-
-### 2.2 Tab-Based Workspace System (IMPLEMENTED)
-
-The application implements a tab-based workspace system that organizes different functional areas into separate workspaces.
-
-#### 2.2.1 Workspace Structure
-
-- **Left-Side Tabs**: Workspace tabs are positioned on the left side of the application for improved usability and space efficiency on widescreen monitors
-- **Themed Tab Widget**: Custom `ThemedTab` component extending QTabWidget with theme-awareness and enhanced functionality
-- **Workspace Inheritance**: All workspace tabs inherit from a common `BaseWorkspace` class
-
-#### 2.2.2 Workspace Types
-
-The application provides several specialized workspaces:
-
-1. **Basic Signal Analysis**: For fundamental signal visualization and analysis
-2. **Protocol Decoder**: For identifying and decoding communication protocols
-3. **Pattern Recognition**: For detecting and analyzing signal patterns
-4. **Signal Separation**: For separating mixed signals into components
-5. **Signal Origin**: For analyzing signal source and direction
-6. **Advanced Analysis**: For complex transforms and in-depth analysis
-
-#### 2.2.3 Workspace Features
-
-- **State Persistence**: Workspace layouts and settings are saved between sessions
-- **Theme Integration**: All workspace components automatically update when theme changes
-- **Menu Integration**: Workspaces can be switched via the Workspace menu or keyboard shortcuts
-- **Extensibility**: New workspaces can be added through the plugin system
-
-#### 2.2.4 Workspace Architecture
-
-- **BaseWorkspace Class**: Provides common functionality and theme integration
-- **Workspace-Specific Classes**: Extend BaseWorkspace for specialized functionality
-- **Workspace Registry**: Tracks available workspaces and their capabilities
-- **State Management**: Uses PreferencesManager for persistent storage of workspace state
-
-### 2.3 Window Management System (PLANNED)
-
-The application will use a flexible docking system within each workspace that allows users to arrange tools according to their workflow needs.
-
-#### 2.3.1 Docking Architecture
-
-- Based on Qt's QDockWidget system with enhanced functionality
-- Windows can be:
-  - Docked (attached to main window or other docks)
-  - Floated (as separate windows)
-  - Tabbed (stacked within a dock area)
-  - Minimized (as tabs in a dock bar)
-
-#### 2.3.2 Layout Management
-
-- **Default Layouts**: Each workspace will have sensible default layouts
-- **Custom Layouts**: Users can create and save custom layouts
-- **Layout Persistence**: Window arrangements are saved between sessions
-- **Layout Sharing**: Layouts can be exported and imported
-
-#### 2.3.3 Context-Sensitive Tool Availability
-
-- Tools relevant to the current task are prominently displayed
-- Less-used tools can be hidden but easily accessible
-- Tool visibility can be toggled through View menu
-
-#### 2.3.4 Implementation Strategy
-
-- Create a LayoutManager class to handle saving/loading layouts
-- Use Qt's state saving/restoration mechanism
-- Implement custom serialization for complex dock arrangements
-
-## 3. Save/Export/Load/Import System
-
-PySignalDecipher will implement a comprehensive system for saving, loading, and exporting various components.
-
-### 3.1 Project Files
-
-Projects (.psd files) will serve as containers for complete work sessions:
-
-- **Content**: Signals, configurations, analysis results, window layouts
-- **Format**: HDF5-based container with JSON metadata
-- **Versioning**: Schema versioning for backward compatibility
-
-### 3.2 Component-Specific Files
-
-Individual components can be saved separately for reuse across projects:
-
-| Component | Extension | Description | Format |
-|-----------|-----------|-------------|--------|
-| Signals | .sigsav | Captured or generated signals with metadata | HDF5 |
-| Protocols | .proto | Protocol definitions with parameters | JSON |
-| Patterns | .pattern | Signal patterns for recognition | HDF5 + JSON metadata |
-| Configs | .sigconf | Device/analysis configurations | JSON |
-| Layouts | .layout | Window arrangements | JSON |
-| Filters | .filter | Custom signal filters | JSON + Python code |
-| Theme | .sigtheme | Custom UI theme | JSON |
-
-### 3.3 Export Formats
-
-For sharing and external use, data can be exported to standard formats:
-
-#### 3.3.1 Signal Data Exports
-
-- **CSV**: Time-amplitude data for spreadsheet analysis
-- **WAV**: Audio representation of signals
-- **NumPy**: .npy/.npz files for Python processing
-- **MATLAB**: .mat files for MATLAB/Octave
-- **HDF5 (.h5)**: Hierarchical data format for efficient storage
-- **Custom Binary**: Efficient binary format with headers
-
-It's within our plan to research and develop a more ideal format to store compressed signal data more efficiently, especially for large datasets with high sampling rates.
-
-#### 3.3.2 Visual Exports
-
-- **PNG/JPEG**: Static screenshots with configurable resolution
-- **SVG**: Vector graphics for publication-quality figures
-- **PDF**: Publication-ready vector output
-- **EPS**: For scientific publication
-- **MP4/GIF**: Animated visualizations of time-domain data
-
-#### 3.3.3 Analysis Results
-
-- **JSON/XML**: Structured analysis data
-- **CSV**: Tabular results
-- **HTML**: Formatted reports with embedded graphics
-- **Markdown**: Text-based reports for documentation
-
-### 3.4 Import Capabilities
-
-The system will support importing from various sources:
-
-#### 3.4.1 Signal Data Import
-
-- **Oscilloscope Formats**: Various vendor-specific formats (Tektronix, Keysight, etc.)
-- **Standard Formats**: CSV, WAV, NumPy, MATLAB, HDF5
-- **Raw Binary**: With configurable headers and data types
-- **IQ Data**: For RF signal analysis
-- **SDR Formats**: Common Software-Defined Radio formats
-
-#### 3.4.2 Protocol Definitions
-
-- **Standard Protocol Libraries**: Import from common protocol definition databases
-- **Custom Protocol Definitions**: User-defined protocol specifications
-- **Script-Based Decoders**: Python scripts that implement custom decoders
-
-#### 3.4.3 External Resources
-
-- **Signal Pattern Libraries**: Pre-defined signal patterns for recognition
-- **Reference Waveforms**: For comparison and analysis
-- **External Configuration**: Settings files from other tools
-
-## 4. Project Structure
-
-The project is organized into the following directory structure. Note the modifications to reflect the implemented theme system, preferences manager, and tab-based workspace system:
-
-```
-pysignaldecipher/
-├── __init__.py
-├── main.py                    # Application entry point
-├── quick_test.py              # Standalone script for rapid device testing
-├── assets/                    # Static resources
-│   ├── icons/
-│   ├── themes/                # [IMPLEMENTED] Theme files
-│   │   ├── colors/            # Color definitions
-│   │   │   ├── dark_colors.json
-│   │   │   ├── light_colors.json
-│   │   │   └── purple_colors.json
-│   │   ├── styles/            # Style definitions
-│   │   │   ├── control_styles.json
-│   │   │   └── graph_styles.json
-│   │   └── qss/               # QSS stylesheets
-│   │       └── purple_theme.qss
-│   └── defaults/
-├── core/                      # Core application logic
-│   ├── __init__.py
-│   ├── hardware/              # Hardware interface (PyVISA)
-│   │   ├── __init__.py
-│   │   ├── oscilloscope.py
-│   │   ├── device_factory.py
-│   │   └── drivers/           # Device-specific drivers
-│   ├── signal/                # Signal management
-│   │   ├── __init__.py
-│   │   ├── signal_registry.py
-│   │   ├── signal_source.py
-│   │   └── signal_data.py
-│   ├── processing/            # Signal processing algorithms
-│   │   ├── __init__.py
-│   │   ├── filters.py
-│   │   ├── transforms.py
-│   │   ├── measurements.py
-│   │   └── mathematics.py
-│   ├── protocol/              # Protocol analysis
-│   │   ├── __init__.py
-│   │   ├── decoder_factory.py
-│   │   ├── protocol_base.py
-│   │   └── decoders/          # Protocol-specific decoders
-│   ├── pattern/               # Pattern recognition
-│   │   ├── __init__.py
-│   │   ├── detector.py
-│   │   ├── matcher.py
-│   │   └── pattern_library.py
-│   └── workspace/             # Project management
-│       ├── __init__.py
-│       ├── project.py
-│       ├── persistence.py
-│       └── history.py
-├── ui/                        # User interface
-│   ├── __init__.py
-│   ├── main_window.py         # [IMPLEMENTED] Main application window
-│   ├── theme/                 # [IMPLEMENTED] Theme management system
-│   │   ├── __init__.py
-│   │   ├── color_manager.py   # Color scheme management
-│   │   ├── style_manager.py   # Style generation and application
-│   │   ├── theme_manager.py   # Coordinates theming system
-│   │   └── theme_editor.py    # Theme customization dialog
-│   ├── layout_manager.py
-│   ├── themed_widgets/        # [IMPLEMENTED] Theme-aware widgets
-│   │   ├── __init__.py
-│   │   ├── base_themed_widget.py
-│   │   ├── themed_button.py
-│   │   ├── themed_label.py
-│   │   ├── themed_slider.py
-│   │   └── themed_tab.py      # [IMPLEMENTED] Themed tab widget
-│   ├── utility_panel/
-│   │   ├── __init__.py
-│   │   ├── utility_panel.py               # Main container class
-│   │   ├── hardware_utility.py            # Static hardware connection panel
-│   │   ├── workspace_utility_manager.py   # Manages workspace-specific utilities
-│   │   ├── widget_utility_manager.py      # Manages selected widget utilities
-│   │   └── workspace_utilities/           # Folder for workspace-specific utilities
-│   │       ├── __init__.py
-│   │       ├── base_workspace_utility.py  # Base class for all workspace utilities
-│   │       ├── basic_workspace_utility.py # Basic Signal Analysis workspace utilities
-│   │       ├── protocol_workspace_utility.py
-│   │       ├── pattern_workspace_utility.py
-│   │       └── ...                        # Other workspace utilities
-│   ├── widget_utilities/                  # Folder for widget-specific utilities
-│   │   ├── __init__.py
-│   │   ├── base_widget_utility.py         # Base class for all widget utilities
-│   │   ├── signal_view_utility.py         # Utilities for signal view widgets
-│   │   ├── spectrum_view_utility.py       # Utilities for spectrum view widgets
-│   │   └── ...                            # Other widget utilities
-│   ├── widgets/               # Custom widgets
-│   │   ├── __init__.py
-│   │   ├── signal_view.py
-│   │   ├── spectrum_view.py
-│   │   └── ...
-│   ├── dialogs/               # Application dialogs
-│   │   ├── __init__.py
-│   │   ├── settings_dialog.py
-│   │   ├── export_dialog.py
-│   │   └── ...
-│   ├── menus/                 # [IMPLEMENTED] Menu system
-│   │   ├── __init__.py
-│   │   ├── menu_manager.py
-│   │   ├── menu_actions.py
-│   │   ├── file_menu.py
-│   │   ├── edit_menu.py
-│   │   ├── view_menu.py
-│   │   ├── workspace_menu.py
-│   │   ├── window_menu.py
-│   │   ├── tools_menu.py
-│   │   └── help_menu.py
-│   └── workspaces/            # [IMPLEMENTED] Tab-specific UIs
-│       ├── __init__.py
-│       ├── base_workspace.py  # Base class for all workspaces
-│       ├── basic_workspace.py
-│       ├── protocol_workspace.py
-│       ├── pattern_workspace.py
-│       ├── separation_workspace.py
-│       ├── origin_workspace.py
-│       └── advanced_workspace.py
-├── utils/                     # Utility functions and helpers
-│   ├── __init__.py
-│   ├── config.py
-│   ├── logger.py
-│   ├── preferences_manager.py # [IMPLEMENTED] User preference management
-│   └── math_utils.py
-└── plugins/                   # Plugin system
-    ├── __init__.py
-    ├── plugin_manager.py
-    ├── extension_points.py
-    └── standard/              # Built-in plugins
-├── tests/                     # Unit and integration tests
-│   ├── __init__.py
-│   ├── conftest.py            # pytest configuration
-│   ├── core/                  # Tests mirroring the core package structure
-│   │   ├── hardware/
-│   │   ├── signal/
-│   │   ├── processing/
-│   │   ├── protocol/
-│   │   └── pattern/
-│   ├── ui/                    # UI tests
-│   │   ├── test_theme.py
-│   │   └── test_widgets.py
-│   ├── integration/           # Cross-module integration tests
-│   │   ├── test_workflows.py
-│   │   └── test_end_to_end.py
-│   └── test_helpers/          # Test utilities and mock objects
-│       ├── mock_oscilloscope.py
-│       └── sample_signals.py
-├── development/               # Developer guides
-│   ├── coding_standards.md
-│   ├── project_planning.md
-│   ├── project_proposal.md
-│   └── pyvisa_usage_notes.md
-└── docs/                      # Project documentation
-    ├── architecture/          # System design docs
-    │   ├── system_overview.md
-    │   ├── protocol_system.md
-    │   └── diagrams/
-    ├── user/                  # User documentation
-    │   ├── installation.md
-    │   ├── quick_start.md
-    │   └── tutorials/
-    ├── api/                   # API documentation (auto-generated)
-    └── assets/                # Documentation assets
-```
-
-## 5. Implementation Details
-
-### 5.1 Theme System Implementation Details (IMPLEMENTED)
-
-The theme system is fully implemented and consists of three primary components:
-
-#### 5.1.1 ColorManager
-
-The `ColorManager` (`ui/theme/color_manager.py`) handles color scheme management:
+#### 3.1.2 How to Use the Theme System
 
 ```python
-# Example usage
-color_manager = ColorManager()
-primary_bg = color_manager.get_color("background.primary")  # Returns "#1E1E1E" in dark theme
-color_manager.set_active_scheme("light")  # Switch to light theme
+from core.service_registry import ServiceRegistry
+
+# Get the theme manager
+theme_manager = ServiceRegistry.get_theme_manager()
+
+# Apply theme to a component
+my_component.apply_theme(theme_manager)
+
+# Get a color
+bg_color = theme_manager.get_color("background.primary")
+
+# Set the active theme
+theme_manager.set_theme("dark")
 ```
 
-**Key features**:
-- Loads color schemes from JSON files (`dark_colors.json`, `light_colors.json`)
-- Provides dot-notation access to nested color values
-- Emits signals when color scheme changes
-- Supports custom color scheme creation and persistence
-- Observer pattern for theme change notifications
+### 3.2 Utility Panel System (IMPLEMENTED)
 
-#### 5.1.2 StyleManager
+The Utility Panel provides contextual tools and controls based on the active workspace and selected elements.
 
-The `StyleManager` (`ui/theme/style_manager.py`) generates and applies Qt stylesheets:
+#### 3.2.1 Key Components
+
+- **UtilityPanel**: Main container for utility components
+- **HardwareUtilityPanel**: Controls for hardware connection and configuration
+- **WorkspaceUtilityManager**: Manages workspace-specific utilities
+- **WidgetUtilityManager**: Manages utilities for selected widgets
+
+#### The BaseWorkspaceUtility class provides a standardized way to create workspace-specific utility panels with auto-layout capabilities.
+
+#### 3.2.2 How to Use the BaseWorkspaceUtility
+
+Extend `BaseWorkspaceUtility` to create utility panels for workspaces:
 
 ```python
-# Example usage
-style_manager = StyleManager(color_manager)
-button_style = style_manager.get_style_sheet("control")  # Get button-specific styles
-style_manager.apply_application_style()  # Apply styles to entire application
+from ui.utility_panel.workspace_utilities.base_workspace_utility import BaseWorkspaceUtility
+
+class MyWorkspaceUtility(BaseWorkspaceUtility):
+    def register_controls(self):
+        # Add a combo box
+        self.add_combo_box(
+            id="my_combo",
+            label="Options:",
+            items=["Option 1", "Option 2", "Option 3"],
+            callback=self._on_option_selected
+        )
+        
+        # Add a button
+        self.add_button(
+            id="my_button",
+            text="Apply",
+            callback=self._on_apply_clicked
+        )
+        
+    def _on_option_selected(self, option):
+        # Handle option selection
+        pass
+        
+    def _on_apply_clicked(self):
+        # Handle button click
+        pass
 ```
 
-**Key features**:
-- Compiles Qt stylesheets using colors from ColorManager
-- Provides style snippets for specific UI components
-- Applies styles to the application or individual widgets
-- Manages style preferences and overrides
-- Updates styles in response to color scheme changes
+### 3.3 Tab-Based Workspace System (IMPLEMENTED)
 
-#### 5.1.3 ThemeManager
+The application implements a tab-based workspace system with specialized workspaces for different functions.
 
-The `ThemeManager` (`ui/theme/theme_manager.py`) coordinates the theme system:
+#### 3.3.1 Workspace Types
 
-```python
-# Example usage
-theme_manager = ThemeManager(color_manager, style_manager, preferences_manager)
-theme_manager.set_theme("dark")  # Switch to dark theme
-theme_manager.apply_theme()  # Apply the current theme
-```
+- **Basic Signal Analysis**: For fundamental signal visualization
+- **Protocol Decoder**: For identifying and decoding communication protocols
+- **Pattern Recognition**: For detecting and analyzing signal patterns
+- **Signal Separation**: For separating mixed signals into components
+- **Signal Origin**: For analyzing signal source and direction
+- **Advanced Analysis**: For complex transforms and analysis
 
-**Key features**:
-- Acts as a facade for ColorManager and StyleManager
-- Provides a simplified API for theme operations
-- Handles theme preferences persistence
-- Coordinates theme changes across the application
-
-### 5.1.4 QSS-Based Theme Implementation
-
-The theme system now supports static QSS-based themes alongside dynamically generated styles:
+#### 3.3.2 How to Create New Workspaces
 
 ```python
-# Example usage
-theme_manager = ThemeManager(color_manager, style_manager, preferences_manager)
+from ui.workspaces.base_workspace import BaseWorkspace
 
-# Apply theme using either QSS (if available) or StyleManager
-theme_manager.apply_theme()
-
-# Explicitly load a QSS theme
-qss_content = theme_manager.load_qss_theme("purple")
-
-### 5.2 Tab-Based Workspace System Implementation Details (IMPLEMENTED)
-
-The workspace system organizes the application's functionality into specialized areas:
-
-#### 5.2.1 ThemedTab Widget
-
-The `ThemedTab` (`ui/themed_widgets/themed_tab.py`) provides a theme-aware tab widget:
-
-```python
-# Example usage
-tab_widget = ThemedTab(parent)
-tab_widget.addTab(workspace, "Workspace Title")
-tab_widget.set_theme(theme_manager)
-```
-
-**Key features**:
-- Extends QTabWidget with theme awareness
-- Positions tabs on the left side for better space utilization
-- Automatically propagates theme changes to child widgets
-- Supports tab movement and reordering
-- Emits signals when tabs are moved or selected
-
-#### 5.2.2 BaseWorkspace
-
-The `BaseWorkspace` (`ui/workspaces/base_workspace.py`) provides a common foundation for all workspaces:
-
-```python
-# Example usage (in a subclass)
 class CustomWorkspace(BaseWorkspace):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -519,75 +227,114 @@ class CustomWorkspace(BaseWorkspace):
         return "custom"
 ```
 
-**Key features**:
-- Inherits from BaseThemedWidget for theme integration
-- Provides standard layout management
-- Handles preference persistence
-- Defines common interface for all workspaces
-- Abstracts workspace initialization
+### 3.4 Window Management System (PLANNED)
 
-#### 5.2.3 Specialized Workspaces
+The application will use a flexible docking system within each workspace that allows users to arrange tools according to their workflow needs.
 
-Each workspace inherits from BaseWorkspace and specializes for specific tasks:
+#### 3.4.1 Planned Components
 
-```python
-# Example specialized workspaces
-class BasicSignalWorkspace(BaseWorkspace): ...
-class ProtocolDecoderWorkspace(BaseWorkspace): ...
-class PatternRecognitionWorkspace(BaseWorkspace): ...
-class SignalSeparationWorkspace(BaseWorkspace): ...
-class SignalOriginWorkspace(BaseWorkspace): ...
-class AdvancedAnalysisWorkspace(BaseWorkspace): ...
-```
+- Dockable windows using Qt's QDockWidget system
+- Layout management for saving and loading window arrangements
+- Floating, tabbed, and minimized window states
+- Default layouts for each workspace type
 
-**Key features**:
-- Task-specific UI components and tools
-- Custom layouts optimized for specific workflows
-- Specialized data models and presentation
-- Focused functionality with reduced complexity
-- Common interface for consistent user experience
+#### 3.4.2 Implementation Strategy
 
-### 5.3 PreferencesManager Implementation Details (IMPLEMENTED)
+- Create a LayoutManager class to handle saving/loading layouts
+- Use Qt's state saving/restoration mechanism
+- Implement custom serialization for complex dock arrangements
 
-The `PreferencesManager` (`utils/preferences_manager.py`) manages user preferences:
+## 4. Save/Export/Load/Import System (PLANNED)
 
-```python
-# Example usage
-preferences_manager = PreferencesManager()
-preferences_manager.set_preference("theme/active_theme", "dark")
-current_theme = preferences_manager.get_preference("theme/active_theme", "dark")  # Default if not set
-preferences_manager.save_window_state(window)  # Save window geometry and state
-restored = preferences_manager.restore_window_state(window)  # Restore window geometry and state
-```
+### 4.1 Project Files (PLANNED)
 
-**Key features**:
-- Provides a centralized interface for storing and retrieving preferences
-- Uses Qt's QSettings for cross-platform persistence
-- Emits signals when preferences change
-- Supports preference groups for organization
-- Handles window state persistence (geometry, docking arrangement)
+Projects (.psd files) will serve as containers for complete work sessions:
+
+- **Content**: Signals, configurations, analysis results, window layouts
+- **Format**: HDF5-based container with JSON metadata
+- **Versioning**: Schema versioning for backward compatibility
+
+### 4.2 Component-Specific Files (PLANNED)
+
+Individual components will be savable separately for reuse across projects:
+
+| Component | Extension | Description | Format |
+|-----------|-----------|-------------|--------|
+| Signals | .sigsav | Captured or generated signals with metadata | HDF5 |
+| Protocols | .proto | Protocol definitions with parameters | JSON |
+| Patterns | .pattern | Signal patterns for recognition | HDF5 + JSON metadata |
+| Configs | .sigconf | Device/analysis configurations | JSON |
+| Layouts | .layout | Window arrangements | JSON |
+| Filters | .filter | Custom signal filters | JSON + Python code |
+| Theme | .sigtheme | Custom UI theme | JSON |
+
+### 4.3 Export Formats (PLANNED)
+
+For sharing and external use, data can be exported to standard formats:
+
+#### 4.3.1 Signal Data Exports
+
+- CSV, WAV, NumPy, MATLAB, HDF5, Custom Binary
+
+#### 4.3.2 Visual Exports
+
+- PNG/JPEG, SVG, PDF, EPS, MP4/GIF
+
+#### 4.3.3 Analysis Results
+
+- JSON/XML, CSV, HTML, Markdown
+
+### 4.4 Import Capabilities (PLANNED)
+
+The system will support importing from various sources:
+
+#### 4.4.1 Signal Data Import
+
+- Oscilloscope formats, Standard formats, Raw Binary, IQ Data, SDR Formats
+
+#### 4.4.2 Protocol Definitions
+
+- Standard Protocol Libraries, Custom Protocol Definitions, Script-Based Decoders
+
+## 5. Signal Processing Components (PLANNED)
+
+The core signal processing functionality will be implemented in dedicated modules:
+
+### 5.1 Signal Representation (PLANNED)
+
+- `SignalData` class for unified signal representation
+- Metadata support for signal attributes
+- Memory-efficient storage for large signals
+- Streaming support for real-time analysis
+
+### 5.2 Processing Algorithms (PLANNED)
+
+- Filtering (time and frequency domain)
+- Transforms (FFT, wavelet, Hilbert)
+- Feature extraction
+- Statistical analysis
+
+### 5.3 Protocol Analysis (PLANNED)
+
+- Protocol detection
+- Decoding and interpretation
+- Timing analysis
+- Protocol-specific visualizations
 
 ## 6. Implementation Phases
 
 The development of PySignalDecipher is organized into clear phases:
 
 ### Phase 1: Core Infrastructure (IN PROGRESS)
-- ✅ Theme system implementation (COMPLETED)
-  - Color management system
-  - Style management system
-  - Theme coordination and application
-- ✅ Preferences management system (COMPLETED)
-  - User preference storage and retrieval
-  - Window state persistence
-- ✅ Tab-based workspace system (COMPLETED)
-  - Themed tab widget
-  - Base workspace framework
-  - Specialized workspace templates
+- ✅ Theme system 
+- ✅ Preferences management system
+- ✅ Tab-based workspace system
+- ✅ Service Registry system
+- ✅ Device Management system
+- ✅ Utility Panel system
 - 🔄 Window management framework (PLANNED)
-  - Docking system
-  - Layout persistence
-- ⏳ Signal data model (PLANNED)
-- ⏳ Core project structure (PLANNED)
+- 🔄 Signal data model (PLANNED)
+- 🔄 Core project structure (PLANNED)
 
 ### Phase 2: Basic Functionality (PLANNED)
 - Hardware interface base classes
@@ -614,138 +361,104 @@ The development of PySignalDecipher is organized into clear phases:
 - Extended file format support
 - Advanced reporting
 
-## 7. Developer Reference: Implementing Theme-Aware Components
+## 7. Developer Guidelines
 
-When developing new UI components for PySignalDecipher, follow these guidelines to ensure proper theme integration:
+### 7.1 Using the Service Registry
 
-### 7.1 Using ThemeManager in Components
+When developing new components for PySignalDecipher, use the Service Registry to access shared services:
 
 ```python
-class MyCustomWidget(QWidget):
-    def __init__(self, theme_manager):
-        super().__init__()
-        self._theme_manager = theme_manager
+from core.service_registry import ServiceRegistry
+
+class MyComponent:
+    def __init__(self):
+        # Get required services
+        self._theme_manager = ServiceRegistry.get_theme_manager()
+        self._device_manager = ServiceRegistry.get_device_manager()
+        self._preferences_manager = ServiceRegistry.get_preferences_manager()
         
-        # Get colors from the theme
-        bg_color = self._theme_manager.get_color("background.primary")
-        text_color = self._theme_manager.get_color("text.primary")
-        
-        # Apply initial styling
-        self.setStyleSheet(f"background-color: {bg_color}; color: {text_color};")
-        
-        # Connect to theme changes
-        self._theme_manager.theme_changed.connect(self._on_theme_changed)
-    
-    def _on_theme_changed(self, theme_name):
-        # Update colors when theme changes
-        bg_color = self._theme_manager.get_color("background.primary")
-        text_color = self._theme_manager.get_color("text.primary")
-        self.setStyleSheet(f"background-color: {bg_color}; color: {text_color};")
+        # Initialize with the services
+        self._setup_ui()
 ```
 
-### 7.2 Creating Theme-Aware Widgets
+### 7.2 Theme Integration
 
-For reusable widgets that need theme awareness, extend from the base themed widget classes:
+Ensure your components properly integrate with the theme system:
 
 ```python
-# Import the base themed widget
-from ui.themed_widgets.base_themed_widget import BaseThemedWidget
-
-class MyThemedWidget(BaseThemedWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        # Widget-specific initialization
-        
-    def _apply_theme_impl(self):
-        # Apply theme-specific styling
-        bg_color = self.get_color("background.primary")
-        text_color = self.get_color("text.primary")
-        self.setStyleSheet(f"background-color: {bg_color}; color: {text_color};")
+def apply_theme(self, theme_manager=None):
+    """Apply theme to the component."""
+    # Use provided theme manager or get from registry
+    self._theme_manager = theme_manager or ServiceRegistry.get_theme_manager()
+    
+    # Apply theme to this component
+    bg_color = self._theme_manager.get_color("background.primary")
+    text_color = self._theme_manager.get_color("text.primary")
+    self.setStyleSheet(f"background-color: {bg_color}; color: {text_color};")
+    
+    # Apply theme to child components
+    for child in self.findChildren(BaseThemedWidget):
+        if hasattr(child, 'apply_theme') and callable(child.apply_theme):
+            child.apply_theme(self._theme_manager)
 ```
 
-### 7.3 Creating Custom Workspace Tabs
+### 7.3 Utility Panel Integration
 
-For new workspaces, extend from the BaseWorkspace class:
+When creating workspace-specific utilities, extend `BaseWorkspaceUtility`:
 
 ```python
-from ui.workspaces.base_workspace import BaseWorkspace
+from ui.utility_panel.workspace_utilities.base_workspace_utility import BaseWorkspaceUtility
 
-class CustomWorkspace(BaseWorkspace):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        
-    def _initialize_workspace(self):
-        # Add workspace-specific UI components
-        self._some_widget = SomeWidget()
-        self._main_layout.addWidget(self._some_widget)
-        
-    def get_workspace_id(self):
-        return "custom"
-        
-    def _load_workspace_state(self):
-        # Load workspace-specific preferences
-        if self._preferences_manager:
-            state = self._preferences_manager.get_preference("workspaces/custom/state")
-            if state:
-                # Apply the saved state
-                pass
-                
-    def _save_workspace_state(self):
-        # Save workspace-specific preferences
-        if self._preferences_manager:
-            state = {}  # Collect state data
-            self._preferences_manager.set_preference("workspaces/custom/state", state)
+class MyWorkspaceUtility(BaseWorkspaceUtility):
+    def register_controls(self):
+        # Define controls here
+        pass
 ```
 
-### 7.4 Using StyleManager for Custom Styles
+### 7.4 Adding New Services
 
-For complex components that need specialized styling:
+When adding a new service to the application:
+
+1. Create the service class in the appropriate module:
 
 ```python
-class ComplexWidget(QWidget):
-    def __init__(self, style_manager):
-        super().__init__()
-        self._style_manager = style_manager
+# core/my_feature/my_service.py
+class MyService:
+    def __init__(self):
+        # Initialize service
+        pass
         
-        # Apply widget-specific styles
-        self._style_manager.apply_widget_style(self, "custom_style")
-        
-        # Register for style updates
-        self._style_manager.register_observer("my_widget", self._on_style_updated)
-    
-    def _on_style_updated(self):
-        # Reapply styles when they change
-        self._style_manager.apply_widget_style(self, "custom_style")
-    
-    def __del__(self):
-        # Clean up observer registration
-        self._style_manager.unregister_observer("my_widget")
+    def do_something(self):
+        # Service functionality
+        pass
 ```
 
-### 7.5 Using PreferencesManager
-
-For components that need to save/restore state:
+2. Update the ServiceRegistry:
 
 ```python
-class StatefulWidget(QWidget):
-    def __init__(self, preferences_manager):
-        super().__init__()
-        self._preferences_manager = preferences_manager
-        
-        # Restore widget state
-        saved_state = self._preferences_manager.get_preference("widgets/my_widget/state")
-        if saved_state:
-            self._restore_state(saved_state)
-    
-    def closeEvent(self, event):
-        # Save widget state
-        current_state = self._get_current_state()
-        self._preferences_manager.set_preference("widgets/my_widget/state", current_state)
-        event.accept()
+# core/service_registry.py
+@classmethod
+def get_my_service(cls):
+    """Get the My Service instance."""
+    if cls._my_service is None:
+        raise RuntimeError("MyService not initialized in ServiceRegistry")
+    return cls._my_service
+```
+
+3. Initialize the service in main.py:
+
+```python
+# main.py
+my_service = MyService()
+
+ServiceRegistry.initialize(
+    # ... other services ...
+    my_service=my_service
+)
 ```
 
 ## 8. Conclusion
 
-This updated planning document reflects the current state of PySignalDecipher development. The theme system, preferences manager, and tab-based workspace system have been successfully implemented, providing a solid foundation for the remaining components. The modular architecture and clear separation of concerns continue to guide development, ensuring maintainability and extensibility as the project grows.
+This updated planning document reflects the current state of PySignalDecipher development. The core infrastructure components are taking shape, with the Service Registry, Device Management system, Theme system, and Utility Panel system now implemented. These provide a solid foundation for the remaining components that will be developed in future phases.
 
 Developers should refer to this document for guidance on the project structure, implementation details of existing components, and guidelines for implementing new features that integrate properly with the established architecture.

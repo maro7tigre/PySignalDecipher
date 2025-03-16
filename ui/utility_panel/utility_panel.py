@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot, QSize
 from PySide6.QtGui import QCursor
 
+from core.service_registry import ServiceRegistry
 from .hardware_utility import HardwareUtilityPanel
 from .workspace_utility_manager import WorkspaceUtilityManager
 from .widget_utility_manager import WidgetUtilityManager
@@ -105,18 +106,17 @@ class UtilityPanel(QWidget):
     multiple sections for different types of utilities.
     """
     
-    def __init__(self, theme_manager, parent=None):
+    def __init__(self, parent=None):
         """
         Initialize the utility panel.
         
         Args:
-            theme_manager: Reference to the ThemeManager
             parent: Parent widget
         """
         super().__init__(parent)
         
-        # Store references
-        self._theme_manager = theme_manager
+        # Get services from registry
+        self._theme_manager = ServiceRegistry.get_theme_manager()
         self._preferences_manager = None
         
         # Set up the panel layout and sections
@@ -143,7 +143,7 @@ class UtilityPanel(QWidget):
         self._main_layout.setSpacing(8)
 
         # Hardware utility section
-        self._hardware_utility = HardwareUtilityPanel(self._theme_manager)
+        self._hardware_utility = HardwareUtilityPanel()
         self._hardware_utility.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self._main_layout.addWidget(self._hardware_utility)
 
@@ -151,11 +151,7 @@ class UtilityPanel(QWidget):
         self._workspace_utility_group = QGroupBox("Workspace Utilities")
         workspace_layout = QVBoxLayout(self._workspace_utility_group)
         workspace_layout.setContentsMargins(4, 12, 4, 4)  # Reduced margins
-        self._workspace_utility_manager = WorkspaceUtilityManager(self._theme_manager)
-
-        # Set item height for workspace utilities
-        for utility in self._workspace_utility_manager._workspace_utilities.values():
-            utility.item_height = 30  # Set to desired height
+        self._workspace_utility_manager = WorkspaceUtilityManager()
 
         workspace_layout.addWidget(self._workspace_utility_manager)
         self._workspace_utility_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -165,7 +161,7 @@ class UtilityPanel(QWidget):
         self._widget_utility_group = QGroupBox("Selected Element")
         widget_layout = QVBoxLayout(self._widget_utility_group)
         widget_layout.setContentsMargins(4, 12, 4, 4)  # Reduced margins
-        self._widget_utility_manager = WidgetUtilityManager(self._theme_manager)
+        self._widget_utility_manager = WidgetUtilityManager()
         widget_layout.addWidget(self._widget_utility_manager)
         self._widget_utility_group.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self._main_layout.addWidget(self._widget_utility_group, 1)  # Give stretch for widget utilities
@@ -212,19 +208,20 @@ class UtilityPanel(QWidget):
         """
         self._widget_utility_manager.set_selected_widget(widget_type, widget)
         
-    def apply_theme(self, theme_manager):
+    def apply_theme(self, theme_manager=None):
         """
         Apply the current theme to the utility panel.
         
         Args:
-            theme_manager: Reference to the ThemeManager
+            theme_manager: Optional theme manager reference (uses registry if None)
         """
-        self._theme_manager = theme_manager
+        if theme_manager:
+            self._theme_manager = theme_manager
         
         # Apply theme to child components
-        self._hardware_utility.apply_theme(theme_manager)
-        self._workspace_utility_manager.apply_theme(theme_manager)
-        self._widget_utility_manager.apply_theme(theme_manager)
+        self._hardware_utility.apply_theme(self._theme_manager)
+        self._workspace_utility_manager.apply_theme(self._theme_manager)
+        self._widget_utility_manager.apply_theme(self._theme_manager)
         
         # Apply theme to resize handle
         handle_color = self._theme_manager.get_color("border.inactive", "#CCCCCC")

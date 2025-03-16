@@ -1,36 +1,57 @@
+"""
+PySignalDecipher - Advanced Signal Analysis & Protocol Reverse Engineering Platform.
+
+Main entry point for the application.
+"""
+
 import sys
 from PySide6.QtWidgets import QApplication
 
+# Import core components
 from ui.theme.color_manager import ColorManager
 from ui.theme.style_manager import StyleManager
 from ui.theme.theme_manager import ThemeManager
 from utils.preferences_manager import PreferencesManager
+from core.hardware.device_manager import DeviceManager
+from core.service_registry import ServiceRegistry
+
+# Import UI components
 from ui.main_window import MainWindow
 
 
 def main():
-    """Main application entry point."""
-    # Create the application
+    """Main entry point for the application."""
+    # Create Qt application
     app = QApplication(sys.argv)
     app.setApplicationName("PySignalDecipher")
     app.setOrganizationName("PySignalDecipher")
     
-    # Create managers
-    preferences_manager = PreferencesManager()
+    # Initialize core services
     color_manager = ColorManager()
     style_manager = StyleManager(color_manager)
+    preferences_manager = PreferencesManager()
     theme_manager = ThemeManager(color_manager, style_manager, preferences_manager)
+    device_manager = DeviceManager()
     
-    # Apply theme preferences
-    theme_manager.load_theme_preferences()
+    # Initialize the service registry
+    ServiceRegistry.initialize(
+        color_manager=color_manager,
+        style_manager=style_manager,
+        preferences_manager=preferences_manager,
+        theme_manager=theme_manager,
+        device_manager=device_manager
+    )
     
-    # Create and show the main window
-    main_window = MainWindow(theme_manager, preferences_manager)
+    # Create and show main window
+    main_window = MainWindow()
     main_window.show()
     
-    # Start the event loop
-    sys.exit(app.exec())
+    # Apply theme
+    theme_manager.apply_theme()
+    
+    # Start the application event loop
+    return app.exec()
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

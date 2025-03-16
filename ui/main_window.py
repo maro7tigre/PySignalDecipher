@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QMainWindow, QApplication, QStatusBar, QWidget, QVBoxLayout
 from PySide6.QtCore import QSize, Qt
 
+from core.service_registry import ServiceRegistry
 from .theme import ThemeManager
 from .menus import MenuManager, MenuActionHandler
 from .themed_widgets import ThemedTab
@@ -22,19 +23,19 @@ class MainWindow(QMainWindow):
     Handles window state restoration, theme application, and menu system.
     """
     
-    def __init__(self, theme_manager, preferences_manager):
+    def __init__(self, parent=None):
         """
         Initialize the main window.
         
         Args:
-            theme_manager: Reference to the ThemeManager
-            preferences_manager: Reference to the PreferencesManager
+            parent: Parent widget
         """
-        super().__init__()
+        super().__init__(parent)
         
-        # Store manager references
-        self._theme_manager = theme_manager
-        self._preferences_manager = preferences_manager
+        # Get managers from registry
+        self._theme_manager = ServiceRegistry.get_theme_manager()
+        self._preferences_manager = ServiceRegistry.get_preferences_manager()
+        self._device_manager = ServiceRegistry.get_device_manager()
         
         # Set window properties
         self.setWindowTitle("PySignalDecipher")
@@ -103,16 +104,13 @@ class MainWindow(QMainWindow):
         
     def _setup_utility_panel(self):
         """Set up the utility panel above the tabs."""
-        self._utility_panel = UtilityPanel(self._theme_manager, self)
+        self._utility_panel = UtilityPanel(self)
         
         # Provide preferences manager to utility panel for height persistence
         self._utility_panel.set_preferences_manager(self._preferences_manager)
         
         # Add utility panel to the main layout (at the top)
         self._main_layout.addWidget(self._utility_panel)
-        
-        # Apply theme to utility panel
-        self._utility_panel.apply_theme(self._theme_manager)
         
     def _setup_workspaces(self):
         """Set up workspace tabs."""

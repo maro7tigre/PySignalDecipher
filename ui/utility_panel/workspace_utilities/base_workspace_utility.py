@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QEvent
 
+from core.service_registry import ServiceRegistry
+
 
 class BaseWorkspaceUtility(QWidget):
     """
@@ -21,18 +23,18 @@ class BaseWorkspaceUtility(QWidget):
     register_controls() without worrying about layout management.
     """
     
-    def __init__(self, theme_manager, parent=None):
+    def __init__(self, theme_manager=None, parent=None):
         """
         Initialize the base workspace utility.
         
         Args:
-            theme_manager: Reference to the ThemeManager
+            theme_manager: Reference to the ThemeManager (uses registry if None)
             parent: Parent widget
         """
         super().__init__(parent)
         
-        # Store references
-        self._theme_manager = theme_manager
+        # Get theme manager from parameter or registry
+        self._theme_manager = theme_manager or ServiceRegistry.get_theme_manager()
         
         # Reference to the workspace widget
         self._workspace = None
@@ -419,7 +421,7 @@ class BaseWorkspaceUtility(QWidget):
         
         # Store reference
         self._control_widgets[definition["id"]] = button
-    
+        
     def _setup_column_stretching(self):
         """
         Set up column stretching for even distribution of space.
@@ -478,11 +480,12 @@ class BaseWorkspaceUtility(QWidget):
         """
         pass
         
-    def apply_theme(self, theme_manager):
+    def apply_theme(self, theme_manager=None):
         """
         Apply the current theme to this utility panel.
         
         Args:
-            theme_manager: Reference to the ThemeManager
+            theme_manager: Optional theme manager reference (uses registry if None)
         """
-        self._theme_manager = theme_manager
+        if theme_manager:
+            self._theme_manager = theme_manager

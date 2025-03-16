@@ -11,6 +11,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, Slot
 
+from core.service_registry import ServiceRegistry
+
 
 class WidgetUtilityManager(QWidget):
     """
@@ -19,18 +21,17 @@ class WidgetUtilityManager(QWidget):
     Dynamically changes the displayed utilities based on the currently selected widget.
     """
     
-    def __init__(self, theme_manager, parent=None):
+    def __init__(self, parent=None):
         """
         Initialize the widget utility manager.
         
         Args:
-            theme_manager: Reference to the ThemeManager
             parent: Parent widget
         """
         super().__init__(parent)
         
-        # Store references
-        self._theme_manager = theme_manager
+        # Get theme manager from registry
+        self._theme_manager = ServiceRegistry.get_theme_manager()
         
         # Dictionary to map widget types to utility panels
         self._widget_utilities = {}
@@ -94,16 +95,17 @@ class WidgetUtilityManager(QWidget):
             # Show the default widget if no specific utility is available
             self._stacked_widget.setCurrentWidget(self._default_widget)
             
-    def apply_theme(self, theme_manager):
+    def apply_theme(self, theme_manager=None):
         """
         Apply the current theme to all widget utilities.
         
         Args:
-            theme_manager: Reference to the ThemeManager
+            theme_manager: Optional theme manager reference (uses registry if None)
         """
-        self._theme_manager = theme_manager
+        if theme_manager:
+            self._theme_manager = theme_manager
         
         # Apply theme to all widget utilities
         for utility in self._widget_utilities.values():
             if hasattr(utility, 'apply_theme') and callable(utility.apply_theme):
-                utility.apply_theme(theme_manager)
+                utility.apply_theme(self._theme_manager)
