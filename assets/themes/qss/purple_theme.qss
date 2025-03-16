@@ -360,23 +360,77 @@ QCheckBox::indicator:checked {
     border-radius: 3px;
 }
 
-/* QDockWidget - New section for dock widgets */
+/* QDockWidget - Modified section for dock widgets */
 QDockWidget {
     color: #ffffff;
-    border: 2px solid #BB86FC;
+    border: none; /* No border on the dock widget itself */
 }
 
-/* Target the dock content by its ObjectName */
-QWidget#dockContent {
-    border: 1px solid #6f779a;
-    background-color: #282a36;
+/* Title area styling */
+QDockWidget::title {
+    background-color: #1d1f28;
+    color: #ffffff;
+    padding: 6px;
+    border-bottom: 1px solid #44475c;
+    text-align: left;
+}
+
+/* Basic styling for the dock widget contents */
+QDockWidget QWidget {
+    border: 1px solid #44475c; /* Subtle default border */
+    background-color: #282a36; /* Default background color */
+}
+
+/* Only apply green border to the active/focused dock widget */
+QDockWidget[active="true"] QWidget {
+    border: 2px solid #23c87b; /* Green border only for active dock */
+}
+
+/* Color options for dock widgets - controlled via the "color-option" property */
+/* Option 1: Default (already defined above) */
+
+/* Option 2: Blue */
+QDockWidget[color-option="blue"] QWidget {
+    background-color: #1E2A4A;
+}
+
+/* Option 3: Green */
+QDockWidget[color-option="green"] QWidget {
+    background-color: #1A2E20;
+}
+
+/* Option 4: Red */
+QDockWidget[color-option="red"] QWidget {
+    background-color: #2E1A1A;
+}
+
+/* Option 5: Neutral */
+QDockWidget[color-option="neutral"] QWidget {
+    background-color: #323240;
+}
+
+/* Ensure active border is visible for all color options */
+QDockWidget[active="true"][color-option="blue"] QWidget {
+    border: 2px solid #23c87b;
+}
+
+QDockWidget[active="true"][color-option="green"] QWidget {
+    border: 2px solid #23c87b;
+}
+
+QDockWidget[active="true"][color-option="red"] QWidget {
+    border: 2px solid #23c87b;
+}
+
+QDockWidget[active="true"][color-option="neutral"] QWidget {
+    border: 2px solid #23c87b;
 }
 
 QDockWidget::title {
     background-color: #1d1f28;
     color: #ffffff;
     padding: 6px;
-    border-bottom: 1px solid #6f779a;
+    border-bottom: 1px solid #44475c;
     text-align: left;
 }
 
@@ -397,7 +451,7 @@ QDockWidget::close-button:pressed, QDockWidget::float-button:pressed {
 
 /* Splitter styling */
 QSplitter::handle {
-    background-color: #6f779a;
+    background-color: #44475c;
 }
 
 QSplitter::handle:horizontal {

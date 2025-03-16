@@ -220,16 +220,70 @@ QLabel {
     color: #000000;
 }
 
-/* QDockWidget - New section for dock widgets */
+/* QDockWidget - Modified section for dock widgets */
 QDockWidget {
     color: #000000;
-    border: 2px solid #0078D7;
+    border: none; /* No border on the dock widget itself */
 }
 
-/* Target the dock content by its ObjectName */
-QWidget#dockContent {
-    border: 1px solid #CCCCCC;
-    background-color: #F0F0F0;
+/* Title area styling */
+QDockWidget::title {
+    background-color: #E5E5E5;
+    color: #000000;
+    padding: 6px;
+    border-bottom: 1px solid #CCCCCC;
+    text-align: left;
+}
+
+/* Basic styling for the dock widget contents */
+QDockWidget QWidget {
+    border: 1px solid #CCCCCC; /* Subtle default border */
+    background-color: #F0F0F0; /* Default background color */
+}
+
+/* Only apply green border to the active/focused dock widget */
+QDockWidget[active="true"] QWidget {
+    border: 2px solid #2E8631; /* Green border only for active dock */
+}
+
+/* Color options for dock widgets - controlled via the "color-option" property */
+/* Option 1: Default (already defined above) */
+
+/* Option 2: Blue */
+QDockWidget[color-option="blue"] QWidget {
+    background-color: #E5F0FF;
+}
+
+/* Option 3: Green */
+QDockWidget[color-option="green"] QWidget {
+    background-color: #E5F5E0;
+}
+
+/* Option 4: Red */
+QDockWidget[color-option="red"] QWidget {
+    background-color: #FFF0F0;
+}
+
+/* Option 5: Neutral */
+QDockWidget[color-option="neutral"] QWidget {
+    background-color: #F7F7F7;
+}
+
+/* Ensure active border is visible for all color options */
+QDockWidget[active="true"][color-option="blue"] QWidget {
+    border: 2px solid #2E8631;
+}
+
+QDockWidget[active="true"][color-option="green"] QWidget {
+    border: 2px solid #2E8631;
+}
+
+QDockWidget[active="true"][color-option="red"] QWidget {
+    border: 2px solid #2E8631;
+}
+
+QDockWidget[active="true"][color-option="neutral"] QWidget {
+    border: 2px solid #2E8631;
 }
 
 QDockWidget::title {
