@@ -36,6 +36,8 @@ class MainWindow(QMainWindow):
         self._theme_manager = ServiceRegistry.get_theme_manager()
         self._preferences_manager = ServiceRegistry.get_preferences_manager()
         self._device_manager = ServiceRegistry.get_device_manager()
+        self._layout_manager = ServiceRegistry.get_layout_manager()
+        self._dock_manager = ServiceRegistry.get_dock_manager()
         
         # Set window properties
         self.setWindowTitle("PySignalDecipher")
@@ -133,6 +135,8 @@ class MainWindow(QMainWindow):
         ]:
             workspace.apply_theme(self._theme_manager)
             workspace.set_preferences_manager(self._preferences_manager)
+            workspace.set_layout_manager(self._layout_manager)
+            workspace.set_dock_manager(self._dock_manager)
         
         # Add workspaces to tab widget
         self._tab_widget.addTab(self._basic_workspace, "Basic Signal Analysis")
@@ -145,6 +149,12 @@ class MainWindow(QMainWindow):
         # Connect tab changed signal
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
         
+        # After all workspaces are set up, set the main window for dock manager
+        # This directs dock operations to the current active workspace
+        current_workspace = self._tab_widget.currentWidget()
+        if hasattr(current_workspace, 'get_main_window'):
+            self._dock_manager.set_main_window(current_workspace.get_main_window())
+        
     def _on_tab_changed(self, index):
         """
         Handle tab change event.
@@ -154,6 +164,8 @@ class MainWindow(QMainWindow):
         """
         # Update the active workspace in the menu
         workspace_id = None
+        workspace = None
+        
         if 0 <= index < self._tab_widget.count():
             workspace = self._tab_widget.widget(index)
             if hasattr(workspace, 'get_workspace_id'):
@@ -166,6 +178,10 @@ class MainWindow(QMainWindow):
         # Update utility panel with the active workspace
         if workspace_id:
             self._utility_panel.set_active_workspace(workspace_id, workspace)
+            
+        # Update dock manager with the new workspace's main window
+        if workspace and hasattr(workspace, 'get_main_window'):
+            self._dock_manager.set_main_window(workspace.get_main_window())
         
     def _restore_window_state(self):
         """Restore window state from preferences."""

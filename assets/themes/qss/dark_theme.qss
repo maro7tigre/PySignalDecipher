@@ -219,3 +219,77 @@ QLabel {
     background-color: transparent;
     color: #E8E8E8;
 }
+
+/* QDockWidget - New section for dock widgets */
+QDockWidget {
+    color: #E8E8E8;
+    border: 2px solid #007ACC;
+}
+
+/* Target the dock content by its ObjectName */
+QWidget#dockContent {
+    border: 1px solid #3C3C3C;
+    background-color: #1E1E1E;
+}
+
+QDockWidget::title {
+    background-color: #2D2D30;
+    color: #E8E8E8;
+    padding: 6px;
+    border-bottom: 1px solid #3C3C3C;
+    text-align: left;
+}
+
+QDockWidget::close-button, QDockWidget::float-button {
+    border: none;
+    background: transparent;
+    padding: 0px;
+}
+
+QDockWidget::close-button:hover, QDockWidget::float-button:hover {
+    background: #3F3F3F;
+    border-radius: 2px;
+}
+
+QDockWidget::close-button:pressed, QDockWidget::float-button:pressed {
+    background: #007ACC;
+}
+
+/* Splitter styling */
+QSplitter::handle {
+    background-color: #3C3C3C;
+}
+
+QSplitter::handle:horizontal {
+    width: 4px;
+}
+
+QSplitter::handle:vertical {
+    height: 4px;
+}
+
+QSplitter::handle:hover {
+    background-color: #007ACC;
+}
+
+/* Main dock area styling */
+QMainWindow::separator:hover {
+    background-color: #007ACC;
+}
+
+/* For tabbed docks */
+QTabBar::tab:top:selected {
+    border-top: 2px solid #007ACC;
+}
+
+QTabBar::tab:bottom:selected {
+    border-bottom: 2px solid #007ACC;
+}
+
+QTabBar::tab:left:selected {
+    border-left: 2px solid #007ACC;
+}
+
+QTabBar::tab:right:selected {
+    border-right: 2px solid #007ACC;
+}

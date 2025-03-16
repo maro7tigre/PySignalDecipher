@@ -359,3 +359,77 @@ QCheckBox::indicator:checked {
     background: #BB86FC;
     border-radius: 3px;
 }
+
+/* QDockWidget - New section for dock widgets */
+QDockWidget {
+    color: #ffffff;
+    border: 2px solid #BB86FC;
+}
+
+/* Target the dock content by its ObjectName */
+QWidget#dockContent {
+    border: 1px solid #6f779a;
+    background-color: #282a36;
+}
+
+QDockWidget::title {
+    background-color: #1d1f28;
+    color: #ffffff;
+    padding: 6px;
+    border-bottom: 1px solid #6f779a;
+    text-align: left;
+}
+
+QDockWidget::close-button, QDockWidget::float-button {
+    border: none;
+    background: transparent;
+    padding: 0px;
+}
+
+QDockWidget::close-button:hover, QDockWidget::float-button:hover {
+    background: #44475c;
+    border-radius: 2px;
+}
+
+QDockWidget::close-button:pressed, QDockWidget::float-button:pressed {
+    background: #BB86FC;
+}
+
+/* Splitter styling */
+QSplitter::handle {
+    background-color: #6f779a;
+}
+
+QSplitter::handle:horizontal {
+    width: 4px;
+}
+
+QSplitter::handle:vertical {
+    height: 4px;
+}
+
+QSplitter::handle:hover {
+    background-color: #BB86FC;
+}
+
+/* Main dock area styling */
+QMainWindow::separator:hover {
+    background-color: #BB86FC;
+}
+
+/* For tabbed docks */
+QTabBar::tab:top:selected {
+    border-top: 2px solid #BB86FC;
+}
+
+QTabBar::tab:bottom:selected {
+    border-bottom: 2px solid #BB86FC;
+}
+
+QTabBar::tab:left:selected {
+    border-left: 2px solid #BB86FC;
+}
+
+QTabBar::tab:right:selected {
+    border-right: 2px solid #BB86FC;
+}
