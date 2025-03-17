@@ -295,6 +295,14 @@ QDockWidget::close-button:pressed, QDockWidget::float-button:pressed {
     background: #0078D7;
 }
 
+/* Ensure specific widgets like labels are also transparent */
+QFrame#dockStyleContainer QLabel, 
+QFrame#dockStyleContainer QGroupBox,
+QFrame#dockStyleContainer QScrollArea,
+QFrame#dockStyleContainer QScrollArea > QWidget > QWidget {
+    background-color: transparent;
+}
+
 /* Splitter styling */
 QSplitter::handle {
     background-color: #CCCCCC;

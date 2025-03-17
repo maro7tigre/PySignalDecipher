@@ -594,7 +594,7 @@ class DockableWidget(QDockWidget):
         # Filter by type if specified
         if dock_type:
             # Get the dock class for the specified type
-            from .dock_registry import DockRegistry
+            from .dock_manager import DockRegistry
             dock_class = DockRegistry.get_dock_type(dock_type)
             
             if dock_class:
