@@ -42,7 +42,6 @@ def main():
     
     # Register dock widget types
     dock_manager.register_dock_type("signal_view", SignalViewDock)
-    
     # Initialize the service registry
     ServiceRegistry.initialize(
         color_manager=color_manager,

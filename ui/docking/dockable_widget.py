@@ -2,14 +2,16 @@
 Dockable Widget base class for PySignalDecipher.
 
 This module provides the base class for all dockable widgets in the application,
-with support for serialization, theming, and workspace-specific behavior.
+with support for serialization, theming, workspace-specific behavior, and
+data registry integration.
 """
 
 from PySide6.QtWidgets import QDockWidget, QWidget, QMenu, QApplication, QVBoxLayout, QFrame
 from PySide6.QtGui import QAction
-from PySide6.QtCore import Qt, Signal, QEvent
+from PySide6.QtCore import Qt, Signal, QEvent, QSize
 
 from core.service_registry import ServiceRegistry
+from core.data_registry import get_data_registry
 from ..themed_widgets.base_themed_widget import BaseThemedWidget
 
 
@@ -18,7 +20,7 @@ class DockableWidget(QDockWidget):
     Base class for all dockable widgets in the application.
     
     Provides common functionality for docking, floating, serialization,
-    and integration with the theme system.
+    data registry integration, and theme system integration.
     """
     
     # Signal emitted when the widget is closed
@@ -26,6 +28,15 @@ class DockableWidget(QDockWidget):
     
     # Signal emitted when the widget state changes (floating, docked, etc.)
     state_changed = Signal()
+    
+    # Signal emitted when the widget is activated (gets focus)
+    widget_activated = Signal(str)  # widget ID
+    
+    # Signal emitted when the widget title changes
+    title_changed = Signal(str, str)  # widget ID, new title
+    
+    # Signal emitted when data provided by this widget changes
+    data_changed = Signal(str, object)  # data_path, new_value
     
     def __init__(self, title, parent=None, widget_id=None):
         """
@@ -81,13 +92,19 @@ class DockableWidget(QDockWidget):
         self._theme_manager = ServiceRegistry.get_theme_manager()
         
         # Connect to theme change signal to update styling when theme changes
-        self._theme_manager.theme_changed.connect(self._on_theme_changed)
+        if self._theme_manager:
+            self._theme_manager.theme_changed.connect(self._on_theme_changed)
         
         # Default attributes
         self._active = False
         self._can_close = True
         self._color_option = None
         self._workspace_type = None
+        self._workspace = None  # Reference to the containing workspace
+
+        # Data registry tracking
+        self._provided_data_paths = set()  # Paths to data provided by this dock
+        self._data_subscriptions = set()   # Paths to data this dock is subscribed to
 
         # Set focus policies so that focus events are generated
         self.setFocusPolicy(Qt.StrongFocus)
@@ -113,6 +130,9 @@ class DockableWidget(QDockWidget):
         
         # Connect docking state changed
         self.topLevelChanged.connect(self._on_top_level_changed)
+        
+        # Connect title changed signal
+        self.windowTitleChanged.connect(self._on_title_changed)
     
     def _on_visibility_changed(self, visible):
         """
@@ -143,6 +163,16 @@ class DockableWidget(QDockWidget):
         """
         # Apply new theme
         self.apply_theme(self._theme_manager)
+        
+    def _on_title_changed(self, title):
+        """
+        Handle title changes.
+        
+        Args:
+            title: New title
+        """
+        # Emit title changed signal
+        self.title_changed.emit(self._widget_id, title)
     
     def get_widget_id(self):
         """
@@ -170,6 +200,24 @@ class DockableWidget(QDockWidget):
             str: Workspace type identifier
         """
         return self._workspace_type
+        
+    def set_workspace(self, workspace):
+        """
+        Set the workspace this widget belongs to.
+        
+        Args:
+            workspace: Reference to the workspace widget
+        """
+        self._workspace = workspace
+        
+    def get_workspace(self):
+        """
+        Get the workspace this widget belongs to.
+        
+        Returns:
+            The workspace widget, or None if not set
+        """
+        return self._workspace
     
     def set_can_close(self, can_close):
         """
@@ -188,6 +236,15 @@ class DockableWidget(QDockWidget):
             
         self.setFeatures(features)
     
+    def get_can_close(self):
+        """
+        Check if this widget can be closed.
+        
+        Returns:
+            bool: True if the widget can be closed, False otherwise
+        """
+        return self._can_close
+    
     def closeEvent(self, event):
         """
         Handle close events.
@@ -199,6 +256,12 @@ class DockableWidget(QDockWidget):
             event.ignore()
             return
             
+        # Unregister all data provided by this dock
+        self._unregister_all_data()
+        
+        # Unsubscribe from all data
+        self._unsubscribe_all_data()
+        
         # Emit closed signal before accepting
         self.widget_closed.emit(self._widget_id)
         
@@ -229,6 +292,8 @@ class DockableWidget(QDockWidget):
         if obj == self or obj == self._content_widget or obj == self._style_container:
             if event.type() == QEvent.FocusIn:
                 self.set_active(True)
+                # Emit the widget_activated signal
+                self.widget_activated.emit(self._widget_id)
             elif event.type() == QEvent.FocusOut:
                 # Only deactivate if focus is leaving the dock widget
                 # and not going to one of its children
@@ -368,6 +433,11 @@ class DockableWidget(QDockWidget):
         # Add separator
         menu.addSeparator()
         
+        # Rename action
+        rename_action = QAction("Rename...", self)
+        rename_action.triggered.connect(self._show_rename_dialog)
+        menu.addAction(rename_action)
+        
         # Close action (if closable)
         if self._can_close:
             close_action = QAction("Close", self)
@@ -390,6 +460,22 @@ class DockableWidget(QDockWidget):
             menu: Menu to add items to
         """
         pass
+    
+    def _show_rename_dialog(self):
+        """Show a dialog to rename the dock widget."""
+        from PySide6.QtWidgets import QInputDialog
+        
+        # Get the new title
+        new_title, ok = QInputDialog.getText(
+            self,
+            "Rename Dock",
+            "Enter new title:",
+            text=self.windowTitle()
+        )
+        
+        # Update the title if the user clicked OK
+        if ok and new_title:
+            self.setWindowTitle(new_title)
     
     def save_state(self):
         """
@@ -457,7 +543,7 @@ class DockableWidget(QDockWidget):
         Args:
             theme_manager: Optional theme manager reference
         """
-        if theme_manager and not isinstance(theme_manager, str):
+        if theme_manager:
             self._theme_manager = theme_manager
             
         # Apply theme to the content widget if it supports it
@@ -467,3 +553,259 @@ class DockableWidget(QDockWidget):
                 content.apply_theme(self._theme_manager)
             except Exception as e:
                 print(f"Error applying theme to content widget: {e}")
+                
+    def sizeHint(self):
+        """
+        Provide a size hint for the dock widget.
+        
+        Subclasses should override this method to provide a suitable size hint.
+        
+        Returns:
+            QSize: Suggested size for the dock
+        """
+        return QSize(300, 200)
+    
+    def minimumSizeHint(self):
+        """
+        Provide a minimum size hint for the dock widget.
+        
+        Returns:
+            QSize: Minimum suggested size for the dock
+        """
+        return QSize(200, 100)
+    
+    # -------------------------------------------------------------------------
+    # Data Registry Integration Methods
+    # -------------------------------------------------------------------------
+    
+    def register_data(self, data_id, description, initial_value=None, 
+                     getter=None, setter=None, metadata=None):
+        """
+        Register data provided by this dock.
+        
+        Data IDs should be descriptive and unique within this dock.
+        The full data path will be "{widget_id}.{data_id}".
+        
+        Args:
+            data_id: ID for the data (e.g., "signal_data")
+            description: Human-readable description of the data
+            initial_value: Initial value of the data
+            getter: Optional custom function to get the current value
+            setter: Optional custom function to set the value
+            metadata: Optional additional metadata dictionary
+            
+        Returns:
+            str: Full data path, or None if registration failed
+        """
+        # Get the data registry
+        registry = get_data_registry()
+        
+        # Create the full data path
+        data_path = f"{self._widget_id}.{data_id}"
+        
+        # Register the data
+        success = registry.register_data(
+            data_path=data_path,
+            description=description,
+            provider=self,
+            initial_value=initial_value,
+            getter=getter,
+            setter=setter,
+            metadata=metadata
+        )
+        
+        if success:
+            # Add to the set of provided data paths
+            self._provided_data_paths.add(data_path)
+            return data_path
+        
+        return None
+    
+    def update_data(self, data_id, value):
+        """
+        Update data provided by this dock.
+        
+        Args:
+            data_id: ID for the data (e.g., "signal_data")
+            value: New value for the data
+            
+        Returns:
+            bool: True if the data was updated, False if the data path does not exist
+        """
+        # Get the data registry
+        registry = get_data_registry()
+        
+        # Create the full data path
+        data_path = f"{self._widget_id}.{data_id}"
+        
+        # Update the data
+        success = registry.set_data(data_path, value)
+        
+        if success:
+            # Emit data changed signal
+            self.data_changed.emit(data_path, value)
+        
+        return success
+    
+    def get_data(self, provider_id, data_id, default=None):
+        """
+        Get data from the registry.
+        
+        This method allows docks to access data from other docks or components.
+        
+        Args:
+            provider_id: ID of the provider (usually a widget_id)
+            data_id: ID for the data
+            default: Default value to return if the data does not exist
+            
+        Returns:
+            The data value, or the default if not found
+        """
+        # Get the data registry
+        registry = get_data_registry()
+        
+        # Create the full data path
+        data_path = f"{provider_id}.{data_id}"
+        
+        # Register as an accessor of this data
+        registry.register_accessor(self._widget_id, data_path)
+        
+        # Get the data
+        return registry.get_data(data_path, default)
+    
+    def subscribe_to_data(self, provider_id, data_id, callback):
+        """
+        Subscribe to changes in data.
+        
+        Args:
+            provider_id: ID of the provider (usually a widget_id)
+            data_id: ID for the data
+            callback: Function to call when the data changes
+            
+        Returns:
+            bool: True if subscription succeeded, False if the data path does not exist
+        """
+        # Get the data registry
+        registry = get_data_registry()
+        
+        # Create the full data path
+        data_path = f"{provider_id}.{data_id}"
+        
+        # Register as an accessor of this data
+        registry.register_accessor(self._widget_id, data_path)
+        
+        # Subscribe to the data
+        success = registry.subscribe_to_data(data_path, callback)
+        
+        if success:
+            # Add to the set of data subscriptions
+            self._data_subscriptions.add(data_path)
+        
+        return success
+    
+    def unsubscribe_from_data(self, provider_id, data_id, callback):
+        """
+        Unsubscribe from changes in data.
+        
+        Args:
+            provider_id: ID of the provider (usually a widget_id)
+            data_id: ID for the data
+            callback: Function to unsubscribe
+            
+        Returns:
+            bool: True if unsubscription succeeded, False if the data path or
+            subscription does not exist
+        """
+        # Get the data registry
+        registry = get_data_registry()
+        
+        # Create the full data path
+        data_path = f"{provider_id}.{data_id}"
+        
+        # Unsubscribe from the data
+        success = registry.unsubscribe_from_data(data_path, callback)
+        
+        if success:
+            # Remove from the set of data subscriptions
+            self._data_subscriptions.discard(data_path)
+        
+        return success
+    
+    def _unregister_all_data(self):
+        """Unregister all data provided by this dock."""
+        # Get the data registry
+        registry = get_data_registry()
+        
+        # Unregister the component
+        registry.unregister_component(self._widget_id)
+        
+        # Clear the set of provided data paths
+        self._provided_data_paths.clear()
+    
+    def _unsubscribe_all_data(self):
+        """Unsubscribe from all data this dock is subscribed to."""
+        # Nothing to do if no subscriptions
+        if not self._data_subscriptions:
+            return
+            
+        # Get the data registry
+        registry = get_data_registry()
+        
+        # We need to create a copy since we'll be modifying the set
+        subscriptions = self._data_subscriptions.copy()
+        
+        # Unsubscribe from each data path
+        for data_path in subscriptions:
+            # Extract provider_id and data_id
+            if '.' in data_path:
+                provider_id, data_id = data_path.split('.', 1)
+                
+                # Get all callbacks for this data path
+                callbacks = registry._subscriptions.get(data_path, set())
+                
+                # Find callbacks from this dock
+                for callback in list(callbacks):
+                    # This is a bit of a hack, but we need to remove all callbacks
+                    # for this dock, and we don't have a good way to identify them
+                    try:
+                        registry.unsubscribe_from_data(data_path, callback)
+                    except:
+                        pass
+        
+        # Clear the set of data subscriptions
+        self._data_subscriptions.clear()
+    
+    def get_available_data(self):
+        """
+        Get information about all available data in the registry.
+        
+        Returns:
+            Dictionary mapping data paths to metadata dictionaries
+        """
+        # Get the data registry
+        registry = get_data_registry()
+        
+        # Get all available data
+        return registry.get_available_data()
+    
+    def search_data(self, search_term, include_description=True, include_metadata=False):
+        """
+        Search the registry for data paths matching a search term.
+        
+        Args:
+            search_term: Term to search for
+            include_description: Whether to search in descriptions
+            include_metadata: Whether to search in metadata
+            
+        Returns:
+            List of matching data paths
+        """
+        # Get the data registry
+        registry = get_data_registry()
+        
+        # Search for data
+        return registry.search_data(
+            search_term=search_term,
+            include_description=include_description,
+            include_metadata=include_metadata
+        )
