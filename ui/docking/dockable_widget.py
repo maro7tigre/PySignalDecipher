@@ -2,8 +2,7 @@
 Dockable Widget base class for PySignalDecipher.
 
 This module provides the base class for all dockable widgets in the application,
-with support for serialization, theming, workspace-specific behavior, and
-data registry integration.
+with support for serialization, theming, and workspace-specific behavior.
 """
 
 from PySide6.QtWidgets import QDockWidget, QWidget, QMenu, QApplication, QVBoxLayout, QFrame
@@ -11,7 +10,6 @@ from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt, Signal, QEvent, QSize
 
 from core.service_registry import ServiceRegistry
-from core.data_registry import get_data_registry
 from ..themed_widgets.base_themed_widget import BaseThemedWidget
 
 
@@ -20,7 +18,7 @@ class DockableWidget(QDockWidget):
     Base class for all dockable widgets in the application.
     
     Provides common functionality for docking, floating, serialization,
-    data registry integration, and theme system integration.
+    and integration with the theme system.
     """
     
     # Signal emitted when the widget is closed
@@ -34,9 +32,6 @@ class DockableWidget(QDockWidget):
     
     # Signal emitted when the widget title changes
     title_changed = Signal(str, str)  # widget ID, new title
-    
-    # Signal emitted when data provided by this widget changes
-    data_changed = Signal(str, object)  # data_path, new_value
     
     def __init__(self, title, parent=None, widget_id=None):
         """
@@ -101,10 +96,6 @@ class DockableWidget(QDockWidget):
         self._color_option = None
         self._workspace_type = None
         self._workspace = None  # Reference to the containing workspace
-
-        # Data registry tracking
-        self._provided_data_paths = set()  # Paths to data provided by this dock
-        self._data_subscriptions = set()   # Paths to data this dock is subscribed to
 
         # Set focus policies so that focus events are generated
         self.setFocusPolicy(Qt.StrongFocus)
@@ -256,12 +247,6 @@ class DockableWidget(QDockWidget):
             event.ignore()
             return
             
-        # Unregister all data provided by this dock
-        self._unregister_all_data()
-        
-        # Unsubscribe from all data
-        self._unsubscribe_all_data()
-        
         # Emit closed signal before accepting
         self.widget_closed.emit(self._widget_id)
         
@@ -574,238 +559,96 @@ class DockableWidget(QDockWidget):
         """
         return QSize(200, 100)
     
-    # -------------------------------------------------------------------------
-    # Data Registry Integration Methods
-    # -------------------------------------------------------------------------
-    
-    def register_data(self, data_id, description, initial_value=None, 
-                     getter=None, setter=None, metadata=None):
+    def get_dock_manager(self):
         """
-        Register data provided by this dock.
+        Get the dock manager for the application.
         
-        Data IDs should be descriptive and unique within this dock.
-        The full data path will be "{widget_id}.{data_id}".
+        This is a convenience method for accessing the DockManager from a dock widget.
+        
+        Returns:
+            The DockManager instance
+        """
+        return ServiceRegistry.get_dock_manager()
+    
+    def get_other_docks(self, dock_type=None):
+        """
+        Get other dock widgets in the same workspace.
         
         Args:
-            data_id: ID for the data (e.g., "signal_data")
-            description: Human-readable description of the data
-            initial_value: Initial value of the data
-            getter: Optional custom function to get the current value
-            setter: Optional custom function to set the value
-            metadata: Optional additional metadata dictionary
+            dock_type: Optional type of docks to filter by
             
         Returns:
-            str: Full data path, or None if registration failed
+            List of dock widgets
         """
-        # Get the data registry
-        registry = get_data_registry()
-        
-        # Create the full data path
-        data_path = f"{self._widget_id}.{data_id}"
-        
-        # Register the data
-        success = registry.register_data(
-            data_path=data_path,
-            description=description,
-            provider=self,
-            initial_value=initial_value,
-            getter=getter,
-            setter=setter,
-            metadata=metadata
-        )
-        
-        if success:
-            # Add to the set of provided data paths
-            self._provided_data_paths.add(data_path)
-            return data_path
-        
-        return None
-    
-    def update_data(self, data_id, value):
-        """
-        Update data provided by this dock.
-        
-        Args:
-            data_id: ID for the data (e.g., "signal_data")
-            value: New value for the data
+        # Get the dock manager
+        dock_manager = self.get_dock_manager()
+        if not dock_manager:
+            return []
             
-        Returns:
-            bool: True if the data was updated, False if the data path does not exist
-        """
-        # Get the data registry
-        registry = get_data_registry()
+        # Get all docks for this workspace
+        all_docks = dock_manager.get_docks_for_workspace(self._workspace_type)
         
-        # Create the full data path
-        data_path = f"{self._widget_id}.{data_id}"
+        # Filter out this dock
+        other_docks = [dock for dock_id, dock in all_docks.items() if dock_id != self._widget_id]
         
-        # Update the data
-        success = registry.set_data(data_path, value)
-        
-        if success:
-            # Emit data changed signal
-            self.data_changed.emit(data_path, value)
-        
-        return success
-    
-    def get_data(self, provider_id, data_id, default=None):
-        """
-        Get data from the registry.
-        
-        This method allows docks to access data from other docks or components.
-        
-        Args:
-            provider_id: ID of the provider (usually a widget_id)
-            data_id: ID for the data
-            default: Default value to return if the data does not exist
+        # Filter by type if specified
+        if dock_type:
+            # Get the dock class for the specified type
+            from .dock_registry import DockRegistry
+            dock_class = DockRegistry.get_dock_type(dock_type)
             
-        Returns:
-            The data value, or the default if not found
-        """
-        # Get the data registry
-        registry = get_data_registry()
-        
-        # Create the full data path
-        data_path = f"{provider_id}.{data_id}"
-        
-        # Register as an accessor of this data
-        registry.register_accessor(self._widget_id, data_path)
-        
-        # Get the data
-        return registry.get_data(data_path, default)
-    
-    def subscribe_to_data(self, provider_id, data_id, callback):
-        """
-        Subscribe to changes in data.
-        
-        Args:
-            provider_id: ID of the provider (usually a widget_id)
-            data_id: ID for the data
-            callback: Function to call when the data changes
-            
-        Returns:
-            bool: True if subscription succeeded, False if the data path does not exist
-        """
-        # Get the data registry
-        registry = get_data_registry()
-        
-        # Create the full data path
-        data_path = f"{provider_id}.{data_id}"
-        
-        # Register as an accessor of this data
-        registry.register_accessor(self._widget_id, data_path)
-        
-        # Subscribe to the data
-        success = registry.subscribe_to_data(data_path, callback)
-        
-        if success:
-            # Add to the set of data subscriptions
-            self._data_subscriptions.add(data_path)
-        
-        return success
-    
-    def unsubscribe_from_data(self, provider_id, data_id, callback):
-        """
-        Unsubscribe from changes in data.
-        
-        Args:
-            provider_id: ID of the provider (usually a widget_id)
-            data_id: ID for the data
-            callback: Function to unsubscribe
-            
-        Returns:
-            bool: True if unsubscription succeeded, False if the data path or
-            subscription does not exist
-        """
-        # Get the data registry
-        registry = get_data_registry()
-        
-        # Create the full data path
-        data_path = f"{provider_id}.{data_id}"
-        
-        # Unsubscribe from the data
-        success = registry.unsubscribe_from_data(data_path, callback)
-        
-        if success:
-            # Remove from the set of data subscriptions
-            self._data_subscriptions.discard(data_path)
-        
-        return success
-    
-    def _unregister_all_data(self):
-        """Unregister all data provided by this dock."""
-        # Get the data registry
-        registry = get_data_registry()
-        
-        # Unregister the component
-        registry.unregister_component(self._widget_id)
-        
-        # Clear the set of provided data paths
-        self._provided_data_paths.clear()
-    
-    def _unsubscribe_all_data(self):
-        """Unsubscribe from all data this dock is subscribed to."""
-        # Nothing to do if no subscriptions
-        if not self._data_subscriptions:
-            return
-            
-        # Get the data registry
-        registry = get_data_registry()
-        
-        # We need to create a copy since we'll be modifying the set
-        subscriptions = self._data_subscriptions.copy()
-        
-        # Unsubscribe from each data path
-        for data_path in subscriptions:
-            # Extract provider_id and data_id
-            if '.' in data_path:
-                provider_id, data_id = data_path.split('.', 1)
+            if dock_class:
+                other_docks = [dock for dock in other_docks if isinstance(dock, dock_class)]
                 
-                # Get all callbacks for this data path
-                callbacks = registry._subscriptions.get(data_path, set())
-                
-                # Find callbacks from this dock
-                for callback in list(callbacks):
-                    # This is a bit of a hack, but we need to remove all callbacks
-                    # for this dock, and we don't have a good way to identify them
-                    try:
-                        registry.unsubscribe_from_data(data_path, callback)
-                    except:
-                        pass
-        
-        # Clear the set of data subscriptions
-        self._data_subscriptions.clear()
+        return other_docks
     
-    def get_available_data(self):
+    def get_dock_by_id(self, dock_id):
         """
-        Get information about all available data in the registry.
-        
-        Returns:
-            Dictionary mapping data paths to metadata dictionaries
-        """
-        # Get the data registry
-        registry = get_data_registry()
-        
-        # Get all available data
-        return registry.get_available_data()
-    
-    def search_data(self, search_term, include_description=True, include_metadata=False):
-        """
-        Search the registry for data paths matching a search term.
+        Get a dock widget by its ID in the same workspace.
         
         Args:
-            search_term: Term to search for
-            include_description: Whether to search in descriptions
-            include_metadata: Whether to search in metadata
+            dock_id: ID of the dock to get
             
         Returns:
-            List of matching data paths
+            The dock widget, or None if not found
         """
-        # Get the data registry
-        registry = get_data_registry()
+        # Get the dock manager
+        dock_manager = self.get_dock_manager()
+        if not dock_manager:
+            return None
+            
+        # Get the dock
+        return dock_manager.get_dock(self._workspace_type, dock_id)
         
-        # Search for data
-        return registry.search_data(
-            search_term=search_term,
-            include_description=include_description,
-            include_metadata=include_metadata
-        )
+    def broadcast_message(self, message_type, data=None):
+        """
+        Broadcast a message to all docks in the same workspace.
+        
+        This is a simple way to communicate with other docks without tight coupling.
+        Each dock can decide to handle or ignore the message as needed.
+        
+        Args:
+            message_type: Type of message to broadcast
+            data: Optional data to include with the message
+        """
+        # Get other docks
+        other_docks = self.get_other_docks()
+        
+        # Broadcast the message to each dock
+        for dock in other_docks:
+            if hasattr(dock, 'handle_message') and callable(dock.handle_message):
+                dock.handle_message(message_type, data, self._widget_id)
+    
+    def handle_message(self, message_type, data=None, sender_id=None):
+        """
+        Handle a message from another dock.
+        
+        Subclasses should override this method to handle messages as needed.
+        
+        Args:
+            message_type: Type of message
+            data: Optional data included with the message
+            sender_id: ID of the dock that sent the message
+        """
+        # Default implementation does nothing
+        pass

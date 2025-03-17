@@ -17,9 +17,6 @@ from core.service_registry import ServiceRegistry
 from ui.layout_manager import LayoutManager
 from ui.docking.dock_manager import DockManager
 
-# Import dock widget types
-from ui.docking.signal_view_dock import SignalViewDock
-
 # Import UI components
 from ui.main_window import MainWindow
 
@@ -40,8 +37,6 @@ def main():
     layout_manager = LayoutManager(preferences_manager)
     dock_manager = DockManager(preferences_manager, theme_manager)
     
-    # Register dock widget types
-    dock_manager.register_dock_type("signal_view", SignalViewDock)
     # Initialize the service registry
     ServiceRegistry.initialize(
         color_manager=color_manager,

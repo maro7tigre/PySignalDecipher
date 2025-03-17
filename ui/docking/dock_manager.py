@@ -167,6 +167,8 @@ class DockManager(QObject):
         DockRegistry.register_dock_type("signal_view", SignalViewDock)
         from .dock_types.settings_dock import SettingsDock
         DockRegistry.register_dock_type("Settings", SettingsDock)
+        from .dock_types.spectrum_analyzer_dock import SpectrumAnalyzerDock
+        DockRegistry.register_dock_type("SpectrumAnalyzer", SpectrumAnalyzerDock)
     
     def register_dock_type(self, type_id: str, dock_class: Type[DockableWidget]) -> None:
         """
