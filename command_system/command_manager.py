@@ -10,7 +10,9 @@ from PySide6.QtCore import QObject, Signal
 
 from .command import Command, CommandFactory
 from .command_history import CommandHistory
-
+from .variable_registry import VariableRegistry
+from .hardware_manager import HardwareManager
+from .workspace_manager import WorkspaceTabManager
 
 class CommandManager(QObject):
     """
@@ -37,6 +39,11 @@ class CommandManager(QObject):
         self.command_executed.connect(self._on_history_change)
         self.command_undone.connect(self._on_history_change)
         self.command_redone.connect(self._on_history_change)
+        
+        # New components
+        self._variable_registry = VariableRegistry()
+        self._hardware_manager = HardwareManager(self._variable_registry)
+        self._workspace_manager = WorkspaceTabManager(self, self._variable_registry)
     
     def register_command(self, command_class: Type[Command]) -> None:
         """
@@ -166,3 +173,12 @@ class CommandManager(QObject):
         
         self.history_changed.connect(update_states)
         update_states()  # Initial update
+        
+    def get_variable_registry(self):
+        return self._variable_registry
+        
+    def get_hardware_manager(self):
+        return self._hardware_manager
+        
+    def get_workspace_manager(self):
+        return self._workspace_manager

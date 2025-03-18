@@ -6,6 +6,7 @@ changing layouts, adding/removing docks, and setting workspace preferences.
 """
 
 from typing import Dict, Any, Optional
+import uuid
 
 from ..command import Command
 from ..project import Project, WorkspaceState
@@ -179,6 +180,67 @@ class SetWorkspaceSettingCommand(Command):
         workspace = _get_workspace_by_id(state["workspace_id"])
         cmd = cls(workspace, state["key"], state["new_value"])
         cmd.old_value = state["old_value"]
+        return cmd
+
+
+class CreateDockCommand(Command):
+    """Command to create a new dock widget"""
+    
+    def __init__(self, workspace_state, dock_type, dock_config=None):
+        self.workspace = workspace_state
+        self.dock_type = dock_type
+        self.dock_config = dock_config or {}
+        self.dock_id = None
+        self.dock = None
+        self.variable_registry = None  # Will be injected
+    
+    def set_variable_registry(self, registry):
+        """Set the variable registry to use"""
+        self.variable_registry = registry
+    
+    def execute(self):
+        """Create and register the dock"""
+        self.dock_id = str(uuid.uuid4())
+        
+        # Create dock configuration
+        dock_state = {
+            "type": self.dock_type,
+            "id": self.dock_id,
+            "config": self.dock_config,
+            "position": {"x": 0, "y": 0, "width": 300, "height": 200}
+        }
+        
+        # Add to workspace
+        self.workspace.set_dock_state(self.dock_id, dock_state)
+        
+        # Factory method to create actual dock widget would be called here
+        # self.dock = create_dock_widget(self.dock_type, self.dock_id, self.dock_config)
+        
+        return self.dock_id
+    
+    def undo(self):
+        """Remove the dock"""
+        if self.dock_id:
+            # Unregister all associated variables
+            if self.variable_registry:
+                self.variable_registry.unregister_parent(self.dock_id)
+            
+            # Remove from workspace
+            self.workspace.remove_dock(self.dock_id)
+    
+    def get_state(self):
+        return {
+            "workspace_id": self.workspace.workspace_id,
+            "dock_type": self.dock_type,
+            "dock_config": self.dock_config,
+            "dock_id": self.dock_id
+        }
+    
+    @classmethod
+    def from_state(cls, state):
+        workspace = _get_workspace_by_id(state["workspace_id"])
+        cmd = cls(workspace, state["dock_type"], state["dock_config"])
+        cmd.dock_id = state["dock_id"]
         return cmd
 
 

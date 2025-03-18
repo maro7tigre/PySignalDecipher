@@ -11,64 +11,65 @@ This document provides detailed information about the command system implementat
    - [Command History](#command-history)
    - [Command Manager](#command-manager)
    - [Observable Properties](#observable-properties)
+   - [Variable System](#variable-system)
    - [Project Model](#project-model)
-4. [Command Implementations](#command-implementations)
+4. [Hardware Integration](#hardware-integration)
+5. [Workspace Management](#workspace-management)
+6. [Command Implementations](#command-implementations)
    - [Signal Commands](#signal-commands)
    - [Workspace Commands](#workspace-commands)
    - [Project Commands](#project-commands)
-5. [Integration Guide](#integration-guide)
-6. [File Reference](#file-reference)
-7. [Usage Examples](#usage-examples)
+   - [Dock Commands](#dock-commands)
+7. [Integration Guide](#integration-guide)
+8. [File Reference](#file-reference)
+9. [Usage Examples](#usage-examples)
 
 ## Overview
 
-The command system provides a robust foundation for history tracking (undo/redo), project serialization, and state management in PySignalDecipher. It follows the Command pattern, where all user actions that modify state are encapsulated as commands that can be executed, undone, and redone. The system also provides observable properties for tracking state changes and a comprehensive project model for serialization.
+The command system provides a robust foundation for history tracking (undo/redo), project serialization, and state management in PySignalDecipher. It follows the Command pattern, where all user actions that modify state are encapsulated as commands that can be executed, undone, and redone. The system also provides observable properties for tracking state changes, a variable registry for linking components, hardware integration through PyVISA, and a comprehensive project model for serialization.
 
 ## Architecture
 
 The command system is organized into several key components:
 
 ```
-┌──────────────────────────────────────┐
-│            User Interface            │
-│                                      │
-│  ┌────────────┐    ┌──────────────┐  │
-│  │ UI Actions │───▶│ Command Exec │  │
-│  └────────────┘    └──────────────┘  │
-└──────────────────────┬───────────────┘
-                       │
-                       ▼
-┌──────────────────────────────────────┐
-│            Command System            │
-│                                      │
-│  ┌────────────┐    ┌──────────────┐  │
-│  │ Commands   │──▶ │    History   │  │
-│  └────────────┘    └──────────────┘  │
-│                          │           │
-│  ┌────────────┐    ┌─────▼────────┐  │
-│  │ Observable │◀───┤ State Changes│  │
-│  │ Properties │    └──────────────┘  │
-│  └─────┬──────┘                      │
-└─────────┼─────────────────────────────┘
-          │
-          ▼
-┌─────────┴──────────────────────────────┐
-│            Project Model               │
-│                                        │
-│  ┌───────────┐     ┌────────────────┐  │
-│  │  Signals  │     │   Workspaces   │  │
-│  └───────────┘     └────────────────┘  │
-│                                        │
-│  ┌───────────────────────────────────┐ │
-│  │       Serialization Layer         │ │
-│  └───────────────────────────────────┘ │
-└────────────────────┬───────────────────┘
-                    │
-                    ▼
-            ┌───────────────┐
-            │  Project File │
-            │  (.psd format)│
-            └───────────────┘
+┌───────────────────────────────────────────────────────────┐
+│                    User Interface                         │
+│                                                           │
+│  ┌────────────┐    ┌──────────────┐    ┌───────────────┐  │
+│  │ UI Actions │───▶│ Command Exec │    │ Workspaces    │  │
+│  └────────────┘    └──────────────┘    │ & Docks       │  │
+│                                        └───────┬───────┘  │
+└────────────────────────┬────────────────────────┼─────────┘
+                         │                        │
+┌────────────────────────▼────────────────────────▼─────────┐
+│                     Command System                         │
+│                                                           │
+│  ┌────────────┐    ┌──────────────┐    ┌───────────────┐  │
+│  │ Commands   │──▶ │    History   │    │ Variable      │  │
+│  └────────────┘    └──────────────┘    │ Registry      │  │
+│                          │             └───────┬───────┘  │
+│  ┌────────────┐    ┌─────▼────────┐           │          │
+│  │ Observable │◀───┤ State Changes│◀──────────┘          │
+│  │ Properties │    └──────────────┘                      │
+│  └─────┬──────┘                                          │
+└─────────┼────────────────────────────┬───────────────────┘
+          │                            │
+┌─────────▼────────────────────┐ ┌─────▼─────────────────────┐
+│      Project Model           │ │   Hardware Integration     │
+│                              │ │                            │
+│  ┌───────────┐ ┌───────────┐ │ │ ┌──────────────────────┐  │
+│  │  Signals  │ │ Workspaces│ │ │ │ Hardware Manager     │  │
+│  └───────────┘ └───────────┘ │ │ │                      │  │
+│                              │ │ │ ┌─────────────────┐  │  │
+│  ┌──────────────────────────┐│ │ │ │PyVISA Interface │  │  │
+│  │  Serialization Layer     ││ │ │ └─────────────────┘  │  │
+│  └──────────────────────────┘│ │ └──────────────────────┘  │
+└──────────────┬───────────────┘ └────────────────────────────┘
+               │
+        ┌──────▼─────┐
+        │Project File│
+        └────────────┘
 ```
 
 ## Core Components
@@ -113,21 +114,24 @@ The history manager maintains an ordered list of executed commands and tracks th
 
 **File: `command_system/command_manager.py`**
 
-Provides a centralized interface for executing commands and managing command history:
+Provides a centralized interface for executing commands, managing command history, and coordinating between different system components:
 
-- `CommandManager`: Central point for command execution and history management
+- `CommandManager`: Central point for system coordination
   - `execute_command()`: Executes a command and adds it to history
   - `undo()/redo()`: Undoes/redoes commands through history
   - `can_undo()/can_redo()`: Checks if undo/redo is possible
   - `register_command()`: Registers a command type with the factory
   - `register_history_observers()`: Registers callbacks for undo/redo state changes
+  - `get_variable_registry()`: Returns the variable registry
+  - `get_hardware_manager()`: Returns the hardware manager
+  - `get_workspace_manager()`: Returns the workspace manager
   - Signal handling for command execution events:
     - `command_executed`: Emitted when a command is executed
     - `command_undone`: Emitted when a command is undone
     - `command_redone`: Emitted when a command is redone
     - `history_changed`: Emitted when history state changes
 
-The CommandManager acts as a facade for the command system, providing a simple interface for UI components.
+The CommandManager acts as a facade for the command system, providing a simple interface for UI components and coordinating between different subsystems.
 
 ### Observable Properties
 
@@ -148,7 +152,28 @@ Provides property tracking and change notification for objects:
   - Tracks old and new values for property changes
   - Provides standard execute/undo/redo implementations
 
-Observable properties provide the foundation for tracking state changes and integrating with the command system.
+- `SignalVariable`: Enhanced observable for linking values across components
+  - `value` property: The variable's value
+  - `subscribe()`: Register a subscriber to be notified of value changes
+  - `unsubscribe()`: Remove a subscriber
+  - `clear_subscribers()`: Remove all subscribers
+
+Observable properties and signal variables provide the foundation for tracking state changes and linking components.
+
+### Variable System
+
+**File: `command_system/variable_registry.py`**
+
+Provides a registry for tracking variables and their relationships:
+
+- `VariableRegistry`: Central registry for variables
+  - `register_variable()`: Register a variable in the system
+  - `unregister_variable()`: Remove a variable from the registry
+  - `unregister_parent()`: Unregister all variables belonging to a parent
+  - `get_variable()`: Get a variable by ID
+  - `get_variables_by_parent()`: Get all variables belonging to a parent
+
+The variable registry provides a centralized system for tracking variables and their relationships, especially for components like dock widgets that need to be created and destroyed dynamically.
 
 ### Project Model
 
@@ -172,6 +197,37 @@ Defines the central project model that integrates with the command system:
   - Provides serialization/deserialization methods
 
 The project model provides a comprehensive representation of application state that can be serialized, deserialized, and tracked for changes.
+
+## Hardware Integration
+
+**File: `command_system/hardware_manager.py`**
+
+Provides integration with oscilloscopes and other hardware devices through PyVISA:
+
+- `HardwareManager`: Manages hardware connections and device parameters
+  - `initialize()`: Initialize the hardware manager
+  - `get_available_devices()`: Get list of available devices
+  - `connect_device()`: Connect to a device and create variables for its parameters
+  - `disconnect_device()`: Disconnect a device and clean up associated variables
+  - Creates and manages variables linked to device parameters
+  - Provides device-specific operations through standard PyVISA commands
+
+The hardware manager provides a bridge between the command system and physical devices, creating variables for device parameters that can be linked to UI components and monitored for changes.
+
+## Workspace Management
+
+**File: `command_system/workspace_manager.py`**
+
+Manages workspaces, tabs, and their associated commands and variables:
+
+- `WorkspaceTabManager`: Manages workspace tabs and their state
+  - `create_workspace()`: Create a new workspace tab
+  - `set_active_workspace()`: Set the active workspace
+  - `remove_workspace()`: Remove a workspace and clean up resources
+  - Updates available utility options based on active workspace
+  - Coordinates between workspace state in the project and UI components
+
+The workspace manager provides a centralized system for managing workspaces and their associated resources, including dock widgets, variables, and UI components.
 
 ## Command Implementations
 
@@ -210,22 +266,35 @@ Implements commands for project-level operations:
 
 These commands handle project-level operations and provide utilities for batch operations.
 
+### Dock Commands
+
+**File: `command_system/commands/workspace_commands.py`** (Extended)
+
+New commands for dock widget operations:
+
+- `CreateDockCommand`: Creates a new dock widget and registers it with the workspace
+- `RemoveDockCommand`: Removes a dock widget and cleans up associated variables
+- `DockLayoutCommand`: Changes the layout position of a dock widget
+
+These commands provide operations for dock widgets, including creation, removal, and layout changes.
+
 ## Integration Guide
 
-**File: `command_system/integration_template.py`**
+**File: `command_system/_integration_template.py`**
 
 Provides templates and examples for integrating the command system with PySignalDecipher:
 
-1. Update `ServiceRegistry` to include CommandManager
-2. Update `main.py` to initialize the command system
-3. Create signal models that extend Observable
-4. Update UI code to use commands for state changes
-5. Implement project saving and loading
-6. Add undo/redo actions to menus and toolbars
-7. Implement command-based menu action handlers
-8. Extend Observable for workspace state
+1. Create a central CommandManager that coordinates all subsystems
+2. Implement the variable registry for linking components
+3. Integrate hardware through the HardwareManager
+4. Create workspace tab management through the WorkspaceTabManager
+5. Implement dock widget creation and management
+6. Add project serialization and deserialization
+7. Set up utility groups for hardware connection, workspace options, etc.
+8. Add undo/redo support to menus and toolbars
+9. Link signals and variables to UI components
 
-The integration guide provides step-by-step instructions for incorporating the command system into the existing codebase.
+The integration guide provides step-by-step instructions for incorporating the command system into the PySignalDecipher application.
 
 ## File Reference
 
@@ -236,23 +305,33 @@ The integration guide provides step-by-step instructions for incorporating the c
 | `command_system/command_history.py` | Undo/redo stack management |
 | `command_system/command_manager.py` | Central command execution point |
 | `command_system/observable.py` | Observable property system |
+| `command_system/variable_registry.py` | Variable registry for linking components |
 | `command_system/project.py` | Project model with command support |
+| `command_system/hardware_manager.py` | Hardware integration via PyVISA |
+| `command_system/workspace_manager.py` | Workspace tab management |
 | `command_system/commands/__init__.py` | Command implementations package |
 | `command_system/commands/signal_commands.py` | Signal operation commands |
-| `command_system/commands/workspace_commands.py` | Workspace operation commands |
+| `command_system/commands/workspace_commands.py` | Workspace and dock operation commands |
 | `command_system/commands/project_commands.py` | Project operation commands |
-| `command_system/usage_example.py` | Example application using commands |
-| `command_system/integration_template.py` | Template for integrating with existing code |
+| `command_system/_usage_example.py` | Example application using commands |
+| `command_system/_integration_template.py` | Template for integrating with existing code |
+| `gui/main_window.py` | Main window implementation |
+| `gui/dock_widgets/signal_viewer_dock.py` | Example dock widget implementation |
+| `app.py` or `pysignaldecipher.py` | Main application class |
 
 ## Usage Examples
 
-**File: `command_system/usage_example.py`**
+**File: `command_system/_usage_example.py`**
 
-Demonstrates how to use the command system in a simple application:
+Demonstrates how to use the command system in PySignalDecipher:
 
-1. Initialize the command system and project
+1. Initialize the command system and related components
    ```python
    command_manager = CommandManager()
+   variable_registry = command_manager.get_variable_registry()
+   hardware_manager = command_manager.get_hardware_manager()
+   workspace_manager = command_manager.get_workspace_manager()
+   
    project = Project("Example Project")
    project.set_command_manager(command_manager)
    ```
@@ -264,21 +343,47 @@ Demonstrates how to use the command system in a simple application:
    command_manager.execute_command(command)
    ```
 
-3. Undo and redo commands
+3. Work with variables and links
    ```python
-   command_manager.undo()  # Undo the last command
-   command_manager.redo()  # Redo the undone command
+   # Create a variable
+   variable = SignalVariable("amplitude", 1.0, "dock1")
+   variable_registry.register_variable(variable)
+   
+   # Subscribe to changes
+   variable.subscribe("ui_component", update_ui_callback)
+   
+   # Change value through command
+   cmd = PropertyChangeCommand(variable, "value", 2.0)
+   command_manager.execute_command(cmd)
    ```
 
-4. Register for history state changes
+4. Create dock widgets
    ```python
-   command_manager.register_history_observers(
-       lambda can_undo: update_undo_button(can_undo),
-       lambda can_redo: update_redo_button(can_redo)
-   )
+   # Create a dock widget
+   workspace_id = workspace_manager.get_active_workspace_id()
+   workspace = project.get_workspace_state(workspace_id)
+   
+   cmd = CreateDockCommand(workspace, "signal_viewer")
+   dock_id = command_manager.execute_command(cmd)
+   
+   # Create a dock widget in the UI
+   dock_widget = SignalViewerDock(dock_id, command_manager)
+   main_window.add_dock_widget(dock_widget)
    ```
 
-5. Save and load projects
+5. Connect to hardware
+   ```python
+   # Get available devices
+   devices = hardware_manager.get_available_devices()
+   
+   # Connect to a device
+   device_id = hardware_manager.connect_device(devices[0], "Oscilloscope")
+   
+   # Get device variables
+   variables = variable_registry.get_variables_by_parent(device_id)
+   ```
+
+6. Save and load projects
    ```python
    # Save project
    project.save("my_project.psd")
@@ -287,4 +392,4 @@ Demonstrates how to use the command system in a simple application:
    project = Project.load("my_project.psd", command_manager)
    ```
 
-The usage example provides a complete demonstration of how to use the command system in an application.
+The usage example provides a complete demonstration of how to use the command system in the PySignalDecipher application.

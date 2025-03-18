@@ -6,6 +6,7 @@ for objects whose state changes should be tracked and undoable.
 """
 
 from typing import Any, Dict, Callable, List, Optional, Set, TypeVar, Generic
+import uuid
 from PySide6.QtCore import QObject, Signal
 
 T = TypeVar('T')  # Generic type for property values
@@ -234,3 +235,34 @@ class PropertyChangeCommand:
             "old_value": self.old_value,
             "new_value": self.new_value,
         }
+        
+class SignalVariable(Observable):
+    """
+    A variable that can be linked to multiple components and notifies
+    subscribers when its value changes.
+    """
+    
+    value = ObservableProperty(None)
+    
+    def __init__(self, name, initial_value=None, parent_id=None):
+        super().__init__()
+        self.id = str(uuid.uuid4())
+        self.name = name
+        self.parent_id = parent_id  # Store the parent dock/widget ID
+        self.value = initial_value
+        self._subscribers = {}  # Dictionary of callback functions keyed by subscriber ID
+    
+    def subscribe(self, subscriber_id, callback):
+        """Register a subscriber to be notified of value changes"""
+        self._subscribers[subscriber_id] = callback
+        # Immediately notify with current value
+        callback(self.value)
+    
+    def unsubscribe(self, subscriber_id):
+        """Remove a subscriber"""
+        if subscriber_id in self._subscribers:
+            del self._subscribers[subscriber_id]
+    
+    def clear_subscribers(self):
+        """Remove all subscribers"""
+        self._subscribers.clear()
