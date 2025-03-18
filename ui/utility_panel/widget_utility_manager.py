@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Signal, Slot
 
-from core.service_registry import ServiceRegistry
+from command_system.command_manager import CommandManager
+from command_system.command import CommandContext
 
 
 class WidgetUtilityManager(QWidget):
@@ -30,8 +31,12 @@ class WidgetUtilityManager(QWidget):
         """
         super().__init__(parent)
         
-        # Get theme manager from registry
-        self._theme_manager = ServiceRegistry.get_theme_manager()
+        # Command system integration
+        self._command_manager = None
+        self._command_context = None
+        
+        # Theme manager will be set by command manager
+        self._theme_manager = None
         
         # Dictionary to map widget types to utility panels
         self._widget_utilities = {}

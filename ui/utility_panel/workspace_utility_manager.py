@@ -1,8 +1,8 @@
 """
-Workspace utility manager for PySignalDecipher.
+Updated workspace utility manager for PySignalDecipher with command system integration.
 
 This module provides a manager for workspace-specific utilities
-that dynamically changes based on the active workspace.
+that dynamically changes based on the active workspace, integrated with the command system.
 """
 
 from PySide6.QtWidgets import (
@@ -10,7 +10,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 
-from core.service_registry import ServiceRegistry
+from command_system.command_manager import CommandManager
+from command_system.command import CommandContext
 
 # Import workspace utilities
 from .workspace_utilities.basic_workspace_utility import BasicWorkspaceUtility
@@ -26,6 +27,7 @@ class WorkspaceUtilityManager(QWidget):
     Manager for workspace-specific utilities.
     
     Dynamically changes the displayed utilities based on the active workspace.
+    Integrated with the command system.
     """
     
     def __init__(self, parent=None):
@@ -37,8 +39,12 @@ class WorkspaceUtilityManager(QWidget):
         """
         super().__init__(parent)
         
-        # Get theme manager from registry
-        self._theme_manager = ServiceRegistry.get_theme_manager()
+        # Command system integration
+        self._command_manager = None
+        self._command_context = None
+        
+        # Theme manager will be set by command manager
+        self._theme_manager = None
         
         # Create workspace utility instances
         self._workspace_utilities = {}
@@ -47,8 +53,27 @@ class WorkspaceUtilityManager(QWidget):
         # Set up the manager UI
         self._setup_ui()
         
+    def set_command_manager(self, command_manager):
+        """
+        Set the command manager for this utility manager.
+        
+        Args:
+            command_manager: Reference to the CommandManager
+        """
+        self._command_manager = command_manager
+        
+        # Create command context
+        self._command_context = CommandContext(command_manager)
+        
+        # Get theme manager from command manager
+        self._theme_manager = command_manager.get_theme_manager()
+        
         # Initialize workspace utilities
         self._initialize_workspace_utilities()
+        
+        # Apply theme if available
+        if self._theme_manager:
+            self.apply_theme(self._theme_manager)
         
     def _setup_ui(self):
         """Set up the user interface for the workspace utility manager."""
@@ -65,6 +90,19 @@ class WorkspaceUtilityManager(QWidget):
         
     def _initialize_workspace_utilities(self):
         """Initialize all workspace utilities."""
+        # Clear any existing utilities
+        for i in range(self._stacked_widget.count()):
+            widget = self._stacked_widget.widget(i)
+            self._stacked_widget.removeWidget(widget)
+            if widget:
+                widget.deleteLater()
+                
+        self._workspace_utilities.clear()
+                
+        # Make sure theme manager is available
+        if not self._theme_manager:
+            return
+            
         # Create instances of each workspace utility
         self._workspace_utilities = {
             "basic": BasicWorkspaceUtility(self._theme_manager),
@@ -77,6 +115,10 @@ class WorkspaceUtilityManager(QWidget):
         
         # Add each utility to the stacked widget
         for utility in self._workspace_utilities.values():
+            # Pass command manager to the utility if it supports it
+            if hasattr(utility, 'set_command_manager') and callable(getattr(utility, 'set_command_manager')):
+                utility.set_command_manager(self._command_manager)
+                
             self._stacked_widget.addWidget(utility)
             
         # Create a default widget for fallback
@@ -98,6 +140,10 @@ class WorkspaceUtilityManager(QWidget):
         # Store the active workspace ID
         self._active_workspace_id = workspace_id
         
+        # Update command context with active workspace
+        if self._command_context:
+            self._command_context.active_workspace = workspace_id
+        
         if workspace_id in self._workspace_utilities:
             utility = self._workspace_utilities[workspace_id]
             utility.set_workspace(workspace_widget)
@@ -111,11 +157,12 @@ class WorkspaceUtilityManager(QWidget):
         Apply the current theme to all workspace utilities.
         
         Args:
-            theme_manager: Optional theme manager reference (uses registry if None)
+            theme_manager: Optional theme manager reference
         """
         if theme_manager:
             self._theme_manager = theme_manager
         
         # Apply theme to all workspace utilities
         for utility in self._workspace_utilities.values():
-            utility.apply_theme(self._theme_manager)
+            if hasattr(utility, 'apply_theme') and callable(getattr(utility, 'apply_theme')):
+                utility.apply_theme(self._theme_manager)

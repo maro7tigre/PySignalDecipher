@@ -1,9 +1,8 @@
 """
-Utility panel for PySignalDecipher.
+Updated utility panel for PySignalDecipher with command system integration.
 
-This module provides a utility panel that appears above the workspace tabs
-and contains tools for hardware connection, workspace-specific utilities,
-and widget-specific utilities. Integration with the command system.
+This module provides an updated utility panel implementation that integrates
+with the command system instead of the service registry.
 """
 
 from PySide6.QtWidgets import (
@@ -14,7 +13,8 @@ from PySide6.QtCore import Qt, Signal, Slot, QSize
 from PySide6.QtGui import QCursor
 
 from command_system.command_manager import CommandManager
-from utils.preferences_manager import PreferencesManager
+from command_system.command import CommandContext
+from command_system.observable import Observable, ObservableProperty, PropertyChangeCommand
 
 from .hardware_utility import HardwareUtilityPanel
 from .workspace_utility_manager import WorkspaceUtilityManager
@@ -81,8 +81,8 @@ class ResizeHandle(QWidget):
             new_height = max(100, min(400, self._start_height + delta))
             self.parent().setFixedHeight(new_height)
             
-            # Store the new height in settings
-            if hasattr(self.parent(), '_preferences_manager'):
+            # Store the new height in preferences manager
+            if hasattr(self.parent(), '_preferences_manager') and self.parent()._preferences_manager:
                 self.parent()._preferences_manager.set_preference(
                     "ui/utility_panel_height", new_height)
                 
@@ -120,8 +120,9 @@ class UtilityPanel(QWidget):
         
         # Command system integration
         self._command_manager = None
+        self._command_context = None
         
-        # Store manager references
+        # Get theme and preferences managers
         self._theme_manager = None
         self._preferences_manager = None
         
@@ -188,13 +189,21 @@ class UtilityPanel(QWidget):
         """
         self._command_manager = command_manager
         
-        # Get required services
-        self._theme_manager = self._command_manager.get_service("ThemeManager")
+        # Create a command context
+        self._command_context = CommandContext(self._command_manager)
+        
+        # Get required services using command manager
+        self._theme_manager = self._command_manager.get_theme_manager()
+        self._preferences_manager = self._command_manager.get_preferences_manager()
         
         # Pass command manager to utility components
         self._hardware_utility.set_command_manager(command_manager)
         self._workspace_utility_manager.set_command_manager(command_manager)
         self._widget_utility_manager.set_command_manager(command_manager)
+        
+        # Apply theme if available
+        if self._theme_manager:
+            self.apply_theme(self._theme_manager)
         
     def set_preferences_manager(self, preferences_manager):
         """
@@ -219,6 +228,11 @@ class UtilityPanel(QWidget):
             workspace_id: ID of the active workspace
             workspace_widget: Reference to the workspace widget
         """
+        # Update the command context with active workspace
+        if self._command_context:
+            self._command_context.active_workspace = workspace_id
+            
+        # Update workspace utility manager
         self._workspace_utility_manager.set_active_workspace(workspace_id, workspace_widget)
         
     def set_selected_widget(self, widget_type, widget):
