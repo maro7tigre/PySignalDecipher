@@ -3,7 +3,7 @@ Utility panel for PySignalDecipher.
 
 This module provides a utility panel that appears above the workspace tabs
 and contains tools for hardware connection, workspace-specific utilities,
-and widget-specific utilities.
+and widget-specific utilities. Integration with the command system.
 """
 
 from PySide6.QtWidgets import (
@@ -13,7 +13,9 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, Signal, Slot, QSize
 from PySide6.QtGui import QCursor
 
-from core.service_registry import ServiceRegistry
+from command_system.command_manager import CommandManager
+from utils.preferences_manager import PreferencesManager
+
 from .hardware_utility import HardwareUtilityPanel
 from .workspace_utility_manager import WorkspaceUtilityManager
 from .widget_utility_manager import WidgetUtilityManager
@@ -103,7 +105,8 @@ class UtilityPanel(QWidget):
     and widget utilities into a unified interface.
     
     This panel is displayed at the top of the main window and contains
-    multiple sections for different types of utilities.
+    multiple sections for different types of utilities. Integrates with
+    the command system for state changes.
     """
     
     def __init__(self, parent=None):
@@ -115,8 +118,11 @@ class UtilityPanel(QWidget):
         """
         super().__init__(parent)
         
-        # Get services from registry
-        self._theme_manager = ServiceRegistry.get_theme_manager()
+        # Command system integration
+        self._command_manager = None
+        
+        # Store manager references
+        self._theme_manager = None
         self._preferences_manager = None
         
         # Set up the panel layout and sections
@@ -173,6 +179,23 @@ class UtilityPanel(QWidget):
         self._resize_handle = ResizeHandle()
         self._outer_layout.addWidget(self._resize_handle)
 
+    def set_command_manager(self, command_manager):
+        """
+        Set the command manager for this panel.
+        
+        Args:
+            command_manager: Reference to the CommandManager
+        """
+        self._command_manager = command_manager
+        
+        # Get required services
+        self._theme_manager = self._command_manager.get_service("ThemeManager")
+        
+        # Pass command manager to utility components
+        self._hardware_utility.set_command_manager(command_manager)
+        self._workspace_utility_manager.set_command_manager(command_manager)
+        self._widget_utility_manager.set_command_manager(command_manager)
+        
     def set_preferences_manager(self, preferences_manager):
         """
         Set the preferences manager to store panel height.
@@ -213,7 +236,7 @@ class UtilityPanel(QWidget):
         Apply the current theme to the utility panel.
         
         Args:
-            theme_manager: Optional theme manager reference (uses registry if None)
+            theme_manager: Optional theme manager reference (uses stored manager if None)
         """
         if theme_manager:
             self._theme_manager = theme_manager
@@ -224,5 +247,6 @@ class UtilityPanel(QWidget):
         self._widget_utility_manager.apply_theme(self._theme_manager)
         
         # Apply theme to resize handle
-        handle_color = self._theme_manager.get_color("border.inactive", "#CCCCCC")
-        self._resize_handle.setStyleSheet(f"background-color: {handle_color};")
+        if self._theme_manager:
+            handle_color = self._theme_manager.get_color("border.inactive", "#CCCCCC")
+            self._resize_handle.setStyleSheet(f"background-color: {handle_color};")

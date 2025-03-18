@@ -1,12 +1,26 @@
+"""
+Main application window for PySignalDecipher.
+
+This module provides the main window implementation that integrates with the command system.
+"""
+
 from PySide6.QtWidgets import QMainWindow, QApplication, QStatusBar, QWidget, QVBoxLayout
 from PySide6.QtCore import QSize, Qt
 
-from core.service_registry import ServiceRegistry
-from .theme import ThemeManager
-from .menus import MenuManager, MenuActionHandler
-from .themed_widgets import ThemedTab
-from .utility_panel import UtilityPanel
-from .workspaces import (
+from command_system.command_manager import CommandManager
+from command_system.project import Project
+from command_system.command import CommandContext
+from command_system.ui_integration import CommandButton, CommandAction
+from utils.preferences_manager import PreferencesManager
+from core.hardware.device_manager import DeviceManager
+from .layout_manager import LayoutManager
+from .docking.dock_manager  import DockManager
+
+from ui.theme.theme_manager import ThemeManager
+from ui.menus import MenuManager, MenuActionHandler
+from ui.themed_widgets import ThemedTab
+from ui.utility_panel import UtilityPanel
+from ui.workspaces import (
     BasicSignalWorkspace,
     ProtocolDecoderWorkspace,
     PatternRecognitionWorkspace,
@@ -21,6 +35,7 @@ class MainWindow(QMainWindow):
     Main application window with support for theme and preferences.
     
     Handles window state restoration, theme application, and menu system.
+    Integrates with the command system for all state changes.
     """
     
     def __init__(self, parent=None):
@@ -32,12 +47,18 @@ class MainWindow(QMainWindow):
         """
         super().__init__(parent)
         
-        # Get managers from registry
-        self._theme_manager = ServiceRegistry.get_theme_manager()
-        self._preferences_manager = ServiceRegistry.get_preferences_manager()
-        self._device_manager = ServiceRegistry.get_device_manager()
-        self._layout_manager = ServiceRegistry.get_layout_manager()
-        self._dock_manager = ServiceRegistry.get_dock_manager()
+        # Get command manager
+        self._command_manager = CommandManager.instance()
+        
+        # Create command context
+        self._context = CommandContext(self._command_manager)
+        
+        # Get managers from command manager
+        self._theme_manager = self._command_manager.get_service(ThemeManager)
+        self._preferences_manager = self._command_manager.get_service(PreferencesManager)
+        self._device_manager = self._command_manager.get_service(DeviceManager)
+        self._layout_manager = self._command_manager.get_service(LayoutManager)
+        self._dock_manager = self._command_manager.get_service(DockManager)
         
         # Set window properties
         self.setWindowTitle("PySignalDecipher")
@@ -52,8 +73,10 @@ class MainWindow(QMainWindow):
         # Restore window state
         self._restore_window_state()
         
-        # Apply the current theme
-        self._theme_manager.apply_theme()
+        # Connect command manager signals
+        self._command_manager.command_executed.connect(self._on_command_executed)
+        self._command_manager.command_undone.connect(self._on_command_undone)
+        self._command_manager.command_redone.connect(self._on_command_redone)
         
     def _setup_menus(self):
         """Set up the application menu system."""
@@ -108,6 +131,9 @@ class MainWindow(QMainWindow):
         """Set up the utility panel above the tabs."""
         self._utility_panel = UtilityPanel(self)
         
+        # Provide command manager to utility panel
+        self._utility_panel.set_command_manager(self._command_manager)
+        
         # Provide preferences manager to utility panel for height persistence
         self._utility_panel.set_preferences_manager(self._preferences_manager)
         
@@ -117,12 +143,12 @@ class MainWindow(QMainWindow):
     def _setup_workspaces(self):
         """Set up workspace tabs."""
         # Create and add each workspace
-        self._basic_workspace = BasicSignalWorkspace(self)
-        self._protocol_workspace = ProtocolDecoderWorkspace(self)
-        self._pattern_workspace = PatternRecognitionWorkspace(self)
-        self._separation_workspace = SignalSeparationWorkspace(self)
-        self._origin_workspace = SignalOriginWorkspace(self)
-        self._advanced_workspace = AdvancedAnalysisWorkspace(self)
+        self._basic_workspace = BasicSignalWorkspace(self._command_manager, self)
+        self._protocol_workspace = ProtocolDecoderWorkspace(self._command_manager, self)
+        self._pattern_workspace = PatternRecognitionWorkspace(self._command_manager, self)
+        self._separation_workspace = SignalSeparationWorkspace(self._command_manager, self)
+        self._origin_workspace = SignalOriginWorkspace(self._command_manager, self)
+        self._advanced_workspace = AdvancedAnalysisWorkspace(self._command_manager, self)
         
         # Apply theme to workspaces
         for workspace in [
@@ -134,9 +160,6 @@ class MainWindow(QMainWindow):
             self._advanced_workspace
         ]:
             workspace.apply_theme(self._theme_manager)
-            workspace.set_preferences_manager(self._preferences_manager)
-            workspace.set_layout_manager(self._layout_manager)
-            workspace.set_dock_manager(self._dock_manager)
         
         # Add workspaces to tab widget
         self._tab_widget.addTab(self._basic_workspace, "Basic Signal Analysis")
@@ -162,7 +185,7 @@ class MainWindow(QMainWindow):
         Args:
             index: Index of the new active tab
         """
-        # Update the active workspace in the menu
+        # Update the active workspace in the context
         workspace_id = None
         workspace = None
         
@@ -170,6 +193,9 @@ class MainWindow(QMainWindow):
             workspace = self._tab_widget.widget(index)
             if hasattr(workspace, 'get_workspace_id'):
                 workspace_id = workspace.get_workspace_id()
+                
+                # Update the command context with active workspace
+                self._context.active_workspace = workspace_id
                 
         # Update workspace menu if we have a valid workspace ID
         if workspace_id and hasattr(self._menu_manager, '_workspace_menu'):
@@ -182,7 +208,10 @@ class MainWindow(QMainWindow):
         # Update dock manager with the new workspace's main window
         if workspace and hasattr(workspace, 'get_main_window'):
             self._dock_manager.set_main_window(workspace.get_main_window())
-        
+            
+        # Save the active tab preference
+        self._preferences_manager.set_preference("ui/active_workspace_tab", index)
+    
     def _restore_window_state(self):
         """Restore window state from preferences."""
         self._preferences_manager.restore_window_state(self)
@@ -191,6 +220,53 @@ class MainWindow(QMainWindow):
         active_tab = self._preferences_manager.get_preference("ui/active_workspace_tab", 0)
         if isinstance(active_tab, int) and 0 <= active_tab < self._tab_widget.count():
             self._tab_widget.setCurrentIndex(active_tab)
+            
+    def _on_command_executed(self, command):
+        """
+        Handle command execution event.
+        
+        Args:
+            command: Command that was executed
+        """
+        # Update UI state based on command
+        self._update_ui_state()
+        
+    def _on_command_undone(self, _):
+        """
+        Handle command undo event.
+        
+        Args:
+            _: Ignored parameter
+        """
+        # Update UI state after undo
+        self._update_ui_state()
+        
+    def _on_command_redone(self, _):
+        """
+        Handle command redo event.
+        
+        Args:
+            _: Ignored parameter
+        """
+        # Update UI state after redo
+        self._update_ui_state()
+        
+    def _update_ui_state(self):
+        """Update UI state based on current application state."""
+        # Update window title with project name
+        project = self._command_manager.get_active_project()
+        if project:
+            self.setWindowTitle(f"PySignalDecipher - {project.name}")
+            
+        # Update undo/redo actions
+        if hasattr(self._menu_manager, 'get_action'):
+            undo_action = self._menu_manager.get_action("edit.undo")
+            if undo_action:
+                undo_action.setEnabled(self._command_manager.can_undo())
+                
+            redo_action = self._menu_manager.get_action("edit.redo")
+            if redo_action:
+                redo_action.setEnabled(self._command_manager.can_redo())
         
     def closeEvent(self, event):
         """
@@ -199,9 +275,6 @@ class MainWindow(QMainWindow):
         Args:
             event: Close event
         """
-        # Save active tab
-        self._preferences_manager.set_preference("ui/active_workspace_tab", self._tab_widget.currentIndex())
-        
         # Save window state
         self._preferences_manager.save_window_state(self)
         

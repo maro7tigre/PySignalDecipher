@@ -1,30 +1,54 @@
+"""
+Base workspace implementation for PySignalDecipher.
+
+This module provides the base workspace class that integrates with the command system.
+"""
+
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QMenu, QMainWindow
 from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QAction
 
-from ..themed_widgets.base_themed_widget import BaseThemedWidget
-from core.service_registry import ServiceRegistry
+from command_system.command_manager import CommandManager
+from command_system.command import CommandContext
+from command_system.ui_integration import CommandConnector, CommandAction
+
+from ui.theme.theme_manager import ThemeManager
+from ui.layout_manager import LayoutManager
+from ui.docking.dock_manager import DockManager
+from utils.preferences_manager import PreferencesManager
 
 
-class BaseWorkspace(BaseThemedWidget):
+class BaseWorkspace(QWidget):
     """
     Base class for all workspace tabs.
     
     Provides common functionality for workspaces such as layout management,
-    state persistence, and interaction with the main application.
+    state persistence, and integration with the command system.
     """
     
     # Signal emitted when the workspace state changes
     state_changed = Signal()
     
-    def __init__(self, parent=None):
+    def __init__(self, command_manager=None, parent=None):
         """
         Initialize the base workspace.
         
         Args:
+            command_manager: CommandManager instance
             parent: Parent widget
         """
         super().__init__(parent)
+        
+        # Command system integration
+        self._command_manager = command_manager or CommandManager.instance()
+        self._context = CommandContext(self._command_manager)
+        self._context.active_workspace = self.get_workspace_id()
+        
+        # Get services from command manager
+        self._theme_manager = self._command_manager.get_service(ThemeManager)
+        self._preferences_manager = self._command_manager.get_service(PreferencesManager)
+        self._layout_manager = self._command_manager.get_service(LayoutManager)
+        self._dock_manager = self._command_manager.get_service(DockManager)
         
         # Set up the main layout
         self._main_layout = QVBoxLayout(self)
@@ -44,13 +68,13 @@ class BaseWorkspace(BaseThemedWidget):
         self._central_layout = QVBoxLayout(self._central_widget)
         self._central_layout.setContentsMargins(0, 0, 0, 0)
         
-        # References to managers (set by appropriate methods)
-        self._preferences_manager = None
-        self._layout_manager = None
-        self._dock_manager = None
-        
         # Initialize the workspace
         self._initialize_workspace()
+        
+        # Connect to command manager signals
+        self._command_manager.command_executed.connect(self._on_command_executed)
+        self._command_manager.command_undone.connect(self._on_command_undone)
+        self._command_manager.command_redone.connect(self._on_command_redone)
         
     def _initialize_workspace(self):
         """
@@ -60,51 +84,22 @@ class BaseWorkspace(BaseThemedWidget):
         """
         pass
         
-    def _apply_theme_impl(self):
+    def apply_theme(self, theme_manager=None):
         """
         Apply the current theme to this workspace.
         
-        Implementation of the method from BaseThemedWidget.
+        Args:
+            theme_manager: Optional reference to theme manager
         """
+        # Store reference if provided
+        if theme_manager:
+            self._theme_manager = theme_manager
+            
         # Apply theme to all child widgets that support it
-        for child in self.findChildren(BaseThemedWidget):
+        for child in self.findChildren(QWidget):
             if hasattr(child, 'apply_theme') and callable(child.apply_theme):
                 child.apply_theme(self._theme_manager)
                 
-    def set_preferences_manager(self, preferences_manager):
-        """
-        Set the preferences manager.
-        
-        Args:
-            preferences_manager: Reference to the PreferencesManager
-        """
-        self._preferences_manager = preferences_manager
-        
-        # Load workspace state
-        self._load_workspace_state()
-        
-    def set_layout_manager(self, layout_manager):
-        """
-        Set the layout manager.
-        
-        Args:
-            layout_manager: Reference to the LayoutManager
-        """
-        self._layout_manager = layout_manager
-        
-    def set_dock_manager(self, dock_manager):
-        """
-        Set the dock manager.
-        
-        Args:
-            dock_manager: Reference to the DockManager
-        """
-        self._dock_manager = dock_manager
-        
-        # Set main window for dock manager (if not already set)
-        if self._dock_manager and self._main_window:
-            self._dock_manager.set_main_window(self._main_window)
-            
     def get_main_window(self):
         """
         Get the internal QMainWindow for dock widgets.
@@ -137,23 +132,39 @@ class BaseWorkspace(BaseThemedWidget):
             # Add actions for each layout
             if layouts:
                 for layout_id, layout in layouts.items():
-                    action = QAction(layout.name, layouts_menu)
-                    action.triggered.connect(
-                        lambda checked=False, lid=layout_id: 
-                        self._layout_manager.apply_layout(workspace_id, lid, self._main_window)
+                    # Create action using CommandAction instead of QAction
+                    from command_system.commands.workspace_commands import ApplyLayoutCommand
+                    action = CommandAction(
+                        ApplyLayoutCommand,
+                        layout.name,
+                        layouts_menu,
+                        workspace_id=workspace_id,
+                        layout_id=layout_id,
+                        main_window=self._main_window
                     )
                     layouts_menu.addAction(action)
                     
                 layouts_menu.addSeparator()
             
             # Add save layout action
-            save_action = QAction("Save Current Layout...", layouts_menu)
-            save_action.triggered.connect(self._save_current_layout)
+            from command_system.commands.workspace_commands import SaveLayoutCommand
+            save_action = CommandAction(
+                SaveLayoutCommand,
+                "Save Current Layout...",
+                layouts_menu,
+                workspace_id=workspace_id,
+                main_window=self._main_window
+            )
             layouts_menu.addAction(save_action)
             
             # Add manage layouts action
-            manage_action = QAction("Manage Layouts...", layouts_menu)
-            manage_action.triggered.connect(self._manage_layouts)
+            from command_system.commands.workspace_commands import ManageLayoutsCommand
+            manage_action = CommandAction(
+                ManageLayoutsCommand,
+                "Manage Layouts...",
+                layouts_menu,
+                workspace_id=workspace_id
+            )
             layouts_menu.addAction(manage_action)
             
             menu.addMenu(layouts_menu)
@@ -166,46 +177,52 @@ class BaseWorkspace(BaseThemedWidget):
         # Show the menu
         menu.exec_(self._main_window.mapToGlobal(pos))
         
-    def _save_current_layout(self):
-        """Save the current layout."""
-        if not self._layout_manager:
-            return
-            
-        # Show dialog to get layout name
-        from PySide6.QtWidgets import QInputDialog
-        name, ok = QInputDialog.getText(
-            self, 
-            "Save Layout", 
-            "Enter a name for this layout:"
-        )
+    def _on_command_executed(self, command):
+        """
+        Handle command execution.
         
-        if ok and name:
-            # Create a new layout
-            self._layout_manager.create_layout(
-                self.get_workspace_id(),
-                name,
-                self._main_window
-            )
-            
-    def _manage_layouts(self):
-        """Manage layouts for this workspace."""
-        if not self._layout_manager:
-            return
-            
-        # Show layout manager dialog
-        from ui.layout_manager import LayoutManagerDialog
-        dialog = LayoutManagerDialog(
-            self,
-            self._layout_manager,
-            self.get_workspace_id()
-        )
-        dialog.exec_()
+        Args:
+            command: Command that was executed
+        """
+        # Check if the command is relevant to this workspace
+        if hasattr(command, 'context') and command.context:
+            if command.context.active_workspace == self.get_workspace_id():
+                self._update_ui_state()
+                
+    def _on_command_undone(self, _):
+        """
+        Handle command undo.
+        
+        Args:
+            _: Ignored parameter
+        """
+        # Update UI state
+        self._update_ui_state()
+        
+    def _on_command_redone(self, _):
+        """
+        Handle command redo.
+        
+        Args:
+            _: Ignored parameter
+        """
+        # Update UI state
+        self._update_ui_state()
+        
+    def _update_ui_state(self):
+        """
+        Update UI state based on current application state.
+        
+        To be overridden by subclasses.
+        """
+        pass
         
     def _load_workspace_state(self):
         """
         Load workspace state from preferences.
         
-        To be overridden by subclasses.
+        This is called during initialization and when the workspace is activated.
+        To be extended by subclasses.
         """
         # Apply the active layout if layout manager is available
         if self._layout_manager and self._main_window:
@@ -213,17 +230,21 @@ class BaseWorkspace(BaseThemedWidget):
             layout = self._layout_manager.get_active_layout(workspace_id)
             
             if layout:
-                self._layout_manager.apply_layout(
-                    workspace_id,
-                    layout.id,
-                    self._main_window
+                from command_system.commands.workspace_commands import ApplyLayoutCommand
+                cmd = ApplyLayoutCommand(
+                    self._context,
+                    workspace_id=workspace_id,
+                    layout_id=layout.id,
+                    main_window=self._main_window
                 )
+                self._command_manager.execute_command(cmd)
         
     def _save_workspace_state(self):
         """
         Save workspace state to preferences.
         
-        To be overridden by subclasses.
+        This is called when the workspace is deactivated or the application is closed.
+        To be extended by subclasses.
         """
         pass
         
