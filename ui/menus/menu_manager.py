@@ -1,6 +1,7 @@
 from PySide6.QtWidgets import QMenuBar, QMenu
 from PySide6.QtGui import QAction
 from PySide6.QtCore import QObject, Signal
+from command_system.command_manager import CommandManager
 
 from .file_menu import FileMenu
 from .edit_menu import EditMenu
@@ -23,7 +24,7 @@ class MenuManager(QObject):
     # Signal emitted when a menu action is triggered
     action_triggered = Signal(str)
     
-    def __init__(self, main_window, theme_manager, preferences_manager):
+    def __init__(self, main_window, theme_manager=None, preferences_manager=None):
         """
         Initialize the menu manager.
         
@@ -36,6 +37,18 @@ class MenuManager(QObject):
         
         # Dictionary to store all created actions
         self._actions = {}
+        
+        # Get command manager for accessing services if needed
+        self._command_manager = CommandManager.instance()
+        
+        # Get services from command manager if not provided
+        if theme_manager is None and self._command_manager:
+            from ui.theme.theme_manager import ThemeManager
+            theme_manager = self._command_manager.get_service(ThemeManager)
+            
+        if preferences_manager is None and self._command_manager:
+            from utils.preferences_manager import PreferencesManager
+            preferences_manager = self._command_manager.get_service(PreferencesManager)
         
         # Store references
         self._main_window = main_window
@@ -108,9 +121,16 @@ class MenuManager(QObject):
         
     def update_action_states(self):
         """Update the enabled/checked state of all actions based on application state."""
-        # This would update action states based on current application context
-        # For now, we'll leave it empty
-        pass
+        # Get active project and command manager state
+        if self._command_manager:
+            # Update undo/redo action states
+            undo_action = self.get_action("edit.undo")
+            if undo_action:
+                undo_action.setEnabled(self._command_manager.can_undo())
+                
+            redo_action = self.get_action("edit.redo")
+            if redo_action:
+                redo_action.setEnabled(self._command_manager.can_redo())
         
     def create_action(self, parent, action_id, text, shortcut=None, status_tip=None, 
                       icon=None, checkable=False, checked=False):

@@ -1,5 +1,6 @@
 from PySide6.QtWidgets import QApplication, QMessageBox, QFileDialog
 from PySide6.QtCore import QObject
+from command_system.command_manager import CommandManager
 
 
 class MenuActionHandler(QObject):
@@ -9,7 +10,7 @@ class MenuActionHandler(QObject):
     Implements handler methods for all menu actions in the application.
     """
     
-    def __init__(self, main_window, theme_manager, preferences_manager):
+    def __init__(self, main_window, theme_manager=None, preferences_manager=None):
         """
         Initialize the menu action handler.
         
@@ -19,6 +20,18 @@ class MenuActionHandler(QObject):
             preferences_manager: Reference to the PreferencesManager
         """
         super().__init__()
+        
+        # Get command manager
+        self._command_manager = CommandManager.instance()
+        
+        # Get services from command manager if not provided
+        if theme_manager is None and self._command_manager:
+            from ui.theme.theme_manager import ThemeManager
+            theme_manager = self._command_manager.get_service(ThemeManager)
+            
+        if preferences_manager is None and self._command_manager:
+            from utils.preferences_manager import PreferencesManager
+            preferences_manager = self._command_manager.get_service(PreferencesManager)
         
         # Store references
         self._main_window = main_window
@@ -85,14 +98,6 @@ class MenuActionHandler(QObject):
             "tools.settings": self._open_settings,
             
             # Help menu
-            "tools.signal_library": self._open_signal_library,
-            "tools.protocol_library": self._open_protocol_library,
-            "tools.pattern_library": self._open_pattern_library,
-            "tools.plugin_manager": self._open_plugin_manager,
-            "tools.script_editor": self._open_script_editor,
-            "tools.settings": self._open_settings,
-            
-            # Help menu
             "help.documentation": self._open_documentation,
             "help.quick_start": self._open_quick_start,
             "help.shortcuts": self._open_shortcuts,
@@ -102,12 +107,13 @@ class MenuActionHandler(QObject):
         }
         
         # Add theme handlers dynamically
-        for theme in self._theme_manager.get_available_themes():
-            # Use a factory function to create the correct handler for each theme
-            def create_theme_handler(theme_name):
-                return lambda: self._set_theme(theme_name)
-                
-            self._handlers[f"view.theme.{theme}"] = create_theme_handler(theme)
+        if self._theme_manager:
+            for theme in self._theme_manager.get_available_themes():
+                # Use a factory function to create the correct handler for each theme
+                def create_theme_handler(theme_name):
+                    return lambda: self._set_theme(theme_name)
+                    
+                self._handlers[f"view.theme.{theme}"] = create_theme_handler(theme)
         
     def handle_action(self, action_id):
         """
@@ -129,83 +135,239 @@ class MenuActionHandler(QObject):
     
     def _new_project(self):
         """Create a new project."""
-        pass
+        if self._command_manager:
+            from command_system.project import Project
+            
+            # Check for unsaved changes
+            current_project = self._command_manager.get_active_project()
+            if current_project and current_project.modified:
+                # Ask user to save changes
+                result = QMessageBox.question(
+                    self._main_window,
+                    "Unsaved Changes",
+                    "The current project has unsaved changes. Do you want to save them?",
+                    QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                    QMessageBox.Save
+                )
+                
+                if result == QMessageBox.Save:
+                    # Save the project
+                    self._save_project()
+                elif result == QMessageBox.Cancel:
+                    # Cancel new project creation
+                    return
+            
+            # Create a new project
+            project = Project("Untitled Project")
+            project.set_command_manager(self._command_manager)
         
     def _open_project(self):
         """Open an existing project."""
-        pass
+        # Show file dialog
+        file_path, _ = QFileDialog.getOpenFileName(
+            self._main_window,
+            "Open Project",
+            "",
+            "PySignalDecipher Projects (*.psd);;All Files (*)"
+        )
+        
+        if file_path and self._command_manager:
+            from command_system.project import Project
+            
+            # Load the project
+            project = Project.load(file_path, self._command_manager)
+            if project:
+                # Successful load
+                project.set_command_manager(self._command_manager)
+            else:
+                # Show error
+                QMessageBox.critical(
+                    self._main_window,
+                    "Error Opening Project",
+                    "Could not open the project file."
+                )
         
     def _close_project(self):
         """Close the current project."""
-        pass
+        if self._command_manager:
+            current_project = self._command_manager.get_active_project()
+            if current_project and current_project.modified:
+                # Ask user to save changes
+                result = QMessageBox.question(
+                    self._main_window,
+                    "Unsaved Changes",
+                    "The current project has unsaved changes. Do you want to save them?",
+                    QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                    QMessageBox.Save
+                )
+                
+                if result == QMessageBox.Save:
+                    # Save the project
+                    self._save_project()
+                elif result == QMessageBox.Cancel:
+                    # Cancel closing
+                    return
+                    
+            # Create a new empty project
+            from command_system.project import Project
+            project = Project("Untitled Project")
+            project.set_command_manager(self._command_manager)
         
     def _save_project(self):
         """Save the current project."""
-        pass
+        if self._command_manager:
+            current_project = self._command_manager.get_active_project()
+            if current_project:
+                # Check if project has a file path
+                # If not, show save as dialog
+                if not hasattr(current_project, 'file_path') or not current_project.file_path:
+                    self._save_project_as()
+                else:
+                    # Save to existing path
+                    current_project.save(current_project.file_path)
         
     def _save_project_as(self):
         """Save the current project with a new name."""
-        pass
+        if self._command_manager:
+            current_project = self._command_manager.get_active_project()
+            if current_project:
+                # Show save dialog
+                file_path, _ = QFileDialog.getSaveFileName(
+                    self._main_window,
+                    "Save Project As",
+                    "",
+                    "PySignalDecipher Projects (*.psd);;All Files (*)"
+                )
+                
+                if file_path:
+                    # Save project
+                    if current_project.save(file_path):
+                        # Update window title
+                        self._main_window.setWindowTitle(f"PySignalDecipher - {current_project.name}")
+                    else:
+                        # Show error
+                        QMessageBox.critical(
+                            self._main_window,
+                            "Error Saving Project",
+                            "Could not save the project."
+                        )
         
     def _import_signal(self):
         """Import signal data from a file."""
-        pass
+        # Show file dialog
+        file_path, _ = QFileDialog.getOpenFileName(
+            self._main_window,
+            "Import Signal",
+            "",
+            "Signal Files (*.csv *.wav *.dat);;All Files (*)"
+        )
+        
+        if file_path and self._command_manager:
+            # Use command to import signal
+            from command_system.commands.signal_commands import ImportSignalCommand
+            command = ImportSignalCommand(self._command_manager.get_active_project(), file_path)
+            self._command_manager.execute_command(command)
         
     def _export_signal(self):
         """Export signal data to a file."""
+        # TODO: Implement export signal functionality
         pass
         
     def _export_results(self):
         """Export analysis results to a file."""
+        # TODO: Implement export results functionality
         pass
         
     def _exit_application(self):
         """Exit the application."""
+        # Check for unsaved changes
+        if self._command_manager:
+            current_project = self._command_manager.get_active_project()
+            if current_project and current_project.modified:
+                # Ask user to save changes
+                result = QMessageBox.question(
+                    self._main_window,
+                    "Unsaved Changes",
+                    "The current project has unsaved changes. Do you want to save them?",
+                    QMessageBox.Save | QMessageBox.Discard | QMessageBox.Cancel,
+                    QMessageBox.Save
+                )
+                
+                if result == QMessageBox.Save:
+                    # Save the project
+                    self._save_project()
+                elif result == QMessageBox.Cancel:
+                    # Cancel exit
+                    return
+        
+        # Quit the application
         QApplication.quit()
         
     # Edit menu handlers
     
     def _undo(self):
         """Undo the last action."""
-        pass
+        if self._command_manager:
+            self._command_manager.undo()
         
     def _redo(self):
         """Redo the previously undone action."""
-        pass
+        if self._command_manager:
+            self._command_manager.redo()
         
     def _cut(self):
         """Cut the selected content to the clipboard."""
-        pass
+        # Focus widget handles this standard action
+        focused_widget = QApplication.focusWidget()
+        if focused_widget and hasattr(focused_widget, "cut"):
+            focused_widget.cut()
         
     def _copy(self):
         """Copy the selected content to the clipboard."""
-        pass
+        # Focus widget handles this standard action
+        focused_widget = QApplication.focusWidget()
+        if focused_widget and hasattr(focused_widget, "copy"):
+            focused_widget.copy()
         
     def _paste(self):
         """Paste content from the clipboard."""
-        pass
+        # Focus widget handles this standard action
+        focused_widget = QApplication.focusWidget()
+        if focused_widget and hasattr(focused_widget, "paste"):
+            focused_widget.paste()
         
     def _delete(self):
         """Delete the selected content."""
-        pass
+        # Focus widget handles this standard action
+        focused_widget = QApplication.focusWidget()
+        if focused_widget and hasattr(focused_widget, "clear"):
+            focused_widget.clear()
         
     def _select_all(self):
         """Select all content."""
-        pass
+        # Focus widget handles this standard action
+        focused_widget = QApplication.focusWidget()
+        if focused_widget and hasattr(focused_widget, "selectAll"):
+            focused_widget.selectAll()
         
     def _edit_preferences(self):
         """Edit application preferences."""
+        # TODO: Implement preference editing
         pass
         
     # View menu handlers
     
     def _toggle_main_toolbar(self):
         """Toggle visibility of the main toolbar."""
+        # TODO: Implement toolbar toggle
         pass
         
     def _toggle_status_bar(self):
         """Toggle visibility of the status bar."""
-        pass
+        # Get status bar from main window
+        status_bar = self._main_window.statusBar()
+        if status_bar:
+            status_bar.setVisible(not status_bar.isVisible())
         
     def _set_theme(self, theme):
         """
@@ -214,22 +376,29 @@ class MenuActionHandler(QObject):
         Args:
             theme: Name of the theme to set
         """
-        self._theme_manager.set_theme(theme)
+        if self._theme_manager:
+            self._theme_manager.set_theme(theme)
         
     def _toggle_full_screen(self):
         """Toggle full screen mode."""
-        pass
+        if self._main_window.isFullScreen():
+            self._main_window.showNormal()
+        else:
+            self._main_window.showFullScreen()
         
     def _zoom_in(self):
         """Zoom in."""
+        # TODO: Implement zoom functionality
         pass
         
     def _zoom_out(self):
         """Zoom out."""
+        # TODO: Implement zoom functionality
         pass
         
     def _reset_zoom(self):
         """Reset zoom to default level."""
+        # TODO: Implement zoom functionality
         pass
         
     # Workspace menu handlers
@@ -241,98 +410,235 @@ class MenuActionHandler(QObject):
         Args:
             workspace_id: ID of the workspace to switch to
         """
-        pass
+        # Find the tab with the matching workspace ID
+        for i in range(self._main_window._tab_widget.count()):
+            workspace = self._main_window._tab_widget.widget(i)
+            if hasattr(workspace, 'get_workspace_id') and workspace.get_workspace_id() == workspace_id:
+                self._main_window._tab_widget.setCurrentIndex(i)
+                break
         
     def _new_custom_workspace(self):
         """Create a new custom workspace."""
+        # TODO: Implement custom workspace creation
         pass
         
     def _save_layout(self):
         """Save the current workspace layout."""
-        pass
+        # Get current workspace
+        current_tab = self._main_window._tab_widget.currentWidget()
+        if current_tab and hasattr(current_tab, 'get_workspace_id') and self._command_manager:
+            workspace_id = current_tab.get_workspace_id()
+            
+            # Use command to save layout
+            from command_system.commands.workspace_commands import SaveLayoutCommand
+            command = SaveLayoutCommand(
+                None,  # Context will be provided by command manager
+                workspace_id=workspace_id,
+                main_window=current_tab.get_main_window()
+            )
+            self._command_manager.execute_command(command)
         
     def _load_layout(self):
         """Load a saved workspace layout."""
-        pass
-        
+        # Get current workspace
+        current_tab = self._main_window._tab_widget.currentWidget()
+        if current_tab and hasattr(current_tab, 'get_workspace_id') and self._layout_manager:
+            workspace_id = current_tab.get_workspace_id()
+            
+            # Get available layouts
+            layouts = self._layout_manager.get_layouts_for_workspace(workspace_id)
+            if not layouts:
+                QMessageBox.information(
+                    self._main_window,
+                    "No Layouts",
+                    "No saved layouts found for this workspace."
+                )
+                return
+                
+            # TODO: Show layout selection dialog
+            # For now, just apply the first layout
+            layout_id = next(iter(layouts.keys()))
+            
+            # Apply the layout
+            main_window = current_tab.get_main_window()
+            if main_window:
+                from command_system.commands.workspace_commands import ApplyLayoutCommand
+                command = ApplyLayoutCommand(
+                    None,  # Context will be provided by command manager
+                    workspace_id=workspace_id,
+                    layout_id=layout_id,
+                    main_window=main_window
+                )
+                self._command_manager.execute_command(command)
+
     def _manage_layouts(self):
         """Manage saved workspace layouts."""
-        pass
-        
+        # Get current workspace
+        current_tab = self._main_window._tab_widget.currentWidget()
+        if current_tab and hasattr(current_tab, 'get_workspace_id') and self._layout_manager:
+            workspace_id = current_tab.get_workspace_id()
+            
+            # Show layout manager dialog
+            from ui.layout_manager import LayoutManagerDialog
+            dialog = LayoutManagerDialog(self._main_window, self._layout_manager, workspace_id)
+            dialog.exec_()
+    
     # Window menu handlers
     
     def _new_window(self):
         """Open a new application window."""
-        pass
-        
+        # TODO: Implement multi-window functionality
+        QMessageBox.information(
+            self._main_window,
+            "Not Implemented",
+            "Multi-window functionality is not yet implemented."
+        )
+    
     def _cascade_windows(self):
         """Arrange windows in a cascading pattern."""
+        # This only applies if we have MDI or multi-window
         pass
-        
+    
     def _tile_windows(self):
         """Arrange windows in a tiled pattern."""
+        # This only applies if we have MDI or multi-window
         pass
-        
+    
     def _arrange_icons(self):
         """Arrange minimized window icons."""
+        # This only applies if we have MDI or multi-window
         pass
-        
+    
     def _close_all_windows(self):
         """Close all windows."""
+        # This only applies if we have MDI or multi-window
         pass
-        
+    
     def _reset_layout(self):
         """Reset window layout to default."""
-        pass
-        
+        # Get current workspace
+        current_tab = self._main_window._tab_widget.currentWidget()
+        if current_tab and hasattr(current_tab, 'get_workspace_id') and self._layout_manager:
+            workspace_id = current_tab.get_workspace_id()
+            
+            # Get default layout
+            default_layout = self._layout_manager.get_default_layout(workspace_id)
+            if default_layout:
+                main_window = current_tab.get_main_window()
+                if main_window:
+                    # Apply the default layout
+                    from command_system.commands.workspace_commands import ApplyLayoutCommand
+                    command = ApplyLayoutCommand(
+                        None,  # Context will be provided by command manager
+                        workspace_id=workspace_id,
+                        layout_id=default_layout.id,
+                        main_window=main_window
+                    )
+                    self._command_manager.execute_command(command)
+    
     # Tools menu handlers
     
     def _open_signal_library(self):
         """Open the signal library."""
-        pass
-        
+        # TODO: Implement signal library
+        QMessageBox.information(
+            self._main_window,
+            "Not Implemented",
+            "Signal library is not yet implemented."
+        )
+    
     def _open_protocol_library(self):
         """Open the protocol library."""
-        pass
-        
+        # TODO: Implement protocol library
+        QMessageBox.information(
+            self._main_window,
+            "Not Implemented",
+            "Protocol library is not yet implemented."
+        )
+    
     def _open_pattern_library(self):
         """Open the pattern library."""
-        pass
-        
+        # TODO: Implement pattern library
+        QMessageBox.information(
+            self._main_window,
+            "Not Implemented",
+            "Pattern library is not yet implemented."
+        )
+    
     def _open_plugin_manager(self):
         """Open the plugin manager."""
-        pass
-        
+        # TODO: Implement plugin manager
+        QMessageBox.information(
+            self._main_window,
+            "Not Implemented",
+            "Plugin manager is not yet implemented."
+        )
+    
     def _open_script_editor(self):
         """Open the script editor."""
-        pass
-        
+        # TODO: Implement script editor
+        QMessageBox.information(
+            self._main_window,
+            "Not Implemented",
+            "Script editor is not yet implemented."
+        )
+    
     def _open_settings(self):
         """Open the settings dialog."""
-        pass
-        
+        # TODO: Implement settings dialog
+        QMessageBox.information(
+            self._main_window,
+            "Not Implemented",
+            "Settings dialog is not yet implemented."
+        )
+    
     # Help menu handlers
     
     def _open_documentation(self):
         """Open the application documentation."""
-        pass
-        
+        # TODO: Implement documentation viewer
+        QMessageBox.information(
+            self._main_window,
+            "Not Implemented",
+            "Documentation viewer is not yet implemented."
+        )
+    
     def _open_quick_start(self):
         """Open the quick start guide."""
-        pass
-        
+        # TODO: Implement quick start guide
+        QMessageBox.information(
+            self._main_window,
+            "Not Implemented",
+            "Quick start guide is not yet implemented."
+        )
+    
     def _open_shortcuts(self):
         """Open the keyboard shortcuts documentation."""
-        pass
-        
+        # TODO: Implement shortcuts documentation
+        QMessageBox.information(
+            self._main_window,
+            "Not Implemented",
+            "Keyboard shortcuts documentation is not yet implemented."
+        )
+    
     def _open_examples(self):
         """Open the example projects."""
-        pass
-        
+        # TODO: Implement example projects
+        QMessageBox.information(
+            self._main_window,
+            "Not Implemented",
+            "Example projects browser is not yet implemented."
+        )
+    
     def _check_updates(self):
         """Check for application updates."""
-        pass
-        
+        # TODO: Implement update checker
+        QMessageBox.information(
+            self._main_window,
+            "Not Implemented",
+            "Update checker is not yet implemented."
+        )
+    
     def _show_about(self):
         """Show information about the application."""
         QMessageBox.about(

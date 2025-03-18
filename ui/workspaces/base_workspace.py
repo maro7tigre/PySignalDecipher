@@ -45,10 +45,10 @@ class BaseWorkspace(QWidget):
         self._context.active_workspace = self.get_workspace_id()
         
         # Get services from command manager
-        self._theme_manager = self._command_manager.get_service(ThemeManager)
-        self._preferences_manager = self._command_manager.get_service(PreferencesManager)
-        self._layout_manager = self._command_manager.get_service(LayoutManager)
-        self._dock_manager = self._command_manager.get_service(DockManager)
+        self._theme_manager = self._get_service(ThemeManager)
+        self._preferences_manager = self._get_service(PreferencesManager)
+        self._layout_manager = self._get_service(LayoutManager)
+        self._dock_manager = self._get_service(DockManager)
         
         # Set up the main layout
         self._main_layout = QVBoxLayout(self)
@@ -75,7 +75,26 @@ class BaseWorkspace(QWidget):
         self._command_manager.command_executed.connect(self._on_command_executed)
         self._command_manager.command_undone.connect(self._on_command_undone)
         self._command_manager.command_redone.connect(self._on_command_redone)
+    
+    def _get_service(self, service_type):
+        """
+        Get a service from the command manager.
         
+        Args:
+            service_type: Type of service to retrieve
+            
+        Returns:
+            The service instance or None if not available
+        """
+        if not self._command_manager:
+            return None
+            
+        try:
+            return self._command_manager.get_service(service_type)
+        except Exception as e:
+            print(f"Error getting service {service_type.__name__}: {e}")
+            return None
+    
     def _initialize_workspace(self):
         """
         Initialize the workspace components.

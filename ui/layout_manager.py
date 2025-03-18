@@ -15,11 +15,11 @@ from PySide6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QApplication, 
     QMenu, QDialog, QVBoxLayout, QListWidget,
     QDialogButtonBox, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QMessageBox
+    QPushButton, QMessageBox, QListWidgetItem
 )
 from PySide6.QtCore import Qt, QByteArray, QSettings, QObject, Signal
 from PySide6.QtGui import QAction
-from core.service_registry import ServiceRegistry
+from command_system.command_manager import CommandManager
 
 
 @dataclass
@@ -126,8 +126,14 @@ class LayoutManager(QObject):
         """
         super().__init__()
         
-        # Get preferences manager from parameter or registry
-        self._preferences_manager = preferences_manager or ServiceRegistry.get_preferences_manager()
+        # Get command manager for accessing services
+        self._command_manager = CommandManager.instance()
+        
+        # Get preferences manager from parameter or command manager
+        self._preferences_manager = preferences_manager
+        if self._preferences_manager is None and self._command_manager:
+            from utils.preferences_manager import PreferencesManager
+            self._preferences_manager = self._command_manager.get_service(PreferencesManager)
         
         # Dictionary to store active layouts by workspace type
         self._active_layouts = {}
@@ -175,13 +181,15 @@ class LayoutManager(QObject):
     
     def _load_active_layout_settings(self):
         """Load active layout settings from preferences."""
-        active_layouts = self._preferences_manager.get_preference("layouts/active", {})
-        if isinstance(active_layouts, dict):
-            self._active_layouts = active_layouts
+        if self._preferences_manager:
+            active_layouts = self._preferences_manager.get_preference("layouts/active", {})
+            if isinstance(active_layouts, dict):
+                self._active_layouts = active_layouts
     
     def _save_active_layout_settings(self):
         """Save active layout settings to preferences."""
-        self._preferences_manager.set_preference("layouts/active", self._active_layouts)
+        if self._preferences_manager:
+            self._preferences_manager.set_preference("layouts/active", self._active_layouts)
     
     def get_layouts_for_workspace(self, workspace_type: str) -> Dict[str, LayoutDefinition]:
         """
@@ -565,8 +573,14 @@ class LayoutManagerDialog(QDialog):
         self.setMinimumWidth(400)
         self.setMinimumHeight(300)
         
+        # If layout_manager is not provided, get it from CommandManager
+        if layout_manager is None:
+            command_manager = CommandManager.instance()
+            if command_manager:
+                layout_manager = command_manager.get_service(LayoutManager)
+                
         # Store references
-        self._layout_manager = layout_manager or ServiceRegistry.get_layout_manager()
+        self._layout_manager = layout_manager
         self._workspace_type = workspace_type
         
         # Set up UI
@@ -576,7 +590,8 @@ class LayoutManagerDialog(QDialog):
         self._populate_layouts()
         
         # Connect to layout changes
-        self._layout_manager.layouts_changed.connect(self._populate_layouts)
+        if self._layout_manager:
+            self._layout_manager.layouts_changed.connect(self._populate_layouts)
     
     def _setup_ui(self):
         """Set up the dialog UI."""
@@ -630,7 +645,7 @@ class LayoutManagerDialog(QDialog):
         """Populate the layout list with available layouts."""
         self._layout_list.clear()
         
-        if not self._workspace_type:
+        if not self._workspace_type or not self._layout_manager:
             return
         
         layouts = self._layout_manager.get_layouts_for_workspace(self._workspace_type)
@@ -649,7 +664,7 @@ class LayoutManagerDialog(QDialog):
             if indicators:
                 item_text += f" ({', '.join(indicators)})"
                 
-            item = QListWidget.Item(item_text)
+            item = QListWidgetItem(item_text)
             item.setData(Qt.UserRole, layout_id)
             self._layout_list.addItem(item)
     

@@ -2,6 +2,7 @@ import os
 from typing import Dict, Any, Optional, List
 from PySide6.QtCore import QObject, Signal, QFile, QTextStream
 from PySide6.QtWidgets import QApplication
+from command_system.command_manager import CommandManager
 
 
 class ThemeManager(QObject):
@@ -25,6 +26,9 @@ class ThemeManager(QObject):
             preferences_manager: Reference to the PreferencesManager
         """
         super().__init__()
+        
+        # Get command manager for accessing services if needed
+        self._command_manager = CommandManager.instance()
         
         # Store references to managers
         self._color_manager = color_manager

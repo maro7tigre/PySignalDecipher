@@ -13,10 +13,10 @@ from command_system.command import CommandContext
 from command_system.ui_integration import CommandButton, CommandAction
 from utils.preferences_manager import PreferencesManager
 from core.hardware.device_manager import DeviceManager
-from .layout_manager import LayoutManager
-from .docking.dock_manager  import DockManager
 
 from ui.theme.theme_manager import ThemeManager
+from ui.layout_manager import LayoutManager
+from ui.docking.dock_manager import DockManager
 from ui.menus import MenuManager, MenuActionHandler
 from ui.themed_widgets import ThemedTab
 from ui.utility_panel import UtilityPanel
@@ -53,12 +53,8 @@ class MainWindow(QMainWindow):
         # Create command context
         self._context = CommandContext(self._command_manager)
         
-        # Get managers from command manager
-        self._theme_manager = self._command_manager.get_service(ThemeManager)
-        self._preferences_manager = self._command_manager.get_service(PreferencesManager)
-        self._device_manager = self._command_manager.get_service(DeviceManager)
-        self._layout_manager = self._command_manager.get_service(LayoutManager)
-        self._dock_manager = self._command_manager.get_service(DockManager)
+        # Get services from command manager
+        self._initialize_services()
         
         # Set window properties
         self.setWindowTitle("PySignalDecipher")
@@ -74,13 +70,30 @@ class MainWindow(QMainWindow):
         self._restore_window_state()
         
         # Connect command manager signals
-        self._command_manager.command_executed.connect(self._on_command_executed)
-        self._command_manager.command_undone.connect(self._on_command_undone)
-        self._command_manager.command_redone.connect(self._on_command_redone)
+        self._connect_command_signals()
         
+    def _initialize_services(self):
+        """Get required services from the command manager."""
+        try:
+            self._theme_manager = self._command_manager.get_service(ThemeManager)
+            self._preferences_manager = self._command_manager.get_service(PreferencesManager)
+            self._device_manager = self._command_manager.get_service(DeviceManager)
+            self._layout_manager = self._command_manager.get_service(LayoutManager)
+            self._dock_manager = self._command_manager.get_service(DockManager)
+        except Exception as e:
+            print(f"Error initializing services: {e}")
+            # Provide fallback behavior or reraise if critical
+            
+    def _connect_command_signals(self):
+        """Connect to command manager signals."""
+        if self._command_manager:
+            self._command_manager.command_executed.connect(self._on_command_executed)
+            self._command_manager.command_undone.connect(self._on_command_undone)
+            self._command_manager.command_redone.connect(self._on_command_redone)
+            
     def _setup_menus(self):
         """Set up the application menu system."""
-        # Create menu manager
+        # Create menu manager with services from command manager
         self._menu_manager = MenuManager(self, self._theme_manager, self._preferences_manager)
         
         # Create menu action handler
@@ -258,15 +271,9 @@ class MainWindow(QMainWindow):
         if project:
             self.setWindowTitle(f"PySignalDecipher - {project.name}")
             
-        # Update undo/redo actions
-        if hasattr(self._menu_manager, 'get_action'):
-            undo_action = self._menu_manager.get_action("edit.undo")
-            if undo_action:
-                undo_action.setEnabled(self._command_manager.can_undo())
-                
-            redo_action = self._menu_manager.get_action("edit.redo")
-            if redo_action:
-                redo_action.setEnabled(self._command_manager.can_redo())
+        # Update menu actions
+        if hasattr(self._menu_manager, 'update_action_states'):
+            self._menu_manager.update_action_states()
         
     def closeEvent(self, event):
         """

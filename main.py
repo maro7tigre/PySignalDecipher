@@ -19,8 +19,9 @@ from ui.main_window import MainWindow
 from command_system.commands import (
     AddSignalCommand, RemoveSignalCommand, RenameSignalCommand,
     ChangeLayoutCommand, SetDockStateCommand, SetWorkspaceSettingCommand,
-    RenameProjectCommand, BatchCommand, CreateDockCommand, RemoveDockCommand
+    RenameProjectCommand, BatchCommand
 )
+from command_system.commands.workspace_commands import CreateDockCommand, RemoveDockCommand
 
 # Import services that need to be registered
 from ui.theme.color_manager import ColorManager
@@ -102,7 +103,7 @@ def main():
     # Create and show main window
     main_window = MainWindow()
     
-    # Create theme manager and apply theme
+    # Get theme manager and apply theme
     theme_manager = command_manager.get_service(ThemeManager)
     theme_manager.apply_theme()
     
