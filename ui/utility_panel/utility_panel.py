@@ -1,13 +1,14 @@
 """
-Updated utility panel for PySignalDecipher with command system integration.
+Utility panel for PySignalDecipher with command system integration.
 
-This module provides an updated utility panel implementation that integrates
-with the command system instead of the service registry.
+This module provides a unified utility panel implementation that integrates
+with the command system for managing hardware connections, workspace utilities,
+and widget-specific controls.
 """
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-    QGroupBox, QTabWidget, QSizePolicy, QSplitter
+    QGroupBox, QSizePolicy
 )
 from PySide6.QtCore import Qt, Signal, Slot, QSize
 from PySide6.QtGui import QCursor
@@ -122,7 +123,7 @@ class UtilityPanel(QWidget):
         self._command_manager = None
         self._command_context = None
         
-        # Get theme and preferences managers
+        # Managers that will be set by command manager
         self._theme_manager = None
         self._preferences_manager = None
         
@@ -192,9 +193,8 @@ class UtilityPanel(QWidget):
         # Create a command context
         self._command_context = CommandContext(self._command_manager)
         
-        # Get required services using command manager
-        self._theme_manager = self._command_manager.get_theme_manager()
-        self._preferences_manager = self._command_manager.get_preferences_manager()
+        # Get required managers from command manager
+        self._get_managers_from_command_manager()
         
         # Pass command manager to utility components
         self._hardware_utility.set_command_manager(command_manager)
@@ -204,6 +204,30 @@ class UtilityPanel(QWidget):
         # Apply theme if available
         if self._theme_manager:
             self.apply_theme(self._theme_manager)
+    
+    def _get_managers_from_command_manager(self):
+        """Get required managers from the command manager."""
+        # Try both new service-based and legacy getter approaches
+        
+        # Theme manager
+        try:
+            # First try service-based approach
+            from ui.theme.theme_manager import ThemeManager
+            self._theme_manager = self._command_manager.get_service(ThemeManager)
+        except (AttributeError, KeyError, ImportError):
+            # Fall back to legacy getter
+            if hasattr(self._command_manager, 'get_theme_manager'):
+                self._theme_manager = self._command_manager.get_theme_manager()
+        
+        # Preferences manager
+        try:
+            # First try service-based approach
+            from utils.preferences_manager import PreferencesManager
+            self._preferences_manager = self._command_manager.get_service(PreferencesManager)
+        except (AttributeError, KeyError, ImportError):
+            # Fall back to legacy getter
+            if hasattr(self._command_manager, 'get_preferences_manager'):
+                self._preferences_manager = self._command_manager.get_preferences_manager()
         
     def set_preferences_manager(self, preferences_manager):
         """
@@ -264,3 +288,8 @@ class UtilityPanel(QWidget):
         if self._theme_manager:
             handle_color = self._theme_manager.get_color("border.inactive", "#CCCCCC")
             self._resize_handle.setStyleSheet(f"background-color: {handle_color};")
+            
+            # Apply theme to group boxes
+            bg_color = self._theme_manager.get_color("background.secondary", "#F0F0F0")
+            self._workspace_utility_group.setStyleSheet(f"QGroupBox {{ background-color: {bg_color}; }}")
+            self._widget_utility_group.setStyleSheet(f"QGroupBox {{ background-color: {bg_color}; }}")

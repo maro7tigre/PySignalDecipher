@@ -1,20 +1,22 @@
 """
-Origin workspace utility for PySignalDecipher.
+Origin workspace utility for PySignalDecipher with simplified implementation.
 
-This module provides utilities specific to the Signal Origin workspace.
+This module provides a minimal implementation of utilities for the Signal Origin workspace
+that integrates with the command system.
 """
 
 from .base_workspace_utility import BaseWorkspaceUtility
+from command_system.observable import PropertyChangeCommand
 
 
 class OriginWorkspaceUtility(BaseWorkspaceUtility):
     """
     Utility panel for Signal Origin workspace.
     
-    Provides tools and controls specific to the Signal Origin workspace.
+    Provides minimal example controls that integrate with the command system.
     """
     
-    def __init__(self, theme_manager, parent=None):
+    def __init__(self, theme_manager=None, parent=None):
         """
         Initialize the origin workspace utility.
         
@@ -25,158 +27,169 @@ class OriginWorkspaceUtility(BaseWorkspaceUtility):
         super().__init__(theme_manager, parent)
     
     def register_controls(self):
-        """Register all controls for the origin workspace utility."""
-        # Localization method
+        """Register example controls for the origin workspace utility."""
+        # Localization method selection
         self.add_combo_box(
             id="method",
             label="Method:",
-            items=[
-                "Direction Finding", 
-                "Triangulation", 
-                "Signal Strength",
-                "Time Difference of Arrival",
-                "Frequency Domain Analysis"
-            ],
-            callback=self._method_changed
+            items=["Direction Finding", "Triangulation", "TDOA"],
+            callback=self._on_method_changed
         )
         
-        # Frequency control
+        # Frequency setting
         self.add_double_spin_box(
             id="frequency",
             label="Frequency:",
-            minimum=1,
-            maximum=6000,
-            value=433,
-            decimals=3,
-            suffix=" MHz"
+            minimum=1.0,
+            maximum=6000.0,
+            value=433.92,
+            decimals=2,
+            suffix=" MHz",
+            callback=self._on_frequency_changed
         )
         
-        # Antenna count control
-        self.add_spin_box(
-            id="antennas",
-            label="Antennas:",
-            minimum=1,
-            maximum=8,
-            value=2
-        )
-        
-        # Gain control
-        self.add_spin_box(
-            id="gain",
-            label="Gain:",
-            minimum=0,
-            maximum=60,
-            value=20
-        )
-        
-        # Samples control
-        self.add_spin_box(
-            id="samples",
-            label="Samples:",
-            minimum=1,
-            maximum=1000,
-            value=100
-        )
-        
-        # Refresh rate selection
-        self.add_combo_box(
-            id="refresh",
-            label="Refresh:",
-            items=[
-                "Manual", "1 sec", "5 sec", "10 sec", "30 sec", "60 sec"
-            ]
-        )
-        
-        # Continuous monitoring checkbox
+        # Continuous monitoring option
         self.add_check_box(
             id="continuous",
             text="Continuous Monitoring",
-            checked=False
-        )
-        
-        # Log results checkbox
-        self.add_check_box(
-            id="logging",
-            text="Log Results",
-            checked=True
+            checked=False,
+            callback=self._on_continuous_changed
         )
         
         # Locate button
         self.add_button(
             id="locate",
-            text="Locate",
-            callback=self._locate
-        )
-        
-        # Show map button
-        self.add_button(
-            id="map",
-            text="Show Map",
-            callback=self._show_map
-        )
-        
-        # History button
-        self.add_button(
-            id="history",
-            text="History",
-            callback=self._show_history
-        )
-        
-        # Calibrate button
-        self.add_button(
-            id="calibrate",
-            text="Calibrate...",
-            callback=self._calibrate
+            text="Locate Signal",
+            callback=self._on_locate_clicked
         )
     
-    def _method_changed(self, method):
+    def _on_method_changed(self, method):
         """
-        Handle changes to the selected localization method.
+        Handle method selection changes with command system integration.
         
         Args:
-            method: Name of the selected method
+            method: The selected localization method
         """
-        # Enable/disable controls based on selected method
-        is_direction = method == "Direction Finding"
-        is_triangulation = method == "Triangulation"
-        is_tdoa = method == "Time Difference of Arrival"
-        
-        # Update antenna count requirements based on method
-        min_antennas = 1
-        if is_triangulation or is_tdoa:
-            min_antennas = 3
-        elif is_direction:
-            min_antennas = 2
+        if not self._workspace or not self._command_manager:
+            return
             
-        antenna_control = self.get_control("antennas")
-        antenna_control.setMinimum(min_antennas)
-        if antenna_control.value() < min_antennas:
-            antenna_control.setValue(min_antennas)
+        try:
+            # Get the project and workspace state
+            project = self._command_manager.get_active_project()
+            if project and self._workspace:
+                workspace_id = getattr(self._workspace, 'workspace_id', None)
+                if workspace_id:
+                    workspace_state = project.get_workspace_state(workspace_id)
+                    
+                    # Create a command to change the method setting
+                    from command_system.commands.workspace_commands import SetWorkspaceSettingCommand
+                    command = SetWorkspaceSettingCommand(workspace_state=workspace_state, 
+                                                        key="location_method", 
+                                                        value=method)
+                    self._command_manager.execute_command(command)
+        except Exception as e:
+            print(f"Error changing localization method: {e}")
     
-    def _locate(self):
-        """Handle locate button click."""
-        # Implementation would go here
-        pass
+    def _on_frequency_changed(self, frequency):
+        """
+        Handle frequency changes with command system integration.
+        
+        Args:
+            frequency: The new frequency value
+        """
+        if not self._workspace or not self._command_manager:
+            return
+            
+        try:
+            # Get the project and workspace state
+            project = self._command_manager.get_active_project()
+            if project and self._workspace:
+                workspace_id = getattr(self._workspace, 'workspace_id', None)
+                if workspace_id:
+                    workspace_state = project.get_workspace_state(workspace_id)
+                    
+                    # Create a command to change the frequency setting
+                    from command_system.commands.workspace_commands import SetWorkspaceSettingCommand
+                    command = SetWorkspaceSettingCommand(workspace_state=workspace_state, 
+                                                        key="frequency", 
+                                                        value=frequency)
+                    self._command_manager.execute_command(command)
+        except Exception as e:
+            print(f"Error changing frequency: {e}")
     
-    def _show_map(self):
-        """Handle show map button click."""
-        # Implementation would go here
-        pass
+    def _on_continuous_changed(self, state):
+        """
+        Handle continuous monitoring checkbox changes with command system integration.
+        
+        Args:
+            state: The checkbox state
+        """
+        if not self._workspace or not self._command_manager:
+            return
+            
+        try:
+            # Get the project and workspace state
+            project = self._command_manager.get_active_project()
+            if project and self._workspace:
+                workspace_id = getattr(self._workspace, 'workspace_id', None)
+                if workspace_id:
+                    workspace_state = project.get_workspace_state(workspace_id)
+                    
+                    # Create a command to change the continuous monitoring setting
+                    from command_system.commands.workspace_commands import SetWorkspaceSettingCommand
+                    command = SetWorkspaceSettingCommand(workspace_state=workspace_state, 
+                                                        key="continuous_monitoring", 
+                                                        value=bool(state))
+                    self._command_manager.execute_command(command)
+        except Exception as e:
+            print(f"Error changing continuous monitoring setting: {e}")
     
-    def _show_history(self):
-        """Handle history button click."""
-        # Implementation would go here
-        pass
-    
-    def _calibrate(self):
-        """Handle calibrate button click."""
-        # Implementation would go here
-        pass
+    def _on_locate_clicked(self):
+        """Handle locate button click with command system integration."""
+        if not self._workspace or not self._command_manager:
+            return
+            
+        try:
+            # Get the project
+            project = self._command_manager.get_active_project()
+            if project:
+                # Create a batch command for signal localization
+                from command_system.commands.project_commands import BatchCommand
+                batch_command = BatchCommand(project, "Signal Localization")
+                
+                # Execute the batch command
+                self._command_manager.execute_command(batch_command)
+        except Exception as e:
+            print(f"Error performing signal localization: {e}")
     
     def _workspace_updated(self):
         """
         Handle updates when the workspace is set or changed.
         """
-        if self._workspace:
-            # Update from workspace state if needed
-            pass
+        if not self._workspace or not self._command_manager:
+            return
+            
+        try:
+            # Get the project and workspace state
+            project = self._command_manager.get_active_project()
+            if project and self._workspace:
+                workspace_id = getattr(self._workspace, 'workspace_id', None)
+                if workspace_id:
+                    workspace_state = project.get_workspace_state(workspace_id)
+                    
+                    # Update method selection
+                    method = workspace_state.get_setting("location_method")
+                    if method and self.get_control("method"):
+                        self.get_control("method").setCurrentText(method)
+                        
+                    # Update frequency
+                    frequency = workspace_state.get_setting("frequency")
+                    if frequency is not None and self.get_control("frequency"):
+                        self.get_control("frequency").setValue(frequency)
+                        
+                    # Update continuous monitoring checkbox
+                    continuous = workspace_state.get_setting("continuous_monitoring")
+                    if continuous is not None and self.get_control("continuous"):
+                        self.get_control("continuous").setChecked(continuous)
+        except Exception as e:
+            print(f"Error updating workspace controls: {e}")

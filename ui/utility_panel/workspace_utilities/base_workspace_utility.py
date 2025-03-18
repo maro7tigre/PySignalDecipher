@@ -1,5 +1,5 @@
 """
-Base workspace utility for PySignalDecipher.
+Base workspace utility for PySignalDecipher with command system integration.
 
 This module provides a base class for workspace-specific utilities with a
 standardized approach to control creation and automatic distribution.
@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QEvent
 
-from core.service_registry import ServiceRegistry
+from command_system.command_manager import CommandManager
+from command_system.command import CommandContext
 
 
 class BaseWorkspaceUtility(QWidget):
@@ -28,13 +29,17 @@ class BaseWorkspaceUtility(QWidget):
         Initialize the base workspace utility.
         
         Args:
-            theme_manager: Reference to the ThemeManager (uses registry if None)
+            theme_manager: Reference to the ThemeManager
             parent: Parent widget
         """
         super().__init__(parent)
         
-        # Get theme manager from parameter or registry
-        self._theme_manager = theme_manager or ServiceRegistry.get_theme_manager()
+        # Theme manager
+        self._theme_manager = theme_manager
+        
+        # Command system integration
+        self._command_manager = None
+        self._command_context = None
         
         # Reference to the workspace widget
         self._workspace = None
@@ -63,6 +68,22 @@ class BaseWorkspaceUtility(QWidget):
         # Build the layout
         self._build_layout()
         
+    def set_command_manager(self, command_manager):
+        """
+        Set the command manager for this utility.
+        
+        Args:
+            command_manager: Reference to the CommandManager
+        """
+        self._command_manager = command_manager
+        
+        # Create command context
+        self._command_context = CommandContext(command_manager)
+        
+        # Get theme manager if not already set
+        if not self._theme_manager:
+            self._theme_manager = command_manager.get_theme_manager()
+            
     def _setup_base_ui(self):
         """Set up the base user interface for workspace utilities."""
         # Main layout - using grid for precise positioning
@@ -485,7 +506,12 @@ class BaseWorkspaceUtility(QWidget):
         Apply the current theme to this utility panel.
         
         Args:
-            theme_manager: Optional theme manager reference (uses registry if None)
+            theme_manager: Optional theme manager reference
         """
         if theme_manager:
             self._theme_manager = theme_manager
+            
+        # Background color
+        if self._theme_manager:
+            bg_color = self._theme_manager.get_color("background.utility", "#F5F5F5")
+            self.setStyleSheet(f"background-color: {bg_color};")

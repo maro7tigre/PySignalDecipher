@@ -1,8 +1,8 @@
 """
-Updated hardware utility panel for PySignalDecipher with command system integration.
+Hardware utility panel for PySignalDecipher with command system integration.
 
 This module provides the utility panel for hardware connection and control
-that works with the command system instead of service registry.
+that works with the command system.
 """
 
 from PySide6.QtWidgets import (
@@ -40,9 +40,11 @@ class HardwareUtilityPanel(QWidget):
         self._command_manager = None
         self._command_context = None
         
-        # Theme and device managers (will be set by set_command_manager)
+        # Hardware manager
+        self._hardware_manager = None
+        
+        # Theme manager
         self._theme_manager = None
-        self._device_manager = None
         
         # Set up the panel layout and controls
         self._setup_ui()
@@ -60,14 +62,19 @@ class HardwareUtilityPanel(QWidget):
         self._command_context = CommandContext(command_manager)
         
         # Get hardware manager from command manager
-        self._device_manager = command_manager.get_hardware_manager()
+        self._hardware_manager = command_manager.get_hardware_manager()
         
         # Get theme manager from command manager
-        self._theme_manager = command_manager.get_theme_manager()
+        try:
+            self._theme_manager = command_manager.get_service("ThemeManager")
+        except (AttributeError, KeyError):
+            # Try legacy method
+            if hasattr(command_manager, 'get_theme_manager'):
+                self._theme_manager = command_manager.get_theme_manager()
         
-        # Connect to device manager signals if available
-        if hasattr(self._device_manager, 'connection_status_changed'):
-            self._device_manager.connection_status_changed.connect(self._on_connection_status_changed)
+        # Connect to hardware manager signals if available
+        if self._hardware_manager and hasattr(self._hardware_manager, 'connection_status_changed'):
+            self._hardware_manager.connection_status_changed.connect(self._on_connection_status_changed)
         
         # Populate devices list initially
         self._refresh_devices()
@@ -137,8 +144,8 @@ class HardwareUtilityPanel(QWidget):
         
     def _refresh_devices(self):
         """Refresh the list of available devices."""
-        # Make sure device manager is available
-        if not self._device_manager:
+        # Make sure hardware manager is available
+        if not self._hardware_manager:
             self._device_combo.clear()
             self._device_combo.addItem("No devices found")
             self._connect_button.setEnabled(False)
@@ -147,8 +154,8 @@ class HardwareUtilityPanel(QWidget):
         self._device_combo.clear()
         
         try:
-            # Get available devices from device manager
-            devices = self._device_manager.get_available_devices()
+            # Get available devices from hardware manager
+            devices = self._hardware_manager.get_available_devices()
             
             if not devices:
                 self._device_combo.addItem("No devices found")
@@ -169,7 +176,7 @@ class HardwareUtilityPanel(QWidget):
         
     def _toggle_connection(self):
         """Toggle the connection state."""
-        if not self._device_manager:
+        if not self._hardware_manager:
             return
             
         if self._is_connected():
@@ -181,7 +188,7 @@ class HardwareUtilityPanel(QWidget):
             
     def _connect_to_device(self):
         """Connect to the selected device."""
-        if not self._device_manager:
+        if not self._hardware_manager:
             return
             
         device_name = self._device_combo.currentText()
@@ -193,20 +200,24 @@ class HardwareUtilityPanel(QWidget):
         self._refresh_button.setEnabled(False)
         self._status_label.setText(f"Connecting to {device_name}...")
         
-        # Connect to the device via device manager
-        device_id = self._device_manager.connect_device(device_name)
-        
-        if device_id:
-            # Connected successfully
-            self._on_connection_status_changed(True, device_id)
-        else:
-            # Connection failed
-            self._on_connection_status_changed(False, f"Failed to connect to {device_name}")
+        try:
+            # Connect to the device via hardware manager
+            device_id = self._hardware_manager.connect_device(device_name)
+            
+            if device_id:
+                # Connected successfully
+                self._on_connection_status_changed(True, device_id)
+            else:
+                # Connection failed
+                self._on_connection_status_changed(False, f"Failed to connect to {device_name}")
+        except Exception as e:
+            # Connection error
+            self._on_connection_status_changed(False, str(e))
     
     @Slot(bool, str)
     def _on_connection_status_changed(self, connected, device_info):
         """
-        Handle connection status changes from device manager.
+        Handle connection status changes from hardware manager.
         
         Args:
             connected: Whether connected successfully
@@ -258,15 +269,16 @@ class HardwareUtilityPanel(QWidget):
             
     def _disconnect(self):
         """Disconnect from the current device."""
-        if not self._device_manager:
+        if not self._hardware_manager:
             return
             
         try:
             # Find current device ID to disconnect
-            connected_devices = self._device_manager.devices.keys() if hasattr(self._device_manager, 'devices') else []
-            for device_id in connected_devices:
-                self._device_manager.disconnect_device(device_id)
-                break
+            if hasattr(self._hardware_manager, 'devices') and self._hardware_manager.devices:
+                connected_devices = self._hardware_manager.devices.keys()
+                for device_id in connected_devices:
+                    self._hardware_manager.disconnect_device(device_id)
+                    break
             
             # Update UI
             self._on_connection_status_changed(False, "")
@@ -280,11 +292,11 @@ class HardwareUtilityPanel(QWidget):
         Returns:
             bool: True if connected, False otherwise
         """
-        if not self._device_manager:
+        if not self._hardware_manager:
             return False
             
         # Check if there are any devices in the devices dictionary
-        return hasattr(self._device_manager, 'devices') and bool(self._device_manager.devices)
+        return hasattr(self._hardware_manager, 'devices') and bool(self._hardware_manager.devices)
         
     def get_current_device(self):
         """
@@ -293,12 +305,14 @@ class HardwareUtilityPanel(QWidget):
         Returns:
             str: Name/address of the connected device, or None if not connected
         """
-        if not self._device_manager or not self._is_connected():
+        if not self._hardware_manager or not self._is_connected():
             return None
             
         # Return the first device ID from the devices dictionary
-        connected_devices = list(self._device_manager.devices.keys()) if hasattr(self._device_manager, 'devices') else []
-        return connected_devices[0] if connected_devices else None
+        if hasattr(self._hardware_manager, 'devices') and self._hardware_manager.devices:
+            connected_devices = list(self._hardware_manager.devices.keys())
+            return connected_devices[0] if connected_devices else None
+        return None
         
     def apply_theme(self, theme_manager=None):
         """

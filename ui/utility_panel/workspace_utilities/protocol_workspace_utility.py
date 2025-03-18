@@ -1,20 +1,22 @@
 """
-Protocol workspace utility for PySignalDecipher.
+Protocol workspace utility for PySignalDecipher with simplified implementation.
 
-This module provides utilities specific to the Protocol Decoder workspace.
+This module provides a minimal implementation of utilities for the Protocol Decoder workspace
+that integrates with the command system.
 """
 
 from .base_workspace_utility import BaseWorkspaceUtility
+from command_system.observable import PropertyChangeCommand
 
 
 class ProtocolWorkspaceUtility(BaseWorkspaceUtility):
     """
     Utility panel for Protocol Decoder workspace.
     
-    Provides tools and controls specific to the Protocol Decoder workspace.
+    Provides minimal example controls that integrate with the command system.
     """
     
-    def __init__(self, theme_manager, parent=None):
+    def __init__(self, theme_manager=None, parent=None):
         """
         Initialize the protocol workspace utility.
         
@@ -25,129 +27,127 @@ class ProtocolWorkspaceUtility(BaseWorkspaceUtility):
         super().__init__(theme_manager, parent)
     
     def register_controls(self):
-        """Register all controls for the protocol workspace utility."""
-        # Add protocol selection
+        """Register example controls for the protocol workspace utility."""
+        # Protocol selection dropdown
         self.add_combo_box(
             id="protocol",
             label="Protocol:",
-            items=["UART", "SPI", "I2C", "CAN", "1-Wire", "JTAG", "USB"],
-            callback=self._protocol_changed
+            items=["UART", "SPI", "I2C", "CAN"],
+            callback=self._on_protocol_changed
         )
         
-        # Add baudrate selection
-        self.add_combo_box(
+        # Protocol parameter
+        self.add_spin_box(
             id="baudrate",
             label="Baudrate:",
-            items=["9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"]
+            minimum=1200,
+            maximum=1000000,
+            value=9600,
+            callback=self._on_baudrate_changed
         )
         
-        # Add parity selection
-        self.add_combo_box(
-            id="parity",
-            label="Parity:",
-            items=["None", "Even", "Odd", "Mark", "Space"]
-        )
-        
-        # Add data bits selection
-        self.add_combo_box(
-            id="data_bits",
-            label="Data Bits:",
-            items=["5", "6", "7", "8"]
-        )
-        
-        # Add stop bits selection
-        self.add_combo_box(
-            id="stop_bits",
-            label="Stop Bits:",
-            items=["1", "1.5", "2"]
-        )
-        
-        # Add checkboxes
-        self.add_check_box(
-            id="invert",
-            text="Invert Signal",
-            checked=False
-        )
-        
-        self.add_check_box(
-            id="lsb_first",
-            text="LSB First",
-            checked=False
-        )
-        
-        self.add_check_box(
-            id="filter",
-            text="Enable Filtering",
-            checked=False
-        )
-        
-        # Add buttons
+        # Decode button
         self.add_button(
             id="decode",
             text="Decode",
-            callback=self._decode_signal
-        )
-        
-        self.add_button(
-            id="export",
-            text="Export Data",
-            callback=self._export_data
-        )
-        
-        self.add_button(
-            id="clear",
-            text="Clear",
-            callback=self._clear_data
-        )
-        
-        self.add_button(
-            id="settings",
-            text="Protocol Settings...",
-            callback=self._show_settings
+            callback=self._on_decode_clicked
         )
     
-    def _protocol_changed(self, protocol_name):
+    def _on_protocol_changed(self, protocol):
         """
-        Handle protocol selection changes.
+        Handle protocol selection changes with command system integration.
         
         Args:
-            protocol_name: Selected protocol name
+            protocol: The selected protocol
         """
-        # Enable/disable controls based on selected protocol
-        is_serial = protocol_name == "UART"
-        is_spi_i2c = protocol_name in ["SPI", "I2C"]
+        if not self._workspace or not self._command_manager:
+            return
+            
+        try:
+            # Get the project and workspace state
+            project = self._command_manager.get_active_project()
+            if project and self._workspace:
+                workspace_id = getattr(self._workspace, 'workspace_id', None)
+                if workspace_id:
+                    workspace_state = project.get_workspace_state(workspace_id)
+                    
+                    # Create a command to change the protocol setting
+                    from command_system.commands.workspace_commands import SetWorkspaceSettingCommand
+                    command = SetWorkspaceSettingCommand(workspace_state=workspace_state, 
+                                                        key="protocol", 
+                                                        value=protocol)
+                    self._command_manager.execute_command(command)
+        except Exception as e:
+            print(f"Error changing protocol: {e}")
+    
+    def _on_baudrate_changed(self, baudrate):
+        """
+        Handle baudrate changes with command system integration.
         
-        # Access controls by their ID
-        self.get_control("baudrate").setEnabled(is_serial)
-        self.get_control("parity").setEnabled(is_serial)
-        self.get_control("data_bits").setEnabled(is_serial)
-        self.get_control("stop_bits").setEnabled(is_serial)
-        self.get_control("lsb_first").setEnabled(is_spi_i2c)
+        Args:
+            baudrate: The new baudrate value
+        """
+        if not self._workspace or not self._command_manager:
+            return
+            
+        try:
+            # Get the project and workspace state
+            project = self._command_manager.get_active_project()
+            if project and self._workspace:
+                workspace_id = getattr(self._workspace, 'workspace_id', None)
+                if workspace_id:
+                    workspace_state = project.get_workspace_state(workspace_id)
+                    
+                    # Create a command to change the baudrate setting
+                    from command_system.commands.workspace_commands import SetWorkspaceSettingCommand
+                    command = SetWorkspaceSettingCommand(workspace_state=workspace_state, 
+                                                        key="baudrate", 
+                                                        value=baudrate)
+                    self._command_manager.execute_command(command)
+        except Exception as e:
+            print(f"Error changing baudrate: {e}")
     
-    def _decode_signal(self):
-        """Handle decode button click."""
-        # Implementation would go here
-        pass
-    
-    def _export_data(self):
-        """Handle export button click."""
-        # Implementation would go here
-        pass
-    
-    def _clear_data(self):
-        """Handle clear button click."""
-        # Implementation would go here
-        pass
-    
-    def _show_settings(self):
-        """Handle settings button click."""
-        # Implementation would go here
-        pass
+    def _on_decode_clicked(self):
+        """Handle decode button click with command system integration."""
+        if not self._workspace or not self._command_manager:
+            return
+            
+        try:
+            # Get the project
+            project = self._command_manager.get_active_project()
+            if project:
+                # Create a batch command for protocol decoding
+                from command_system.commands.project_commands import BatchCommand
+                batch_command = BatchCommand(project, "Protocol Decoding")
+                
+                # Execute the batch command
+                self._command_manager.execute_command(batch_command)
+        except Exception as e:
+            print(f"Error performing protocol decoding: {e}")
     
     def _workspace_updated(self):
         """
         Handle updates when the workspace is set or changed.
         """
-        if self._workspace:
-            # Update from workspace state if needed
-            pass
+        if not self._workspace or not self._command_manager:
+            return
+            
+        try:
+            # Get the project and workspace state
+            project = self._command_manager.get_active_project()
+            if project and self._workspace:
+                workspace_id = getattr(self._workspace, 'workspace_id', None)
+                if workspace_id:
+                    workspace_state = project.get_workspace_state(workspace_id)
+                    
+                    # Update protocol selection
+                    protocol = workspace_state.get_setting("protocol")
+                    if protocol and self.get_control("protocol"):
+                        self.get_control("protocol").setCurrentText(protocol)
+                        
+                    # Update baudrate
+                    baudrate = workspace_state.get_setting("baudrate")
+                    if baudrate and self.get_control("baudrate"):
+                        self.get_control("baudrate").setValue(baudrate)
+        except Exception as e:
+            print(f"Error updating workspace controls: {e}")

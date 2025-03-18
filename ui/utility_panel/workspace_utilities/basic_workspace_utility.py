@@ -1,20 +1,22 @@
 """
-Basic workspace utility for PySignalDecipher.
+Basic workspace utility for PySignalDecipher with simplified implementation.
 
-This module provides utilities specific to the Basic Signal Analysis workspace.
+This module provides a minimal implementation of utilities for the Basic Signal Analysis workspace
+that integrates with the command system.
 """
 
 from .base_workspace_utility import BaseWorkspaceUtility
+from command_system.observable import PropertyChangeCommand
 
 
 class BasicWorkspaceUtility(BaseWorkspaceUtility):
     """
     Utility panel for Basic Signal Analysis workspace.
     
-    Provides tools and controls specific to the Basic Signal Analysis workspace.
+    Provides minimal example controls that integrate with the command system.
     """
     
-    def __init__(self, theme_manager, parent=None):
+    def __init__(self, theme_manager=None, parent=None):
         """
         Initialize the basic workspace utility.
         
@@ -25,135 +27,135 @@ class BasicWorkspaceUtility(BaseWorkspaceUtility):
         super().__init__(theme_manager, parent)
     
     def register_controls(self):
-        """Register all controls for the basic workspace utility."""
-        # Signal type selection
-        self.add_combo_box(
-            id="signal_type",
-            label="Signal Type:",
-            items=["Time Domain", "Frequency Domain", "Mixed Analysis"],
-            callback=self._signal_type_changed
-        )
-        
-        # View mode selection
+        """Register example controls for the basic workspace utility."""
+        # Example dropdown control that could affect project settings
         self.add_combo_box(
             id="view_mode",
             label="View Mode:",
-            items=["Chart", "Waterfall", "Tabular", "3D"]
+            items=["Chart", "Waterfall", "Tabular"],
+            callback=self._on_view_mode_changed
         )
         
-        # Zoom level selection
-        self.add_combo_box(
-            id="zoom",
-            label="Zoom:",
-            items=["100%", "200%", "50%", "Fit to View"]
-        )
-        
-        # Refresh rate selection
-        self.add_combo_box(
-            id="refresh_rate",
-            label="Refresh Rate:",
-            items=["Auto", "1 Hz", "5 Hz", "10 Hz", "30 Hz"]
-        )
-        
-        # Sample rate control
+        # Example numeric control
         self.add_spin_box(
             id="sample_rate",
             label="Sample Rate:",
             minimum=1000,
-            maximum=1000000,
-            value=44100
+            maximum=100000,
+            value=44100,
+            callback=self._on_sample_rate_changed
         )
         
-        # Time span control
-        self.add_spin_box(
-            id="time_span",
-            label="Time Span:",
-            minimum=1,
-            maximum=60,
-            value=10
-        )
-        
-        # Grid checkbox
-        self.add_check_box(
-            id="grid",
-            text="Show Grid",
-            checked=True
-        )
-        
-        # Markers checkbox
-        self.add_check_box(
-            id="markers",
-            text="Show Markers",
-            checked=True
-        )
-        
-        # Quick analysis button
+        # Example action button
         self.add_button(
-            id="analysis",
-            text="Quick Analysis",
-            callback=self._run_analysis
-        )
-        
-        # Add signal button
-        self.add_button(
-            id="add_signal",
-            text="Add Signal",
-            callback=self._add_signal
-        )
-        
-        # Clear button
-        self.add_button(
-            id="clear",
-            text="Clear All",
-            callback=self._clear_all
-        )
-        
-        # Export button
-        self.add_button(
-            id="export",
-            text="Export View",
-            callback=self._export_view
+            id="analyze",
+            text="Analyze",
+            callback=self._on_analyze_clicked
         )
     
-    def _signal_type_changed(self, signal_type):
+    def _on_view_mode_changed(self, mode):
         """
-        Handle changes to the selected signal type.
+        Handle view mode changes with command system integration.
         
         Args:
-            signal_type: Name of the selected signal type
+            mode: The selected view mode
         """
-        # Update UI based on signal type
-        is_time_domain = signal_type == "Time Domain"
-        is_freq_domain = signal_type == "Frequency Domain"
+        if not self._workspace or not self._command_manager:
+            return
+            
+        # Example: create and execute a command to change the view mode
+        # This would be saved in command history and project state
+        try:
+            # Get the project and workspace state
+            project = self._command_manager.get_active_project()
+            if project and self._workspace:
+                workspace_id = getattr(self._workspace, 'workspace_id', None)
+                if workspace_id:
+                    workspace_state = project.get_workspace_state(workspace_id)
+                    
+                    # Create a command to change the setting
+                    from command_system.commands.workspace_commands import SetWorkspaceSettingCommand
+                    command = SetWorkspaceSettingCommand(workspace_state=workspace_state, 
+                                                        key="view_mode", 
+                                                        value=mode)
+                    self._command_manager.execute_command(command)
+        except Exception as e:
+            print(f"Error changing view mode: {e}")
+    
+    def _on_sample_rate_changed(self, value):
+        """
+        Handle sample rate changes with command system integration.
         
-        # Update enabled state of controls based on signal type
-        self.get_control("time_span").setEnabled(is_time_domain)
-        self.get_control("sample_rate").setEnabled(is_time_domain or is_freq_domain)
+        Args:
+            value: The new sample rate value
+        """
+        if not self._workspace or not self._command_manager:
+            return
+            
+        # Example: create and execute a command to change the sample rate
+        try:
+            # Get the project and workspace state
+            project = self._command_manager.get_active_project()
+            if project and self._workspace:
+                workspace_id = getattr(self._workspace, 'workspace_id', None)
+                if workspace_id:
+                    workspace_state = project.get_workspace_state(workspace_id)
+                    
+                    # Create a command to change the setting
+                    from command_system.commands.workspace_commands import SetWorkspaceSettingCommand
+                    command = SetWorkspaceSettingCommand(workspace_state=workspace_state, 
+                                                        key="sample_rate", 
+                                                        value=value)
+                    self._command_manager.execute_command(command)
+        except Exception as e:
+            print(f"Error changing sample rate: {e}")
     
-    def _run_analysis(self):
-        """Handle quick analysis button click."""
-        # Implementation would go here
-        pass
-    
-    def _add_signal(self):
-        """Handle add signal button click."""
-        # Implementation would go here
-        pass
-    
-    def _clear_all(self):
-        """Handle clear all button click."""
-        # Implementation would go here
-        pass
-    
-    def _export_view(self):
-        """Handle export view button click."""
-        # Implementation would go here
-        pass
+    def _on_analyze_clicked(self):
+        """Handle analyze button click with command system integration."""
+        if not self._workspace or not self._command_manager:
+            return
+            
+        # Example: create and execute a batch command for analysis
+        try:
+            # Get the project
+            project = self._command_manager.get_active_project()
+            if project:
+                # Create a batch command for analysis
+                from command_system.commands.project_commands import BatchCommand
+                batch_command = BatchCommand(project, "Signal Analysis")
+                
+                # Add individual commands to the batch
+                # (In a real implementation, you would add commands to perform analysis steps)
+                
+                # Execute the batch command
+                self._command_manager.execute_command(batch_command)
+        except Exception as e:
+            print(f"Error performing analysis: {e}")
     
     def _workspace_updated(self):
         """
         Handle updates when the workspace is set or changed.
         """
-        if self._workspace:
-            # Update from workspace state if needed
-            pass
+        if not self._workspace or not self._command_manager:
+            return
+            
+        # Example: Update controls from workspace state
+        try:
+            # Get the project and workspace state
+            project = self._command_manager.get_active_project()
+            if project and self._workspace:
+                workspace_id = getattr(self._workspace, 'workspace_id', None)
+                if workspace_id:
+                    workspace_state = project.get_workspace_state(workspace_id)
+                    
+                    # Update view mode
+                    view_mode = workspace_state.get_setting("view_mode")
+                    if view_mode and self.get_control("view_mode"):
+                        self.get_control("view_mode").setCurrentText(view_mode)
+                        
+                    # Update sample rate
+                    sample_rate = workspace_state.get_setting("sample_rate")
+                    if sample_rate and self.get_control("sample_rate"):
+                        self.get_control("sample_rate").setValue(sample_rate)
+        except Exception as e:
+            print(f"Error updating workspace controls: {e}")
