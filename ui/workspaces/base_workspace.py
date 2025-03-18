@@ -12,11 +12,6 @@ from command_system.command_manager import CommandManager
 from command_system.command import CommandContext
 from command_system.ui_integration import CommandConnector, CommandAction
 
-from ui.theme.theme_manager import ThemeManager
-from ui.layout_manager import LayoutManager
-from ui.docking.dock_manager import DockManager
-from utils.preferences_manager import PreferencesManager
-
 
 class BaseWorkspace(QWidget):
     """
@@ -45,10 +40,9 @@ class BaseWorkspace(QWidget):
         self._context.active_workspace = self.get_workspace_id()
         
         # Get services from command manager
-        self._theme_manager = self._get_service(ThemeManager)
-        self._preferences_manager = self._get_service(PreferencesManager)
-        self._layout_manager = self._get_service(LayoutManager)
-        self._dock_manager = self._get_service(DockManager)
+        self._theme_manager = self._command_manager.get_theme_manager() if hasattr(self._command_manager, 'get_theme_manager') else None
+        self._layout_manager = self._command_manager.get_layout_manager() if hasattr(self._command_manager, 'get_layout_manager') else None
+        self._dock_manager = self._command_manager.get_dock_manager() if hasattr(self._command_manager, 'get_dock_manager') else None
         
         # Set up the main layout
         self._main_layout = QVBoxLayout(self)
@@ -72,9 +66,10 @@ class BaseWorkspace(QWidget):
         self._initialize_workspace()
         
         # Connect to command manager signals
-        self._command_manager.command_executed.connect(self._on_command_executed)
-        self._command_manager.command_undone.connect(self._on_command_undone)
-        self._command_manager.command_redone.connect(self._on_command_redone)
+        if self._command_manager:
+            self._command_manager.command_executed.connect(self._on_command_executed)
+            self._command_manager.command_undone.connect(self._on_command_undone)
+            self._command_manager.command_redone.connect(self._on_command_redone)
     
     def _get_service(self, service_type):
         """
@@ -190,8 +185,9 @@ class BaseWorkspace(QWidget):
             menu.addSeparator()
             
         # Add dock widgets submenu
-        widgets_menu = self._dock_manager.create_dock_context_menu(self.get_workspace_id())
-        menu.addMenu(widgets_menu)
+        if self._dock_manager and hasattr(self._dock_manager, 'create_dock_context_menu'):
+            widgets_menu = self._dock_manager.create_dock_context_menu(self.get_workspace_id())
+            menu.addMenu(widgets_menu)
         
         # Show the menu
         menu.exec_(self._main_window.mapToGlobal(pos))

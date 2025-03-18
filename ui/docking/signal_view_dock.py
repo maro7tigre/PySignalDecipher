@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QVBoxLayout, QLabel, QMenu, QWidget
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt, Signal
 
+from command_system.command_manager import CommandManager
 from .dockable_widget import DockableWidget
 
 
@@ -189,6 +190,7 @@ class SignalViewDock(DockableWidget):
         """
         state = super().save_state()
         state["view_config"] = self._view_config.copy()
+        state["dock_type"] = "signal_view"  # Add the dock type for proper restoration
         return state
     
     def restore_state(self, state):

@@ -9,14 +9,15 @@ class SignalSeparationWorkspace(BaseWorkspace):
     and analyzing individual signal components.
     """
     
-    def __init__(self, parent=None):
+    def __init__(self, command_manager=None, parent=None):
         """
         Initialize the signal separation workspace.
         
         Args:
+            command_manager: CommandManager instance
             parent: Parent widget
         """
-        super().__init__(parent)
+        super().__init__(command_manager, parent)
         
     def _initialize_workspace(self):
         """
@@ -24,7 +25,7 @@ class SignalSeparationWorkspace(BaseWorkspace):
         
         Implementation of the method from BaseWorkspace.
         """
-        # TODO: Add workspace-specific initialization
+        # Implement workspace-specific initialization
         pass
         
     def get_workspace_id(self):

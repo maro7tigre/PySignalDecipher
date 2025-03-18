@@ -7,8 +7,9 @@ command system with the application.
 
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTabWidget,
-    QDockWidget, QApplication, QMenuBar, QToolBar, QMenu, QAction
+    QDockWidget, QApplication, QMenuBar, QToolBar, QMenu
 )
+from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt, Signal, QObject
 
 import sys
@@ -20,9 +21,10 @@ from command_system.project import Project, SignalData, WorkspaceState
 from command_system.variable_registry import VariableRegistry
 from command_system.hardware_manager import HardwareManager
 from command_system.workspace_manager import WorkspaceTabManager
-from command_system.observable import SignalVariable, PropertyChangeCommand
+from command_system.observable import PropertyChangeCommand
 from command_system.commands.workspace_commands import CreateDockCommand
 from command_system.command_history import CommandHistory
+from command_system.signal_variable import SignalVariable
 
 
 # Step 1: Create the main application class

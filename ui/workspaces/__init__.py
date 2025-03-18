@@ -1,4 +1,4 @@
-# Workspace tabs package
+# Workspaces package for PySignalDecipher with command system integration
 
 from .base_workspace import BaseWorkspace
 from .basic_workspace import BasicSignalWorkspace

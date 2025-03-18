@@ -2,8 +2,6 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QSplitt
 from PySide6.QtCore import Qt
 
 from .base_workspace import BaseWorkspace
-from core.service_registry import ServiceRegistry
-from ui.docking.signal_view_dock import SignalViewDock
 
 
 class BasicSignalWorkspace(BaseWorkspace):
@@ -14,14 +12,15 @@ class BasicSignalWorkspace(BaseWorkspace):
     signal processing operations.
     """
     
-    def __init__(self, parent=None):
+    def __init__(self, command_manager=None, parent=None):
         """
         Initialize the basic signal workspace.
         
         Args:
+            command_manager: CommandManager instance
             parent: Parent widget
         """
-        super().__init__(parent)
+        super().__init__(command_manager, parent)
         
     def _initialize_workspace(self):
         """
@@ -94,8 +93,6 @@ class BasicSignalWorkspace(BaseWorkspace):
             area=Qt.BottomDockWidgetArea
         )
         
-        if freq_view:
+        if freq_view and hasattr(freq_view, '_set_display_mode'):
             # Configure as frequency domain view
             freq_view._set_display_mode("frequency")
-            
-        # This would be extended with more dock widgets as needed

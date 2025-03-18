@@ -9,9 +9,10 @@ from typing import Dict, Any, Type, Optional, Callable, Union, List
 from PySide6.QtWidgets import (
     QPushButton, QToolButton, QLabel, QLineEdit, QSpinBox, QDoubleSpinBox,
     QCheckBox, QComboBox, QListWidget, QTableWidget, QRadioButton, QSlider,
-    QWidget, QMenu, QAction
+    QWidget, QMenu
 )
 from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtGui import QAction
 
 from .command import Command, CommandFactory, CommandContext
 from .command_manager import CommandManager

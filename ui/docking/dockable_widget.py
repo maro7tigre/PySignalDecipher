@@ -9,8 +9,7 @@ from PySide6.QtWidgets import QDockWidget, QWidget, QMenu, QApplication, QVBoxLa
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt, Signal, QEvent, QSize
 
-from core.service_registry import ServiceRegistry
-from ..themed_widgets.base_themed_widget import BaseThemedWidget
+from command_system.command_manager import CommandManager
 
 
 class DockableWidget(QDockWidget):
@@ -43,6 +42,9 @@ class DockableWidget(QDockWidget):
             widget_id: Unique identifier for this widget (defaults to class name)
         """
         super().__init__(title, parent)
+        
+        # Get command manager for service access
+        self._command_manager = CommandManager.instance()
         
         # Create a container frame that will receive styling
         self._style_container = QFrame()
@@ -83,8 +85,14 @@ class DockableWidget(QDockWidget):
             QDockWidget.DockWidgetFloatable
         )
         
-        # Get theme manager from registry
-        self._theme_manager = ServiceRegistry.get_theme_manager()
+        # Get theme manager from command manager
+        self._theme_manager = None
+        if self._command_manager:
+            try:
+                from ui.theme.theme_manager import ThemeManager
+                self._theme_manager = self._command_manager.get_service(ThemeManager)
+            except Exception as e:
+                print(f"Error getting ThemeManager: {e}")
         
         # Connect to theme change signal to update styling when theme changes
         if self._theme_manager:
@@ -568,7 +576,13 @@ class DockableWidget(QDockWidget):
         Returns:
             The DockManager instance
         """
-        return ServiceRegistry.get_dock_manager()
+        if self._command_manager:
+            try:
+                from ui.docking.dock_manager import DockManager
+                return self._command_manager.get_service(DockManager)
+            except Exception as e:
+                print(f"Error getting DockManager: {e}")
+        return None
     
     def get_other_docks(self, dock_type=None):
         """
@@ -594,7 +608,7 @@ class DockableWidget(QDockWidget):
         # Filter by type if specified
         if dock_type:
             # Get the dock class for the specified type
-            from .dock_manager import DockRegistry
+            from ui.docking.dock_manager import DockRegistry
             dock_class = DockRegistry.get_dock_type(dock_type)
             
             if dock_class:

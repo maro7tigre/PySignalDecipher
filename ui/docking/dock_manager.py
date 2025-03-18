@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QMainWindow, QMenu
 from PySide6.QtCore import QObject, Signal, Qt
 from PySide6.QtGui import QAction
 
-from core.service_registry import ServiceRegistry
+from command_system.command_manager import CommandManager
 from .dockable_widget import DockableWidget
 
 
@@ -136,9 +136,27 @@ class DockManager(QObject):
         """
         super().__init__()
         
-        # Get references from parameters or registry
-        self._preferences_manager = preferences_manager or ServiceRegistry.get_preferences_manager()
-        self._theme_manager = theme_manager or ServiceRegistry.get_theme_manager()
+        # Get command manager for accessing services
+        self._command_manager = CommandManager.instance()
+        
+        # Get references from parameters or command manager
+        self._preferences_manager = preferences_manager
+        self._theme_manager = theme_manager
+        
+        # If services weren't provided, try to get them from command manager
+        if not self._preferences_manager and self._command_manager:
+            try:
+                from utils.preferences_manager import PreferencesManager
+                self._preferences_manager = self._command_manager.get_service(PreferencesManager)
+            except Exception as e:
+                print(f"Error getting PreferencesManager: {e}")
+                
+        if not self._theme_manager and self._command_manager:
+            try:
+                from ui.theme.theme_manager import ThemeManager
+                self._theme_manager = self._command_manager.get_service(ThemeManager)
+            except Exception as e:
+                print(f"Error getting ThemeManager: {e}")
         
         # Connect to theme changed signal
         if self._theme_manager:

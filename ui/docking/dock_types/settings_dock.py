@@ -12,8 +12,8 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt, Signal, QSize
 
+from command_system.command_manager import CommandManager
 from ..dockable_widget import DockableWidget
-from core.service_registry import ServiceRegistry
 
 
 class SettingsDock(DockableWidget):
@@ -70,9 +70,22 @@ class SettingsDock(DockableWidget):
         # Track setting controls to easily update them
         self._setting_controls = {}
         
-        # Access application services through ServiceRegistry
-        self._theme_manager = ServiceRegistry.get_theme_manager()
-        self._preferences_manager = ServiceRegistry.get_preferences_manager()
+        # Access application services through CommandManager
+        self._command_manager = CommandManager.instance()
+        
+        # Get the services we need
+        if self._command_manager:
+            try:
+                from ui.theme.theme_manager import ThemeManager
+                self._theme_manager = self._command_manager.get_service(ThemeManager)
+            except Exception as e:
+                print(f"Error getting ThemeManager: {e}")
+                
+            try:
+                from utils.preferences_manager import PreferencesManager
+                self._preferences_manager = self._command_manager.get_service(PreferencesManager)
+            except Exception as e:
+                print(f"Error getting PreferencesManager: {e}")
         
         # Set up the content widget
         self._setup_content()

@@ -1,4 +1,4 @@
-from .observable import SignalVariable
+from .signal_variable import SignalVariable
 
 
 class HardwareManager:
