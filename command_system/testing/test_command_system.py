@@ -8,7 +8,11 @@ import time
 import numpy as np
 from unittest.mock import MagicMock, patch
 import h5py
+import sys
 
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 # Import only the public API of our command system
 from command_system import (
     get_command_manager,
