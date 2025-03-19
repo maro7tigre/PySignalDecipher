@@ -67,23 +67,19 @@ command_system/
         └── hdf5_storage.py    # For signal data
 ```
 
-## Implementation Phases
+## Implementation
 
-The command system should be implemented in these strategic phases to ensure gradual integration and immediate value:
-
-### Phase 1: Core Command Infrastructure (2-3 weeks)
-
-1. **Base Command Implementation**
+. **Base Command Implementation**
    - Command interface and base class
    - CompoundCommand for grouping commands
    - Command history tracking
 
-2. **Command Manager**
+. **Command Manager**
    - Singleton implementation
    - Execute/undo/redo functionality
    - Basic history management
 
-3. **Basic Observable Properties**
+. **Basic Observable Properties**
    - Observable base class
    - ObservableProperty descriptor
    - Property change notifications
@@ -93,19 +89,18 @@ The command system should be implemented in these strategic phases to ensure gra
 - Basic observable property tracking
 - Simple unit tests for core functionality
 
-### Phase 2: UI Integration (2-3 weeks)
 
-1. **Property Binding System**
+. **Property Binding System**
    - Generic binding interface
    - Qt widget bindings (focus on QCheckBox, QComboBox, QSpinBox, QLineEdit)
    - Automatic command generation from property changes
 
-2. **Dock State Management**
+. **Dock State Management**
    - Commands for dock position/size changes
    - Serialization of dock state
    - Parent-child relationship tracking
 
-3. **Widget State Commands**
+. **Widget State Commands**
    - Specialized commands for common widget types
    - Batch command support for form updates
 
@@ -114,19 +109,17 @@ The command system should be implemented in these strategic phases to ensure gra
 - Dock position/size management
 - Widget state change tracking with undo/redo
 
-### Phase 3: Serialization & Projects (2-3 weeks)
-
-1. **Object Registry**
+. **Object Registry**
    - Object tracking by ID
    - Reference resolution during deserialization
    - Hierarchical object relationships
 
-2. **Project Serialization**
+. **Project Serialization**
    - Project state serialization
    - Command history serialization
    - Layout state serialization
 
-3. **Storage Implementations**
+. **Storage Implementations**
    - JSON storage for projects
    - Optimized storage for layouts
 
@@ -135,19 +128,17 @@ The command system should be implemented in these strategic phases to ensure gra
 - Layout save/load functionality
 - Command history persistence
 
-### Phase 4: Signal Data Management (3-4 weeks)
-
-1. **Signal Data Representation**
+. **Signal Data Representation**
    - Observable signal data model
    - Efficient change tracking for large datasets
    - Signal metadata management
 
-2. **Optimized Storage**
+. **Optimized Storage**
    - HDF5 storage implementation for signals
    - Lazy loading and chunked access
    - Memory management for large signals
 
-3. **Signal Visualization Performance**
+. **Signal Visualization Performance**
    - Chunk-based access strategies
    - Caching for visible regions
    - Asynchronous loading for smooth navigation
