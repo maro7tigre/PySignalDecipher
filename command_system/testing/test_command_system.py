@@ -1,3 +1,5 @@
+# test using the following command: python -m command_system.testing.test_command_system
+
 import pytest
 import os
 import tempfile
@@ -1234,3 +1236,14 @@ class TestCompleteWorkflow:
                 assert abs(left_dock.height() - 400) <= 20
                 assert abs(right_dock.width() - 300) <= 20
                 assert abs(right_dock.height() - 400) <= 20
+                
+                
+if __name__ == "__main__":
+    import sys
+    import pytest
+    
+    # Run all tests in this file with pytest
+    print("Running tests with pytest...")
+    # Use -v for verbose output
+    # You can add more pytest arguments as needed
+    sys.exit(pytest.main(["-v", __file__]))
