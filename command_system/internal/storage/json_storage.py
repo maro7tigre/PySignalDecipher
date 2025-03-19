@@ -36,9 +36,17 @@ class JsonStorage(StorageInterface):
             if directory and not os.path.exists(directory):
                 os.makedirs(directory)
                 
-            # Write to file
+            # Custom JSON encoder to handle objects with serialize method
+            class CommandSystemJSONEncoder(json.JSONEncoder):
+                def default(self, obj):
+                    if hasattr(obj, 'serialize') and callable(getattr(obj, 'serialize')):
+                        return obj.serialize()
+                    # Let the base class handle other types or raise TypeError
+                    return super().default(obj)
+                    
+            # Write to file with custom encoder
             with open(self.file_path, 'w') as f:
-                json.dump(data, f, indent=2)
+                json.dump(data, f, indent=2, cls=CommandSystemJSONEncoder)
                 
             return True
         except Exception as e:

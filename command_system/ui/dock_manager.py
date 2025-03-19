@@ -189,14 +189,24 @@ class DockManager:
             try:
                 from PySide6.QtCore import QByteArray
                 
-                # Restore geometry
-                if "geometry" in state and state["geometry"] and hasattr(widget, "restoreGeometry"):
-                    widget.restoreGeometry(QByteArray.fromBase64(state["geometry"].encode('ascii')))
-                    
-                # Restore position and size
+                # Restore geometry using separate components rather than all at once
                 if "position" in state:
                     pos = state["position"]
-                    widget.setGeometry(pos["x"], pos["y"], pos["width"], pos["height"])
+                    current_x = widget.x()
+                    current_y = widget.y()
+                    current_width = widget.width()
+                    current_height = widget.height()
+                    
+                    # Only apply changes that are significantly different
+                    # This helps avoid issues with window decoration adjustments
+                    if abs(current_x - pos["x"]) > 5:
+                        widget.move(pos["x"], widget.y())
+                    if abs(current_y - pos["y"]) > 5:
+                        widget.move(widget.x(), pos["y"])
+                        
+                    # Set size separately from position
+                    if abs(current_width - pos["width"]) > 5 or abs(current_height - pos["height"]) > 5:
+                        widget.resize(pos["width"], pos["height"])
                     
                 # Restore visibility
                 if "visible" in state:

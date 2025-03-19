@@ -117,11 +117,35 @@ class TestModel(Observable):
     option = ObservableProperty(default=0)
     value = ObservableProperty(default=0.0)
     
-    def __init__(self, name="Default Name", count=0, active=False):
+    def __init__(self, name=None, count=None, active=None):
         super().__init__()
-        self.name = name
-        self.count = count
-        self.active = active
+        if name is not None:
+            self.name = name
+        if count is not None:
+            self.count = count
+        if active is not None:
+            self.active = active
+            
+    def serialize(self):
+        """Serialize for storage."""
+        return {
+            "name": self.name,
+            "count": self.count,
+            "active": self.active,
+            "color": self.color,
+            "option": self.option,
+            "value": self.value
+        }
+        
+    def deserialize(self, state, registry):
+        """Restore from serialized state."""
+        self.name = state.get("name", "Default Name")
+        self.count = state.get("count", 0)
+        self.active = state.get("active", False)
+        self.color = state.get("color", "#0000FF")
+        self.option = state.get("option", 0)
+        self.value = state.get("value", 0.0)
+        return True
 
 
 class ChannelSettings(Observable):
@@ -156,6 +180,7 @@ class ChangeNameCommand(Command):
     
     def serialize(self):
         return {
+            "type": f"{self.__class__.__module__}.{self.__class__.__name__}",
             "model_id": self.model.get_id(),
             "new_name": self.new_name,
             "old_name": self.old_name
@@ -187,6 +212,7 @@ class ChangePropertyCommand(Command):
     
     def serialize(self):
         return {
+            "type": f"{self.__class__.__module__}.{self.__class__.__name__}",
             "model_id": self.model.get_id(),
             "property_name": self.property_name,
             "new_value": self.new_value,
@@ -221,8 +247,10 @@ class AddSignalCommand(Command):
     
     def serialize(self):
         return {
+            "type": f"{self.__class__.__module__}.{self.__class__.__name__}",
             "project_id": self.project.get_id(),
-            "signal_id": self.signal.get_id()
+            "signal_id": self.signal.get_id(),
+            "added": self.added
         }
     
     @classmethod
@@ -268,6 +296,7 @@ class MoveDockCommand(Command):
     
     def serialize(self):
         return {
+            "type": f"{self.__class__.__module__}.{self.__class__.__name__}",
             "dock_id": self.dock_id,
             "new_geometry": {
                 "x": self.new_geometry.x(),
@@ -347,6 +376,47 @@ class SimpleProject:
         """Remove a dock from the project."""
         if dock_id in self.docks:
             del self.docks[dock_id]
+
+    def serialize(self):
+        """Serialize project for storage."""
+        # Create serializable state
+        state = {
+            "name": self.name,
+            "signals": {signal_id: signal.get_id() for signal_id, signal in self.signals.items()},
+            "models": {model_id: model.get_id() for model_id, model in self.models.items()},
+            "docks": {dock_id: dock_id for dock_id in self.docks.keys()},
+        }
+
+        # Add dock layout if available
+        if hasattr(self, 'dock_layout'):
+            state["dock_layout"] = self.dock_layout
+
+        return state
+
+    def deserialize(self, state, registry):
+        """Restore project from serialized state."""
+        self.name = state.get("name", "Unnamed Project")
+        self.signals = {}
+        self.models = {}
+        self.docks = {}
+
+        # Restore signals
+        for signal_id in state.get("signals", {}).values():
+            signal = registry.get_object(signal_id)
+            if signal:
+                self.signals[signal_id] = signal
+
+        # Restore models
+        for model_id in state.get("models", {}).values():
+            model = registry.get_object(model_id)
+            if model:
+                self.models[model_id] = model
+
+        # Restore dock layout if available
+        if "dock_layout" in state:
+            self.dock_layout = state["dock_layout"]
+
+        return True
 
 
 # =========== Tests ===========

@@ -122,11 +122,28 @@ class Registry:
                     continue
                     
                 # Get attribute value
-                value = getattr(obj, attr_name)
-                
-                # Skip non-serializable types
-                if isinstance(value, (int, float, str, bool, list, dict)) or value is None:
-                    state[attr_name] = value
+                try:
+                    value = getattr(obj, attr_name)
+                    
+                    # Skip non-serializable types and handle common types
+                    if isinstance(value, (int, float, str, bool)) or value is None:
+                        state[attr_name] = value
+                    elif isinstance(value, list):
+                        # Convert lists to serializable form
+                        serializable_list = []
+                        for item in value:
+                            if isinstance(item, (int, float, str, bool)) or item is None:
+                                serializable_list.append(item)
+                        state[attr_name] = serializable_list
+                    elif isinstance(value, dict):
+                        # Convert dicts with simple keys and values
+                        serializable_dict = {}
+                        for k, v in value.items():
+                            if isinstance(k, str) and isinstance(v, (int, float, str, bool)) or v is None:
+                                serializable_dict[k] = v
+                        state[attr_name] = serializable_dict
+                except Exception as e:
+                    print(f"Warning: could not serialize attribute {attr_name}: {e}")
         
         # Add object ID and type
         return {
