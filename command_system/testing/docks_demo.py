@@ -46,6 +46,9 @@ class DocksDemoWindow(QMainWindow):
         self.cmd_manager = get_command_manager()
         self.dock_manager = get_dock_manager()
         
+        # Begin initialization - disable command tracking
+        self.cmd_manager.begin_init()
+        
         # Set dock manager's main window
         self.dock_manager.set_main_window(self)
         
@@ -54,6 +57,9 @@ class DocksDemoWindow(QMainWindow):
         
         # Initialize dock counter
         self.dock_counter = 0
+        
+        # End initialization - re-enable command tracking
+        self.cmd_manager.end_init()
         
     def _create_ui(self):
         """Create the UI elements."""
@@ -106,24 +112,16 @@ class DocksDemoWindow(QMainWindow):
         
     def _create_initial_docks(self):
         """Create initial dock widgets to demonstrate functionality."""
-        # First dock - text editor (without using commands, so can't be undone)
-        text_dock = self._create_text_dock("left_dock", "Text Editor", 
-                                          Qt.DockWidgetArea.LeftDockWidgetArea, 
-                                          use_command=False)
+        # First dock - text editor
+        text_dock = self._create_text_dock("left_dock", "Text Editor", Qt.DockWidgetArea.LeftDockWidgetArea)
         
-        # Second dock - parameters (without using commands, so can't be undone)
-        params_dock = self._create_params_dock("right_dock", "Parameters", 
-                                              Qt.DockWidgetArea.RightDockWidgetArea,
-                                              use_command=False)
-        
-        # Clear command history to ensure we start fresh
-        self.cmd_manager.clear()
+        # Second dock - parameters
+        params_dock = self._create_params_dock("right_dock", "Parameters", Qt.DockWidgetArea.RightDockWidgetArea)
         
         # Update status
-        self.status_label.setText("Initial docks created (not in command history)")
         self._update_dock_info()
         
-    def _create_text_dock(self, dock_id, title, area, use_command=True):
+    def _create_text_dock(self, dock_id, title, area):
         """Create a text editor dock."""
         # Create content widget
         content = QWidget()
@@ -138,18 +136,13 @@ class DocksDemoWindow(QMainWindow):
         dock.setWidget(content)
         dock.closeRequested.connect(self._on_dock_close_requested)
         
-        if use_command:
-            # Create and execute command to add dock (undoable)
-            cmd = CreateDockCommand(dock_id, dock, None, area)
-            self.cmd_manager.execute(cmd)
-        else:
-            # Add dock directly without command (not undoable)
-            self.addDockWidget(area, dock)
-            self.dock_manager.register_dock(dock_id, dock)
+        # Create and execute command to add dock
+        cmd = CreateDockCommand(dock_id, dock, None, area)
+        self.cmd_manager.execute(cmd)
         
         return dock
         
-    def _create_params_dock(self, dock_id, title, area, use_command=True):
+    def _create_params_dock(self, dock_id, title, area):
         """Create a parameters dock with observable properties."""
         # Create model
         model = SimpleModel()
@@ -180,14 +173,9 @@ class DocksDemoWindow(QMainWindow):
         dock.setWidget(content)
         dock.closeRequested.connect(self._on_dock_close_requested)
         
-        if use_command:
-            # Create and execute command to add dock (undoable)
-            cmd = CreateDockCommand(dock_id, dock, None, area)
-            self.cmd_manager.execute(cmd)
-        else:
-            # Add dock directly without command (not undoable)
-            self.addDockWidget(area, dock)
-            self.dock_manager.register_dock(dock_id, dock)
+        # Create and execute command to add dock
+        cmd = CreateDockCommand(dock_id, dock, None, area)
+        self.cmd_manager.execute(cmd)
         
         # Watch for model changes
         model.add_property_observer("name", self._on_model_changed)

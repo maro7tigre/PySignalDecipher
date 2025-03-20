@@ -91,6 +91,7 @@ class CommandManager:
         CommandManager._instance = self
         self._history = CommandHistory()
         self._is_updating = False  # Flag to prevent recursive command execution
+        self._is_initializing = False  # Flag to disable history tracking during init
     
     def execute(self, command: Command) -> bool:
         """
@@ -108,7 +109,11 @@ class CommandManager:
             
         try:
             self._is_updating = True
-            self._history.add_command(command)
+            
+            # Only add to history if not in initialization mode
+            if not getattr(self, '_is_initializing', False):
+                self._history.add_command(command)
+                
             command.execute()
             return True
         except Exception as e:
@@ -182,6 +187,19 @@ class CommandManager:
     def is_updating(self) -> bool:
         """Check if we're currently processing a command update."""
         return self._is_updating
+    
+    def begin_init(self):
+        """
+        Begin initialization - temporarily disable command tracking.
+        Commands will be executed but not added to history.
+        """
+        self._is_initializing = True
+        
+    def end_init(self):
+        """
+        End initialization - re-enable command tracking.
+        """
+        self._is_initializing = False
 
 
 def get_command_manager():
