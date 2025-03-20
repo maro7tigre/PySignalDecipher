@@ -1,23 +1,15 @@
 """
-PySignalDecipher Command System
+PySignalDecipher Simplified Command System
 
-A command-based system for tracking user actions, undo/redo functionality,
-property observation, UI integration, and project serialization.
+A simplified command-based system that focuses on properly tracking user actions,
+providing working undo/redo functionality, and integrating with Qt widgets.
 """
 
-# Export public API
-
-# Core components
-from command_system.command import Command, CompoundCommand
-from command_system.command_manager import get_command_manager
-from command_system.observable import Observable, ObservableProperty
-
-# UI integration
-from command_system.ui.property_binding import PropertyBinder, Binding
-from command_system.ui.dock_manager import DockManager
-
-# Signal data handling
-from command_system.data.signal_data import SignalData, SignalDataManager, AdaptiveSampler
+# Public API
+from .command import Command, CompoundCommand
+from .observable import Observable, ObservableProperty
+from .command_manager import CommandManager, get_command_manager
+from .ui.property_binding import PropertyBinder
 
 # Version info
 __version__ = "0.1.0"
