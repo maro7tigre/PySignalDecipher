@@ -34,6 +34,9 @@ class CommandTextEdit(QTextEdit, CommandWidgetBase[str]):
         # Set up command widget
         self._setup_command_widget("text")
         
+        # Disable built-in undo/redo
+        self.document().setUndoRedoEnabled(False)
+        
         # Connect signals for real-time updates
         self.textChanged.connect(self._on_content_changed)
         
@@ -166,3 +169,23 @@ class CommandTextEdit(QTextEdit, CommandWidgetBase[str]):
         # Restore cursor position if we saved it
         if cursor_position is not None:
             self._restore_cursor_position(cursor_position)
+                
+    def keyPressEvent(self, event):
+        """Handle key press events."""
+        # Intercept Ctrl+Z and Ctrl+Y
+        if event.key() == Qt.Key.Key_Z and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            # Handle Ctrl+Z with command manager
+            self._command_manager.undo()
+            return
+        elif event.key() == Qt.Key.Key_Y and event.modifiers() & Qt.KeyboardModifier.ControlModifier:
+            # Handle Ctrl+Y with command manager
+            self._command_manager.redo()
+            return
+        
+        # Call parent implementation for other keys
+        QTextEdit.keyPressEvent(self, event)
+        
+        # Start or restart the timer for delayed command creation
+        if self._update_timer_id is not None:
+            self.killTimer(self._update_timer_id)
+        self._update_timer_id = self.startTimer(300)  # 300ms delay
