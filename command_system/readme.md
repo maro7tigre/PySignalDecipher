@@ -9,6 +9,7 @@ The PySignalDecipher Command System provides a clean implementation of the Comma
 - Tracking user actions as commands
 - Maintaining a history stack for undo/redo operations
 - Binding UI controls to model properties
+- Managing dock widgets with undo/redo support
 - Serializing application state
 
 ## Core Concepts
@@ -34,6 +35,14 @@ The command system uses a command manager to track history:
 
 - `CommandManager`: Singleton that manages command execution and maintains history
 - `CommandHistory`: Tracks executed and undone commands
+
+### Dock Management
+
+The dock management system provides undo/redo support for dock operations:
+
+- `DockManager`: Manages dock widgets and their state
+- Dock-specific commands like `CreateDockCommand` and `DeleteDockCommand`
+- `CommandDockWidget`: Command-aware dock widget
 
 ### UI Integration
 
@@ -86,9 +95,31 @@ note = NoteModel()
 note.title = "My First Note"  # This will notify observers
 ```
 
+### Initialization Mode
+
+To prevent commands executed during initialization from being added to the undo history:
+
+```python
+# In your window's __init__ method
+def __init__(self):
+    super().__init__()
+    
+    # Get command manager
+    self.cmd_manager = get_command_manager()
+    
+    # Begin initialization mode (commands execute but aren't added to history)
+    self.cmd_manager.begin_init()
+    
+    # Set up initial UI state, create default widgets, etc.
+    self._setup_initial_state()
+    
+    # End initialization mode (commands are now tracked in history)
+    self.cmd_manager.end_init()
+```
+
 ## Example Implementations
 
-The command system includes two demonstration applications that showcase its capabilities:
+The command system includes demonstration applications that showcase its capabilities:
 
 ### Widgets Demo
 
@@ -151,6 +182,34 @@ if model is not None:
     self.title_edit.bind_to_model(self.model, "title")
 ```
 
+### Docks Demo
+
+The `docks_demo.py` file demonstrates the dock management system with undo/redo support:
+
+- Creating and managing dock widgets
+- Tracking dock states for undo/redo
+- Parent-child relationships between docks
+- Using the dock manager with the command system
+
+Example from the demo:
+
+```python
+# Create a new dock
+dock_id = "new_dock"
+dock = CommandDockWidget(dock_id, "Text Editor", self)
+dock.closeRequested.connect(self._on_dock_close_requested)
+
+# Create and execute command to add dock (undoable)
+cmd = CreateDockCommand(dock_id, dock, None, Qt.RightDockWidgetArea)
+self.cmd_manager.execute(cmd)
+
+# Later, to close the dock with undo support
+def _on_dock_close_requested(self, dock_id):
+    # Create and execute command to delete dock
+    cmd = DeleteDockCommand(dock_id)
+    self.cmd_manager.execute(cmd)
+```
+
 ## Using Command-Aware Widgets
 
 The system includes a set of command-aware widgets that automatically create undo/redo commands when their values change:
@@ -180,6 +239,62 @@ The widget will now:
 2. Update automatically when the property changes
 3. Create undo/redo commands when the user modifies the value
 
+## Dock Management System
+
+The dock management system provides undo/redo support for dock-related operations:
+
+### Dock Manager
+
+The `DockManager` class manages dock widgets and their state:
+
+```python
+# Get the dock manager
+dock_manager = get_dock_manager()
+
+# Set the main window
+dock_manager.set_main_window(self)
+
+# Register a dock
+dock_manager.register_dock("my_dock", dock_widget)
+
+# Save the current dock layout
+layout = dock_manager.serialize_layout()
+```
+
+### Command-Aware Dock Widgets
+
+The system provides command-aware dock widgets:
+
+```python
+# Create a command-aware dock widget
+dock = CommandDockWidget("my_dock", "My Dock", self)
+
+# Connect the close signal
+dock.closeRequested.connect(self._on_dock_close_requested)
+
+# Observable dock widget with property binding
+model = MyModel()
+dock = ObservableDockWidget("my_dock", "My Dock", self, model)
+```
+
+### Dock Commands
+
+Dock operations are encapsulated as commands:
+
+```python
+# Create a dock
+cmd = CreateDockCommand("my_dock", dock_widget, None, Qt.RightDockWidgetArea)
+cmd_manager.execute(cmd)
+
+# Delete a dock
+cmd = DeleteDockCommand("my_dock")
+cmd_manager.execute(cmd)
+
+# Change dock location
+cmd = DockLocationCommand("my_dock")
+cmd_manager.execute(cmd)
+```
+
 ## Serialization
 
 The command system includes serialization support for saving and loading application state:
@@ -199,7 +314,14 @@ The system supports multiple formats including JSON, Binary, XML, and YAML.
 
 ## Best Practices
 
-1. **Use CompoundCommand for complex operations**:
+1. **Use initialization mode for setup operations**:
+   ```python
+   cmd_manager.begin_init()
+   # Set up initial application state
+   cmd_manager.end_init()
+   ```
+
+2. **Use CompoundCommand for complex operations**:
    ```python
    compound = CompoundCommand("Rename and Move")
    compound.add_command(RenameCommand(item, new_name))
@@ -207,7 +329,7 @@ The system supports multiple formats including JSON, Binary, XML, and YAML.
    cmd_manager.execute(compound)
    ```
 
-2. **Handle property changes with ObservableProperty**:
+3. **Handle property changes with ObservableProperty**:
    ```python
    class MyModel(Observable):
        value = ObservableProperty[int](default=0)
@@ -216,12 +338,12 @@ The system supports multiple formats including JSON, Binary, XML, and YAML.
    model.add_property_observer("value", lambda prop, old, new: print(f"Changed: {old} -> {new}"))
    ```
 
-3. **Register model factories for new projects**:
+4. **Register model factories for new projects**:
    ```python
    project_manager.register_model_type("document", lambda: DocumentModel())
    ```
 
-4. **Check for unsaved changes**:
+5. **Check for unsaved changes**:
    ```python
    if cmd_manager.can_undo():
        # There are unsaved changes
@@ -235,6 +357,7 @@ The system supports multiple formats including JSON, Binary, XML, and YAML.
 - **Consistent state management**: All state changes go through the command system
 - **Simplified UI code**: Widget bindings reduce boilerplate code
 - **Automatic undo/redo**: Most common operations get undo/redo for free
+- **Clean initialization**: Prevent setup operations from polluting command history
 
 ## Integration with PySide/PyQt
 
