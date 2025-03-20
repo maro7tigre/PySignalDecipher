@@ -102,13 +102,14 @@ class CommandManager:
         Returns:
             True if command executed successfully
         """
+        
         if self._is_updating:
             return True  # Skip if we're already processing a command
             
         try:
             self._is_updating = True
-            command.execute()
             self._history.add_command(command)
+            command.execute()
             return True
         except Exception as e:
             print(f"Error executing command: {e}")
