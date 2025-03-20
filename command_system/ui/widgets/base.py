@@ -1,6 +1,6 @@
 """
 command_system/ui/widgets/base.py
-Base class for all command-aware widgets
+Base class for all command-aware widgets - with fix for observer_id
 """
 
 from typing import Any, Optional, Callable, TypeVar, Generic, Dict, Type
@@ -27,6 +27,7 @@ class CommandWidgetBase(Generic[T]):
         self._value_property_name = None  # Must be set by subclass
         self._observable_model = None
         self._observable_property = None
+        self._observer_id = None  # Fixed: Initialize the observer_id
         self._is_updating = False
         self._old_value = None
         self._custom_command_factory = None
@@ -65,20 +66,21 @@ class CommandWidgetBase(Generic[T]):
         self._observable_property = property_name
         
         # Connect model changes to widget
-        model.add_property_observer(property_name, self._on_model_property_changed)
+        self._observer_id = model.add_property_observer(property_name, self._on_model_property_changed)
         
         # Initial update from model
         self._update_widget_from_model()
         
     def unbind_from_model(self):
         """Unbind widget from model."""
-        if self._observable_model and self._observable_property:
+        if self._observable_model and self._observable_property and self._observer_id:
             # Remove observer
             self._observable_model.remove_property_observer(
                 self._observable_property, self._observer_id
             )
             self._observable_model = None
             self._observable_property = None
+            self._observer_id = None
             
     def _update_widget_from_model(self):
         """Update widget value from bound model."""
