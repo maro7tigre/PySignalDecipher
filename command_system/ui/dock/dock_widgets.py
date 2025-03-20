@@ -1,6 +1,8 @@
 """
-Command-aware dock widgets that integrate with the dock management system.
+Comprehensive fix for the dock widgets in the command system.
+This provides fixed versions of both CommandDockWidget and ObservableDockWidget classes.
 """
+
 from typing import Optional, Any, Dict, List
 
 from PySide6.QtCore import Qt, Signal, QEvent, QTimer
@@ -46,12 +48,10 @@ class CommandDockWidget(QDockWidget):
         if parent and isinstance(parent, QMainWindow):
             self.dock_manager.set_main_window(parent)
         
-        # Set up event handling
-        self.installEventFilter(self)
-        
         # Flag to track changes
         self._is_updating = False
         self._location_command = None
+        self._movement_timer = None
         
         # Connect signals
         self.topLevelChanged.connect(self._on_floating_changed)
@@ -65,25 +65,18 @@ class CommandDockWidget(QDockWidget):
         # Prevent actual close - this allows the owner to decide whether to close
         # and use proper command-based removal if desired
         event.ignore()
-        
-    def eventFilter(self, obj, event):
-        """
-        Filter events to detect dock position and size changes.
-        
-        Args:
-            obj: Object receiving the event
-            event: The event
-            
-        Returns:
-            True if event was handled, otherwise let the event propagate
-        """
-        if obj == self:
-            if event.type() == QEvent.Move or event.type() == QEvent.Resize:
-                # Create a command if this is a user-initiated change
-                if not self._is_updating and self.isFloating():
-                    self._handle_geometry_change()
-                    
-        return super().eventFilter(obj, event)
+
+    def moveEvent(self, event):
+        """Handle move events for floating docks."""
+        super().moveEvent(event)
+        if not self._is_updating and self.isFloating():
+            self._handle_geometry_change()
+
+    def resizeEvent(self, event):
+        """Handle resize events for docks."""
+        super().resizeEvent(event)
+        if not self._is_updating and self.isFloating():
+            self._handle_geometry_change()
         
     def _handle_geometry_change(self):
         """Handle dock geometry change by creating a location command."""
@@ -91,27 +84,42 @@ class CommandDockWidget(QDockWidget):
         if self._location_command is None:
             self._location_command = DockLocationCommand(self.dock_id)
             
-        # Schedule command execution when event loop is idle
-        # This ensures we only create one command for multiple resize/move events
-        QTimer.singleShot(100, self._finish_geometry_change)
-        
+        # Use a timer to batch changes instead of creating too many commands
+        if self._movement_timer is not None:
+            self._movement_timer.stop()
+            
+        self._movement_timer = QTimer(self)
+        self._movement_timer.setSingleShot(True)
+        self._movement_timer.timeout.connect(self._finish_geometry_change)
+        self._movement_timer.start(150)  # Adjust timing as needed
+            
     def _finish_geometry_change(self):
         """Finalize geometry change by executing the command."""
         if self._location_command:
-            self.command_manager.execute(self._location_command)
+            try:
+                self.command_manager.execute(self._location_command)
+            except Exception as e:
+                print(f"Error executing location command: {e}")
             self._location_command = None
+        self._movement_timer = None
             
     def _on_floating_changed(self, floating):
         """Handle dock floating state changes."""
         if not self._is_updating:
-            command = DockLocationCommand(self.dock_id)
-            self.command_manager.execute(command)
+            try:
+                command = DockLocationCommand(self.dock_id)
+                self.command_manager.execute(command)
+            except Exception as e:
+                print(f"Error on floating change: {e}")
             
     def _on_dock_location_changed(self):
         """Handle dock area changes."""
         if not self._is_updating:
-            command = DockLocationCommand(self.dock_id)
-            self.command_manager.execute(command)
+            try:
+                command = DockLocationCommand(self.dock_id)
+                self.command_manager.execute(command)
+            except Exception as e:
+                print(f"Error on dock location change: {e}")
             
     def setWidget(self, widget: QWidget):
         """Override to associate widget with this dock."""
@@ -121,7 +129,11 @@ class CommandDockWidget(QDockWidget):
         if hasattr(self, 'model') and self.model is not None:
             if hasattr(self.model, 'widget') and isinstance(getattr(self.model, 'widget', None), property):
                 # If there's a property descriptor for 'widget', use it
-                setattr(self.model, 'widget', widget)
+                try:
+                    setattr(self.model, 'widget', widget)
+                except Exception:
+                    # Fallback to direct attribute if property setter fails
+                    self.model._widget = widget
             else:
                 # Otherwise just set the attribute directly
                 self.model._widget = widget
@@ -160,61 +172,93 @@ class ObservableDockWidget(CommandDockWidget):
             is_visible = ObservableProperty[bool](default=_initial_visible)
             
         self.properties = DockProperties()
+        self._property_updating = False
         
-        # Connect property changes
+        # Connect property changes with error protection
         self.properties.add_property_observer('title', self._on_title_property_changed)
         self.properties.add_property_observer('is_floating', self._on_floating_property_changed)
         self.properties.add_property_observer('is_visible', self._on_visible_property_changed)
         
-        # Connect widget changes to update the properties
+        # Connect widget signals instead of overriding methods
         self.topLevelChanged.connect(self._update_floating_property)
         
     def _on_title_property_changed(self, property_name, old_value, new_value):
         """Update dock title when property changes."""
-        if old_value != new_value:
-            self._is_updating = True
-            try:
-                self.setWindowTitle(new_value)
-            finally:
-                self._is_updating = False
+        if old_value == new_value or self._property_updating:
+            return
+            
+        self._property_updating = True
+        try:
+            super().setWindowTitle(new_value)
+        except Exception as e:
+            print(f"Error updating title: {e}")
+        finally:
+            self._property_updating = False
                 
     def _on_floating_property_changed(self, property_name, old_value, new_value):
         """Update dock floating state when property changes."""
-        if old_value != new_value:
-            self._is_updating = True
-            try:
-                self.setFloating(new_value)
-            finally:
-                self._is_updating = False
+        if old_value == new_value or self._property_updating:
+            return
+            
+        self._property_updating = True
+        try:
+            super().setFloating(new_value)
+        except Exception as e:
+            print(f"Error updating floating state: {e}")
+        finally:
+            self._property_updating = False
                 
     def _on_visible_property_changed(self, property_name, old_value, new_value):
         """Update dock visibility when property changes."""
-        if old_value != new_value:
-            self._is_updating = True
-            try:
-                self.setVisible(new_value)
-            finally:
-                self._is_updating = False
+        if old_value == new_value or self._property_updating:
+            return
+            
+        self._property_updating = True
+        try:
+            super().setVisible(new_value)
+        except Exception as e:
+            print(f"Error updating visibility: {e}")
+        finally:
+            self._property_updating = False
                 
     def _update_floating_property(self, floating):
         """Update floating property when dock state changes."""
-        if not self._is_updating and self.properties.is_floating != floating:
-            self.properties.is_floating = floating
+        if self._property_updating or self._is_updating:
+            return
+            
+        if self.properties.is_floating != floating:
+            self._property_updating = True
+            try:
+                self.properties.is_floating = floating
+            finally:
+                self._property_updating = False
             
     def setVisible(self, visible):
         """Override to update the visible property."""
         super().setVisible(visible)
         
         # Update property if different
-        if not self._is_updating and hasattr(self, 'properties'):
-            if self.properties.is_visible != visible:
+        if self._property_updating or self._is_updating:
+            return
+            
+        if hasattr(self, 'properties') and self.properties.is_visible != visible:
+            self._property_updating = True
+            try:
                 self.properties.is_visible = visible
+            finally:
+                self._property_updating = False
                 
     def setWindowTitle(self, title):
         """Override to update the title property."""
         super().setWindowTitle(title)
         
         # Update property if different
-        if not self._is_updating and hasattr(self, 'properties'):
-            if self.properties.title != title:
+        if self._property_updating or self._is_updating:
+            return
+            
+        if hasattr(self, 'properties') and self.properties.title != title:
+            self._property_updating = True
+            try:
                 self.properties.title = title
+            finally:
+                self._property_updating = False
