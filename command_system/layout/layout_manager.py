@@ -51,6 +51,9 @@ class LayoutManager:
         # Default layouts directory
         self._layouts_dir = "layouts"
         
+        # Track dock creation order to help with restoration
+        self._dock_creation_order: List[str] = []
+        
     def set_main_window(self, main_window: QMainWindow) -> None:
         """
         Set the main window for the layout manager.
@@ -70,6 +73,11 @@ class LayoutManager:
         """
         self._registered_widgets[widget_id] = widget
         
+        # Track dock creation order
+        if isinstance(widget, QDockWidget):
+            if widget_id not in self._dock_creation_order:
+                self._dock_creation_order.append(widget_id)
+        
     def unregister_widget(self, widget_id: str) -> None:
         """
         Unregister a widget from the layout system.
@@ -79,6 +87,10 @@ class LayoutManager:
         """
         if widget_id in self._registered_widgets:
             del self._registered_widgets[widget_id]
+            
+            # Remove from dock creation order if present
+            if widget_id in self._dock_creation_order:
+                self._dock_creation_order.remove(widget_id)
             
     def register_widget_factory(self, widget_type: str, factory: Callable[[], QWidget]) -> None:
         """
@@ -122,7 +134,8 @@ class LayoutManager:
                     "height": self._main_window.height()
                 }
             },
-            "widgets": {}
+            "widgets": {},
+            "dock_creation_order": self._dock_creation_order.copy()
         }
         
         # Capture registered widget states
@@ -130,8 +143,71 @@ class LayoutManager:
             widget_data = self._capture_widget_state(widget)
             if widget_data:
                 layout_data["widgets"][widget_id] = widget_data
+        
+        # Capture dock tabification relationships
+        layout_data["tabified_docks"] = self._capture_tabified_docks()
                 
         return layout_data
+    
+    def _capture_tabified_docks(self) -> List[List[str]]:
+        """
+        Capture groups of tabified docks.
+        
+        Returns:
+            List of lists, where each inner list contains the IDs of docks that are tabified together
+        """
+        if not self._main_window:
+            return []
+            
+        # Find all dock widgets
+        all_docks = [dock for dock_id, dock in self._registered_widgets.items() 
+                     if isinstance(dock, QDockWidget)]
+        
+        # Track processed docks to avoid duplicates
+        processed_docks = set()
+        tabified_groups = []
+        
+        # For each dock, find all docks tabified with it
+        for dock in all_docks:
+            if dock in processed_docks:
+                continue
+                
+            # Get the dock ID
+            dock_id = self._get_widget_id(dock)
+            if not dock_id:
+                continue
+                
+            # Get tabified docks
+            tabified_docks = self._main_window.tabifiedDockWidgets(dock)
+            
+            # If there are tabified docks, create a group
+            if tabified_docks:
+                group = [dock_id]
+                for tabified_dock in tabified_docks:
+                    tabified_id = self._get_widget_id(tabified_dock)
+                    if tabified_id:
+                        group.append(tabified_id)
+                        processed_docks.add(tabified_dock)
+                
+                tabified_groups.append(group)
+                processed_docks.add(dock)
+        
+        return tabified_groups
+        
+    def _get_widget_id(self, widget: QWidget) -> Optional[str]:
+        """
+        Get the ID for a registered widget.
+        
+        Args:
+            widget: Widget to find ID for
+            
+        Returns:
+            Widget ID, or None if not found
+        """
+        for widget_id, registered_widget in self._registered_widgets.items():
+            if registered_widget == widget:
+                return widget_id
+        return None
         
     def _capture_widget_state(self, widget: QWidget) -> Dict[str, Any]:
         """
@@ -173,7 +249,8 @@ class LayoutManager:
         elif isinstance(widget, QDockWidget):
             widget_data["dock"] = {
                 "floating": widget.isFloating(),
-                "area": self._get_dock_area(widget)
+                "area": self._get_dock_area(widget),
+                "object_name": widget.objectName()
             }
             
         return widget_data
@@ -230,6 +307,23 @@ class LayoutManager:
             scale_x = current_size[0] / saved_width if abs(current_size[0] - saved_width) > 10 else 1.0
             scale_y = current_size[1] / saved_height if abs(current_size[1] - saved_height) > 10 else 1.0
             
+            # Get dock creation order from layout data
+            dock_creation_order = layout_data.get("dock_creation_order", [])
+            
+            # First, restore basic widget states
+            widget_data = layout_data.get("widgets", {})
+            
+            # First pass: Apply state to non-dock widgets
+            for widget_id, state in widget_data.items():
+                if not isinstance(self._get_or_create_widget(widget_id, state), QDockWidget):
+                    self._restore_widget_state(widget_id, state, scale_x, scale_y)
+                    
+            # Second pass: Apply state to dock widgets in creation order
+            # Restore dock widgets in the saved creation order
+            for dock_id in dock_creation_order:
+                if dock_id in widget_data:
+                    self._restore_widget_state(dock_id, widget_data[dock_id], scale_x, scale_y)
+                    
             # Restore main window state if specified
             if "state" in main_window_data:
                 try:
@@ -237,17 +331,40 @@ class LayoutManager:
                     self._main_window.restoreState(state_bytes)
                 except Exception as e:
                     print(f"Error restoring main window state: {e}")
-            
-            # Restore registered widgets
-            widget_data = layout_data.get("widgets", {})
-            for widget_id, state in widget_data.items():
-                self._restore_widget_state(widget_id, state, scale_x, scale_y)
+                    
+            # Restore tabified dock relationships
+            self._restore_tabified_docks(layout_data.get("tabified_docks", []))
                 
             return True
             
         except Exception as e:
             print(f"Error applying layout: {e}")
             return False
+            
+    def _restore_tabified_docks(self, tabified_groups: List[List[str]]) -> None:
+        """
+        Restore tabified dock relationships.
+        
+        Args:
+            tabified_groups: List of groups of tabified dock IDs
+        """
+        if not self._main_window:
+            return
+            
+        for group in tabified_groups:
+            if len(group) < 2:
+                continue
+                
+            # Get the first dock in the group
+            first_dock = self._registered_widgets.get(group[0])
+            if not first_dock or not isinstance(first_dock, QDockWidget):
+                continue
+                
+            # Tabify the remaining docks with the first one
+            for dock_id in group[1:]:
+                dock = self._registered_widgets.get(dock_id)
+                if dock and isinstance(dock, QDockWidget):
+                    self._main_window.tabifyDockWidget(first_dock, dock)
         
     def _restore_widget_state(self, widget_id: str, state: Dict[str, Any], 
                              scale_x: float, scale_y: float) -> None:
@@ -310,17 +427,20 @@ class LayoutManager:
         elif isinstance(widget, QDockWidget) and "dock" in state:
             dock_data = state["dock"]
             
-            # Set floating state
-            if "floating" in dock_data:
-                widget.setFloating(dock_data["floating"])
-                
+            # Store object name if present
+            if "object_name" in dock_data and dock_data["object_name"]:
+                widget.setObjectName(dock_data["object_name"])
+            
             # Set dock area
             if "area" in dock_data and not dock_data.get("floating", False):
                 area = dock_data["area"]
                 if area is not None and self._main_window:
-                    # Convert integer back to Qt.DockWidgetArea
-                    qt_area = Qt.DockWidgetArea(area)
-                    self._main_window.addDockWidget(qt_area, widget)
+                    # Add to the main window
+                    self._main_window.addDockWidget(area, widget)
+            
+            # Set floating state
+            if "floating" in dock_data:
+                widget.setFloating(dock_data["floating"])
         
     def _get_or_create_widget(self, widget_id: str, state: Dict[str, Any]) -> Optional[QWidget]:
         """
