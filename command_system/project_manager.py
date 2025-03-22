@@ -34,6 +34,13 @@ class ProjectManager:
         
         # Default project format
         self._default_format = ProjectSerializer.DEFAULT_FORMAT
+        
+        # Default flag to save layouts with projects
+        self._save_layouts = True
+        
+        # Layout handler functions - will be set by layout system if available
+        self._save_layout_func = None
+        self._load_layout_func = None
     
     def register_model_type(self, model_type: str, factory: Callable[[], Observable]) -> None:
         """
@@ -68,7 +75,28 @@ class ProjectManager:
         """Get the default file extension for the current format."""
         return ProjectSerializer.get_default_extension(self._default_format)
     
-    def save_project(self, model: Observable, filename: Optional[str] = None, format_type: Optional[str] = None) -> bool:
+    def register_layout_handlers(self, save_func: Callable, load_func: Callable) -> None:
+        """
+        Register handlers for saving and loading layouts.
+        
+        Args:
+            save_func: Function for saving layouts, takes (filename) as argument
+            load_func: Function for loading layouts, takes (filename) as argument
+        """
+        self._save_layout_func = save_func
+        self._load_layout_func = load_func
+    
+    def set_save_layouts(self, save_layouts: bool) -> None:
+        """
+        Set whether layouts should be saved with projects by default.
+        
+        Args:
+            save_layouts: True to save layouts with projects, False to disable
+        """
+        self._save_layouts = save_layouts
+    
+    def save_project(self, model: Observable, filename: Optional[str] = None, 
+                    format_type: Optional[str] = None, save_layout: Optional[bool] = None) -> bool:
         """
         Save the project to a file.
         
@@ -76,6 +104,7 @@ class ProjectManager:
             model: Observable model to save
             filename: Optional filename to save to (uses current filename if not provided)
             format_type: Optional format type (uses default if not provided)
+            save_layout: Optional flag to save layout (uses default setting if not provided)
             
         Returns:
             True if save was successful
@@ -95,19 +124,29 @@ class ProjectManager:
         # Save the model
         success = ProjectSerializer.save_to_file(model, filename, format_type)
         
+        # Save layout if enabled and handlers are available
+        if success and (save_layout if save_layout is not None else self._save_layouts):
+            if self._save_layout_func:
+                try:
+                    self._save_layout_func(filename)
+                except Exception as e:
+                    print(f"Warning: Failed to save layout with project: {e}")
+        
         # Clear command history after successful save
         if success:
             self._command_manager.clear()
             
         return success
     
-    def load_project(self, filename: str, format_type: Optional[str] = None) -> Optional[Observable]:
+    def load_project(self, filename: str, format_type: Optional[str] = None,
+                    load_layout: Optional[bool] = None) -> Optional[Observable]:
         """
         Load a project from a file.
         
         Args:
             filename: Path to the file to load
             format_type: Optional format type (will try to deduce from extension if not provided)
+            load_layout: Optional flag to load layout (uses default setting if not provided)
             
         Returns:
             Loaded model, or None if loading failed
@@ -121,6 +160,14 @@ class ProjectManager:
             
             # Clear command history since we're loading a fresh state
             self._command_manager.clear()
+            
+            # Load layout if enabled and handlers are available
+            if load_layout if load_layout is not None else self._save_layouts:
+                if self._load_layout_func:
+                    try:
+                        self._load_layout_func(filename)
+                    except Exception as e:
+                        print(f"Warning: Failed to load layout from project: {e}")
         
         return model
     

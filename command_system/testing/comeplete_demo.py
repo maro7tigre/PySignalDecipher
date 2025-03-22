@@ -7,7 +7,7 @@ This demo shows all key features:
 - Undo/redo functionality
 - Dock management with observable models
 - Layout management
-- Project save/load
+- Project save/load with integrated layouts
 """
 import sys
 import os
@@ -22,7 +22,8 @@ if project_root not in sys.path:
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QGroupBox, QGridLayout, QFileDialog,
-    QMessageBox, QSplitter, QTabWidget, QMenu, QMenuBar, QStatusBar, QInputDialog
+    QMessageBox, QSplitter, QTabWidget, QMenu, QMenuBar, QStatusBar, QInputDialog,
+    QCheckBox
 )
 from PySide6.QtCore import Qt, QSize
 
@@ -40,7 +41,7 @@ from command_system.ui.dock import (
     get_dock_manager, CommandDockWidget, ObservableDockWidget,
     CreateDockCommand, DeleteDockCommand
 )
-from command_system.layout import get_layout_manager, extend_project_manager
+from command_system.layout import get_layout_manager
 
 
 class ProjectModel(Observable):
@@ -185,6 +186,14 @@ class ComprehensiveDemo(QMainWindow):
         }
         
         file_menu.addMenu(format_menu)
+        
+        # Save layout options checkbox
+        file_menu.addSeparator()
+        self.save_layout_action = file_menu.addAction("Save Layout with Project")
+        self.save_layout_action.setCheckable(True)
+        self.save_layout_action.setChecked(True)  # Default is True
+        self.save_layout_action.triggered.connect(self._on_toggle_save_layout)
+        
         file_menu.addSeparator()
         
         exit_action = file_menu.addAction("E&xit")
@@ -228,6 +237,12 @@ class ComprehensiveDemo(QMainWindow):
         menu_bar.addMenu(view_menu)
         
         self.setMenuBar(menu_bar)
+    
+    def _on_toggle_save_layout(self, checked):
+        """Handle toggling of layout saving."""
+        # Update project manager setting
+        self.project_manager.set_save_layouts(checked)
+        self.status_label.setText(f"Layout saving with projects {'enabled' if checked else 'disabled'}")
     
     def _create_status_bar(self):
         """Create the status bar."""
@@ -684,8 +699,11 @@ class ComprehensiveDemo(QMainWindow):
         if not filename:
             return
             
+        # Get current layout setting
+        include_layout = self.save_layout_action.isChecked()
+        
         # Load project
-        model = self.project_manager.load_project(filename)
+        model = self.project_manager.load_project(filename, load_layout=include_layout)
         
         if model is not None:
             # Update model
@@ -719,8 +737,11 @@ class ComprehensiveDemo(QMainWindow):
             # No filename, do Save As instead
             self._on_save_as()
         else:
+            # Get current layout setting
+            include_layout = self.save_layout_action.isChecked()
+            
             # Save to current filename
-            if self.project_manager.save_project(self.model):
+            if self.project_manager.save_project(self.model, save_layout=include_layout):
                 # Update window title to reflect saved state
                 self._update_window_title()
                 self.status_label.setText("Project saved")
@@ -744,8 +765,11 @@ class ComprehensiveDemo(QMainWindow):
         if not filename.lower().endswith(extension):
             filename += extension
             
+        # Get current layout setting
+        include_layout = self.save_layout_action.isChecked()
+            
         # Save project
-        if self.project_manager.save_project(self.model, filename):
+        if self.project_manager.save_project(self.model, filename, save_layout=include_layout):
             # Update window title
             self._update_window_title()
             self.status_label.setText(f"Project saved as: {filename}")
@@ -823,8 +847,8 @@ def main():
     """Application entry point."""
     app = QApplication(sys.argv)
     
-    # Extend the project manager with layout capabilities
-    extend_project_manager()
+    # NOTE: We no longer need to call extend_project_manager() here
+    # since layout integration is now automatic
     
     window = ComprehensiveDemo()
     window.show()

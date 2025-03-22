@@ -97,46 +97,37 @@ def load_layout_from_project(filename: str) -> bool:
         return False
 
 
+def initialize_layout_integration():
+    """
+    Initialize the layout system integration with the project manager.
+    
+    This function registers the layout save/load handlers with the project manager.
+    Unlike the previous approach that used monkey patching, this uses the new
+    handler registration approach.
+    """
+    # Get the project manager
+    project_manager = get_project_manager()
+    
+    # Register layout handlers
+    project_manager.register_layout_handlers(
+        save_layout_with_project,
+        load_layout_from_project
+    )
+    
+    # Default to saving layouts with projects
+    project_manager.set_save_layouts(True)
+    
+    # Add an attribute to indicate integration has been applied
+    # This is for backward compatibility with existing code
+    project_manager._layout_extension_applied = True
+
+
+# For backward compatibility
 def extend_project_manager():
     """
     Extend the project manager with layout capabilities.
     
-    This function monkey-patches the project manager to add layout
-    saving and loading to the project save/load operations.
+    This is now just a wrapper around initialize_layout_integration 
+    for backward compatibility.
     """
-    # Get the original methods
-    project_manager = get_project_manager()
-    original_save = project_manager.save_project
-    original_load = project_manager.load_project
-    
-    # Replace with extended versions
-    def extended_save_project(model, filename, *args, **kwargs):
-        """Extended save_project method with layout support."""
-        # First, call the original method
-        success = original_save(model, filename, *args, **kwargs)
-        
-        # If successful, add layout data
-        if success:
-            save_layout_with_project(filename)
-            
-        return success
-    
-    def extended_load_project(filename, *args, **kwargs):
-        """Extended load_project method with layout support."""
-        # First, call the original method
-        model = original_load(filename, *args, **kwargs)
-        
-        # If successful, apply layout
-        if model is not None:
-            # Wait until the model has been fully loaded before applying layout
-            # This ensures all widgets have been created and registered
-            load_layout_from_project(filename)
-            
-        return model
-    
-    # Apply monkey patching
-    project_manager.save_project = extended_save_project
-    project_manager.load_project = extended_load_project
-    
-    # Add an attribute to indicate extension has been applied
-    project_manager._layout_extension_applied = True
+    initialize_layout_integration()

@@ -10,7 +10,8 @@ from .layout_serialization import serialize_layout, deserialize_layout
 from .project_integration import (
     save_layout_with_project, 
     load_layout_from_project,
-    extend_project_manager
+    extend_project_manager,
+    initialize_layout_integration  # Added this function
 )
 
 __all__ = [
@@ -20,5 +21,6 @@ __all__ = [
     'deserialize_layout',
     'save_layout_with_project',
     'load_layout_from_project',
-    'extend_project_manager'
+    'extend_project_manager',
+    'initialize_layout_integration'  # Added this function
 ]

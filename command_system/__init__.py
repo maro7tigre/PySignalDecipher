@@ -13,5 +13,8 @@ from .ui.property_binding import PropertyBinder
 from .serialization import ProjectSerializer
 from .project_manager import ProjectManager, get_project_manager
 
+# Initialize system components - this will auto-initialize layout integration
+from . import _auto_init  # Fixed the import name
+
 # Version info
-__version__ = "0.1.1"
+__version__ = "0.1.2"
