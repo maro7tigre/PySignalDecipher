@@ -39,7 +39,10 @@ class CommandDockWidget(QDockWidget):
         # Store properties
         self.dock_id = dock_id
         self.model = model
-        
+
+        # Set objectName to match dock_id - this ensures Qt can track the widget
+        self.setObjectName(dock_id)
+    
         # Get managers
         self.dock_manager = get_dock_manager()
         self.command_manager = get_command_manager()
