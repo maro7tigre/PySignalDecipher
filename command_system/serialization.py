@@ -219,7 +219,17 @@ class ProjectSerializer:
             if format_type == ProjectSerializer.FORMAT_JSON:
                 # Use JSON format
                 with open(filename, 'r', encoding='utf-8') as f:
-                    return json.load(f, object_hook=observable_decoder)
+                    content = f.read()
+                    
+                    # Check for layout markers and extract only the JSON part
+                    start_marker = "__LAYOUT_DATA_BEGIN__"
+                    start_pos = content.find(start_marker)
+                    if start_pos != -1:
+                        # Only use content before the layout marker
+                        content = content[:start_pos]
+                    
+                    # Parse the JSON content
+                    return json.loads(content, object_hook=observable_decoder)
             elif format_type == ProjectSerializer.FORMAT_BINARY:
                 # Use pickle for binary format
                 import pickle
@@ -236,7 +246,16 @@ class ProjectSerializer:
             else:
                 print(f"Unsupported format type: {format_type}, trying JSON")
                 with open(filename, 'r', encoding='utf-8') as f:
-                    return json.load(f, object_hook=observable_decoder)
+                    content = f.read()
+                    
+                    # Check for layout markers in fallback JSON handling
+                    start_marker = "__LAYOUT_DATA_BEGIN__"
+                    start_pos = content.find(start_marker)
+                    if start_pos != -1:
+                        # Only use content before the layout marker
+                        content = content[:start_pos]
+                    
+                    return json.loads(content, object_hook=observable_decoder)
         except Exception as e:
             print(f"Error loading project: {e}")
             return None
