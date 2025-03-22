@@ -1,11 +1,11 @@
 """
-Comprehensive demonstration of the command system.
+Improved comprehensive demonstration of the command system.
 
 This demo shows all key features:
 - Observable properties
 - Command-aware widgets
 - Undo/redo functionality
-- Dock management
+- Dock management with observable models
 - Layout management
 - Project save/load
 """
@@ -63,6 +63,22 @@ class ProjectModel(Observable):
     deadline = ObservableProperty[date](default=date.today())
 
 
+class ParameterModel(Observable):
+    """Model for parameter docks."""
+    
+    name = ObservableProperty[str](default="Parameter Set")
+    value1 = ObservableProperty[int](default=50)
+    value2 = ObservableProperty[float](default=10.5)
+    enabled = ObservableProperty[bool](default=True)
+
+
+class NoteModel(Observable):
+    """Model for note docks."""
+    
+    title = ObservableProperty[str](default="Notes")
+    content = ObservableProperty[str](default="")
+
+
 class ComprehensiveDemo(QMainWindow):
     """Main window for the comprehensive demo."""
     
@@ -82,6 +98,8 @@ class ComprehensiveDemo(QMainWindow):
         
         # Register model types for project manager
         self.project_manager.register_model_type("project", lambda: ProjectModel())
+        self.project_manager.register_model_type("parameter", lambda: ParameterModel())
+        self.project_manager.register_model_type("note", lambda: NoteModel())
         
         # Set main window for dock and layout managers
         self.dock_manager.set_main_window(self)
@@ -106,6 +124,7 @@ class ComprehensiveDemo(QMainWindow):
         
         # Initialize dock counter
         self.dock_counter = 1
+        self.param_dock_counter = 1
         
         # Register widgets with layout manager
         self._register_layout_widgets()
@@ -197,8 +216,11 @@ class ComprehensiveDemo(QMainWindow):
         view_menu.addMenu(layout_menu)
         view_menu.addSeparator()
         
-        add_dock_action = view_menu.addAction("Add &Dock")
-        add_dock_action.triggered.connect(self._on_add_dock)
+        add_dock_action = view_menu.addAction("Add &Note Dock")
+        add_dock_action.triggered.connect(self._on_add_note_dock)
+        
+        add_param_dock_action = view_menu.addAction("Add &Parameter Dock")
+        add_param_dock_action.triggered.connect(self._on_add_param_dock)
         
         # Add menus to menu bar
         menu_bar.addMenu(file_menu)
@@ -333,8 +355,12 @@ class ComprehensiveDemo(QMainWindow):
                                   Qt.DockWidgetArea.RightDockWidgetArea)
         
         # Notes dock
-        self._create_notes_dock("notes_dock", "Project Notes", 
+        self._create_note_dock("notes_dock", "Project Notes", 
                                Qt.DockWidgetArea.BottomDockWidgetArea)
+                               
+        # Parameter dock
+        self._create_parameter_dock("param_dock_1", "Parameters 1", 
+                                   Qt.DockWidgetArea.LeftDockWidgetArea)
     
     def _create_summary_dock(self, dock_id, title, area):
         """Create a summary dock widget."""
@@ -361,22 +387,92 @@ class ComprehensiveDemo(QMainWindow):
         
         return dock
     
-    def _create_notes_dock(self, dock_id, title, area):
-        """Create a notes dock widget."""
+    def _create_note_dock(self, dock_id, title, area):
+        """Create a notes dock widget with its own observable model."""
+        # Create note model
+        note_model = NoteModel()
+        note_model.title = title
+        
         # Create content widget
         content = QWidget()
         layout = QVBoxLayout(content)
         
-        # Add a command-aware text edit
+        # Title field
+        title_layout = QHBoxLayout()
+        title_layout.addWidget(QLabel("Title:"))
+        title_edit = CommandLineEdit()
+        title_edit.bind_to_model(note_model, "title")
+        title_layout.addWidget(title_edit)
+        layout.addLayout(title_layout)
+        
+        # Add a command-aware text edit bound to the model
         notes_edit = CommandTextEdit()
-        # We can't bind this to a model property since it's not part of our main model
-        # But it will still track changes for undo/redo
+        notes_edit.bind_to_model(note_model, "content")
         layout.addWidget(notes_edit)
         
-        # Create dock
-        dock = CommandDockWidget(dock_id, title, self)
+        # Create dock with model
+        dock = ObservableDockWidget(dock_id, title, self, note_model)
         dock.setWidget(content)
         dock.closeRequested.connect(self._on_dock_close_requested)
+        
+        # Link dock title to model title
+        note_model.add_property_observer("title", lambda p, o, n: dock.setWindowTitle(n))
+        
+        # Create and execute command to add dock
+        cmd = CreateDockCommand(dock_id, dock, None, area)
+        self.cmd_manager.execute(cmd)
+        
+        return dock
+    
+    def _create_parameter_dock(self, dock_id, title, area):
+        """Create a parameter dock with its own observable model."""
+        # Create parameter model
+        param_model = ParameterModel()
+        param_model.name = title
+        
+        # Create content widget
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        
+        # Add parameter controls
+        form_layout = QGridLayout()
+        
+        # Name field
+        form_layout.addWidget(QLabel("Name:"), 0, 0)
+        name_edit = CommandLineEdit()
+        name_edit.bind_to_model(param_model, "name")
+        form_layout.addWidget(name_edit, 0, 1)
+        
+        # Value 1 field
+        form_layout.addWidget(QLabel("Value 1:"), 1, 0)
+        value1_spin = CommandSpinBox()
+        value1_spin.setRange(0, 100)
+        value1_spin.bind_to_model(param_model, "value1")
+        form_layout.addWidget(value1_spin, 1, 1)
+        
+        # Value 2 field
+        form_layout.addWidget(QLabel("Value 2:"), 2, 0)
+        value2_spin = CommandDoubleSpinBox()
+        value2_spin.setRange(0, 100)
+        value2_spin.setDecimals(1)
+        value2_spin.bind_to_model(param_model, "value2")
+        form_layout.addWidget(value2_spin, 2, 1)
+        
+        # Enabled field
+        form_layout.addWidget(QLabel("Enabled:"), 3, 0)
+        enabled_check = CommandCheckBox()
+        enabled_check.bind_to_model(param_model, "enabled")
+        form_layout.addWidget(enabled_check, 3, 1)
+        
+        layout.addLayout(form_layout)
+        
+        # Create dock with model
+        dock = ObservableDockWidget(dock_id, title, self, param_model)
+        dock.setWidget(content)
+        dock.closeRequested.connect(self._on_dock_close_requested)
+        
+        # Link dock title to model name
+        param_model.add_property_observer("name", lambda p, o, n: dock.setWindowTitle(n))
         
         # Create and execute command to add dock
         cmd = CreateDockCommand(dock_id, dock, None, area)
@@ -477,6 +573,7 @@ class ComprehensiveDemo(QMainWindow):
             self.status_label.setText("Undo: Nothing to undo")
             
         self._update_button_states()
+        self._update_summary()
     
     def _on_redo(self):
         """Handle redo action."""
@@ -486,22 +583,37 @@ class ComprehensiveDemo(QMainWindow):
             self.status_label.setText("Redo: Nothing to redo")
             
         self._update_button_states()
+        self._update_summary()
     
-    def _on_add_dock(self):
-        """Handle add dock action."""
+    def _on_add_note_dock(self):
+        """Handle add note dock action."""
         # Generate a unique ID
-        dock_id = f"custom_dock_{self.dock_counter}"
         self.dock_counter += 1
+        dock_id = f"note_dock_{self.dock_counter}"
         
-        # Alternate between notes and summary docks
-        if self.dock_counter % 2 == 0:
-            dock = self._create_notes_dock(dock_id, f"Notes {self.dock_counter}", 
-                                          Qt.DockWidgetArea.RightDockWidgetArea)
-        else:
-            dock = self._create_summary_dock(dock_id, f"Summary {self.dock_counter}",
-                                            Qt.DockWidgetArea.RightDockWidgetArea)
+        # Create a note dock
+        dock = self._create_note_dock(
+            dock_id, 
+            f"Notes {self.dock_counter}", 
+            Qt.DockWidgetArea.RightDockWidgetArea
+        )
         
-        self.status_label.setText(f"Added new dock: {dock_id}")
+        self.status_label.setText(f"Added new note dock: {dock_id}")
+    
+    def _on_add_param_dock(self):
+        """Handle add parameter dock action."""
+        # Generate a unique ID
+        self.param_dock_counter += 1
+        dock_id = f"param_dock_{self.param_dock_counter}"
+        
+        # Create a parameter dock
+        dock = self._create_parameter_dock(
+            dock_id, 
+            f"Parameters {self.param_dock_counter}", 
+            Qt.DockWidgetArea.RightDockWidgetArea
+        )
+        
+        self.status_label.setText(f"Added new parameter dock: {dock_id}")
     
     def _on_dock_close_requested(self, dock_id):
         """Handle dock close request."""
@@ -666,7 +778,6 @@ class ComprehensiveDemo(QMainWindow):
             return
             
         # Show dialog with presets
-        from PySide6.QtWidgets import QInputDialog
         preset, ok = QInputDialog.getItem(
             self, "Load Layout", "Select layout:", presets, 0, False
         )
