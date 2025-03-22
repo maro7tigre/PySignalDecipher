@@ -33,7 +33,6 @@ class DockManager:
         self._command_manager = get_command_manager()
         self._dock_states: Dict[str, Dict[str, Any]] = {}
         self._main_window: Optional[QMainWindow] = None
-        self._dock_type_factories = {}
         
     def set_main_window(self, main_window: QMainWindow) -> None:
         """
@@ -311,37 +310,6 @@ class DockManager:
         except Exception as e:
             print(f"Error deserializing layout: {e}")
             return False
-
-    def register_dock_type(self, dock_type: str, 
-                        creation_func):
-        """
-        Register a function that creates a specific type of dock.
-        
-        Args:
-            dock_type: Type identifier for this dock
-            creation_func: Function that takes (dock_id, title, parent, model) 
-                        and returns a dock widget
-        """
-        self._dock_type_factories[dock_type] = creation_func
-        
-    def create_dock_from_type(self, dock_type: str, dock_id: str, 
-                            title: str, parent=None, model=None):
-        """
-        Create a dock using the registered factory function.
-        
-        Args:
-            dock_type: Type of dock to create
-            dock_id: Unique identifier for the dock
-            title: Title for the dock
-            parent: Parent window
-            model: Optional model for the dock
-            
-        Returns:
-            Created dock widget, or None if type not registered
-        """
-        if dock_type in self._dock_type_factories:
-            return self._dock_type_factories[dock_type](dock_id, title, parent, model)
-        return None
 
 
 def get_dock_manager():

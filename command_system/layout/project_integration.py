@@ -51,6 +51,15 @@ def save_layout_with_project(filename: str) -> bool:
 def load_layout_from_project(filename: str) -> bool:
     """
     Load and apply layout data from a project file.
+    
+    Extracts layout data that was appended to the project file
+    and applies it to the current UI.
+    
+    Args:
+        filename: Path to the project file
+        
+    Returns:
+        True if layout was loaded and applied successfully
     """
     try:
         # Check if file exists
@@ -78,9 +87,6 @@ def load_layout_from_project(filename: str) -> bool:
         # Extract and parse layout JSON
         layout_json = content[start_pos:end_pos].strip()
         layout_data = json.loads(layout_json)
-        
-        # Print layout data (for debugging)
-        print("Found layout data, applying to current UI...")
         
         # Apply layout
         layout_manager = get_layout_manager()

@@ -294,10 +294,6 @@ class LayoutManager:
             return False
             
         try:
-            # Print debug info
-            print(f"Applying layout with {len(layout_data.get('widgets', {}))} widgets")
-            print(f"Currently registered widgets: {list(self._registered_widgets.keys())}")
-            
             # Get main window info
             main_window_data = layout_data.get("main_window", {})
             
@@ -314,19 +310,9 @@ class LayoutManager:
             # Get dock creation order from layout data
             dock_creation_order = layout_data.get("dock_creation_order", [])
             
-            # First pass: Check for widgets that need to be created
+            # First, restore basic widget states
             widget_data = layout_data.get("widgets", {})
-            missing_widgets = []
             
-            for widget_id, state in widget_data.items():
-                if widget_id not in self._registered_widgets:
-                    print(f"Widget {widget_id} needs to be created")
-                    missing_widgets.append((widget_id, state))
-            
-            # Create missing widgets
-            for widget_id, state in missing_widgets:
-                self._get_or_create_widget(widget_id, state)
-                
             # First pass: Apply state to non-dock widgets
             for widget_id, state in widget_data.items():
                 if not isinstance(self._get_or_create_widget(widget_id, state), QDockWidget):
@@ -336,7 +322,6 @@ class LayoutManager:
             # Restore dock widgets in the saved creation order
             for dock_id in dock_creation_order:
                 if dock_id in widget_data:
-                    print(f"Restoring dock: {dock_id}")
                     self._restore_widget_state(dock_id, widget_data[dock_id], scale_x, scale_y)
                     
             # Restore main window state if specified
@@ -350,9 +335,8 @@ class LayoutManager:
             # Restore tabified dock relationships
             self._restore_tabified_docks(layout_data.get("tabified_docks", []))
                 
-            print("Layout applied successfully")
             return True
-                
+            
         except Exception as e:
             print(f"Error applying layout: {e}")
             return False

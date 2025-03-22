@@ -41,7 +41,6 @@ class ProjectManager:
         # Layout handler functions - will be set by layout system if available
         self._save_layout_func = None
         self._load_layout_func = None
-        self._structure_recreation_func = None
     
     def register_model_type(self, model_type: str, factory: Callable[[], Observable]) -> None:
         """
@@ -141,25 +140,28 @@ class ProjectManager:
     
     def load_project(self, filename: str, format_type: Optional[str] = None,
                     load_layout: Optional[bool] = None) -> Optional[Observable]:
-        """Load a project from a file."""
-        # Phase 1: Load the model
+        """
+        Load a project from a file.
+        
+        Args:
+            filename: Path to the file to load
+            format_type: Optional format type (will try to deduce from extension if not provided)
+            load_layout: Optional flag to load layout (uses default setting if not provided)
+            
+        Returns:
+            Loaded model, or None if loading failed
+        """
+        # Load the model
         model = ProjectSerializer.load_from_file(filename, format_type)
         
         if model is not None:
             # Update current filename
             self._current_filename = filename
             
-            # Clear command history
+            # Clear command history since we're loading a fresh state
             self._command_manager.clear()
             
-            # Phase 2: Recreate application structure before loading layout
-            if self._structure_recreation_func:
-                try:
-                    self._structure_recreation_func(model)
-                except Exception as e:
-                    print(f"Warning: Failed to recreate application structure: {e}")
-            
-            # Phase 3: Load layout if enabled
+            # Load layout if enabled and handlers are available
             if load_layout if load_layout is not None else self._save_layouts:
                 if self._load_layout_func:
                     try:
@@ -197,15 +199,6 @@ class ProjectManager:
         self._command_manager.clear()
         
         return model
-
-    def register_structure_recreation_func(self, func):
-        """
-        Register a function to recreate application structure when loading projects.
-        
-        Args:
-            func: Function that takes (model) and recreates necessary UI elements
-        """
-        self._structure_recreation_func = func
 
 
 def get_project_manager():
