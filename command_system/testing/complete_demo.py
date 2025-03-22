@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QGroupBox, QGridLayout, QFileDialog,
     QMessageBox, QSplitter, QTabWidget, QMenu, QMenuBar, QStatusBar, QInputDialog,
-    QCheckBox
+    QCheckBox, QDockWidget
 )
 from PySide6.QtCore import Qt, QSize
 
@@ -97,10 +97,16 @@ class ComprehensiveDemo(QMainWindow):
         self.layout_manager = get_layout_manager()
         self.project_manager = get_project_manager()
         
+        # Register dock type factories
+        self._register_dock_factories()
+        
         # Register model types for project manager
         self.project_manager.register_model_type("project", lambda: ProjectModel())
         self.project_manager.register_model_type("parameter", lambda: ParameterModel())
         self.project_manager.register_model_type("note", lambda: NoteModel())
+        
+        # Register structure recreation function for project loading
+        self.project_manager.register_structure_recreation_func(self._recreate_app_structure)
         
         # Set main window for dock and layout managers
         self.dock_manager.set_main_window(self)
@@ -138,6 +144,41 @@ class ComprehensiveDemo(QMainWindow):
         
         # Update window title
         self._update_window_title()
+    
+    def _register_dock_factories(self):
+        """Register factory functions for different dock types."""
+        self.dock_manager.register_dock_type("summary", self._create_summary_dock)
+        self.dock_manager.register_dock_type("note", self._create_note_dock)
+        self.dock_manager.register_dock_type("parameter", self._create_parameter_dock)
+    
+    def _recreate_app_structure(self, model):
+        """Recreate application structure after loading a project."""
+        print("Recreating application structure for loaded model...")
+        
+        # First, remove existing docks if any
+        docks_to_remove = []
+        for dock_id in list(self.dock_manager._dock_states.keys()):
+            docks_to_remove.append(dock_id)
+        
+        for dock_id in docks_to_remove:
+            dock = self.dock_manager.get_dock_widget(dock_id)
+            if dock:
+                self.removeDockWidget(dock)
+                self.dock_manager.unregister_dock(dock_id)
+        
+        # Create summary dock
+        self._create_summary_dock("summary_dock", "Project Summary", 
+                                 Qt.DockWidgetArea.RightDockWidgetArea)
+        
+        # Create notes dock
+        self._create_note_dock("notes_dock", "Project Notes", 
+                              Qt.DockWidgetArea.BottomDockWidgetArea)
+                               
+        # Create parameter dock
+        self._create_parameter_dock("param_dock_1", "Parameters 1", 
+                                   Qt.DockWidgetArea.LeftDockWidgetArea)
+        
+        print("Application structure recreated successfully")
     
     def _create_menu(self):
         """Create the menu bar."""
@@ -377,36 +418,43 @@ class ComprehensiveDemo(QMainWindow):
         self._create_parameter_dock("param_dock_1", "Parameters 1", 
                                    Qt.DockWidgetArea.LeftDockWidgetArea)
     
-    def _create_summary_dock(self, dock_id, title, area):
+    def _create_summary_dock(self, dock_id, title, area, model=None):
         """Create a summary dock widget."""
+        # Use the model parameter if provided, otherwise use main model
+        used_model = model or self.model
+        
         # Create content widget
         content = QWidget()
         layout = QVBoxLayout(content)
         
         # Summary label
-        self.summary_label = QLabel()
-        self.summary_label.setTextFormat(Qt.TextFormat.RichText)
-        layout.addWidget(self.summary_label)
+        summary_label = QLabel()
+        summary_label.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(summary_label)
         
         # Create dock with associated model
-        dock = ObservableDockWidget(dock_id, title, self, self.model)
+        dock = ObservableDockWidget(dock_id, title, self, used_model)
         dock.setWidget(content)
         dock.closeRequested.connect(self._on_dock_close_requested)
+        
+        # Store the summary label in the dock for updates
+        dock.summary_label = summary_label
         
         # Create and execute command to add dock
         cmd = CreateDockCommand(dock_id, dock, None, area)
         self.cmd_manager.execute(cmd)
         
         # Update summary
-        self._update_summary()
+        self._update_summary(dock)
         
         return dock
     
-    def _create_note_dock(self, dock_id, title, area):
+    def _create_note_dock(self, dock_id, title, area, model=None):
         """Create a notes dock widget with its own observable model."""
-        # Create note model
-        note_model = NoteModel()
-        note_model.title = title
+        # Create note model or use provided model
+        note_model = model or NoteModel()
+        if not model:
+            note_model.title = title
         
         # Create content widget
         content = QWidget()
@@ -439,11 +487,12 @@ class ComprehensiveDemo(QMainWindow):
         
         return dock
     
-    def _create_parameter_dock(self, dock_id, title, area):
+    def _create_parameter_dock(self, dock_id, title, area, model=None):
         """Create a parameter dock with its own observable model."""
-        # Create parameter model
-        param_model = ParameterModel()
-        param_model.name = title
+        # Create parameter model or use provided model
+        param_model = model or ParameterModel()
+        if not model:
+            param_model.name = title
         
         # Create content widget
         content = QWidget()
@@ -515,7 +564,7 @@ class ComprehensiveDemo(QMainWindow):
         """Handle model property changes."""
         # Update UI
         self._update_window_title()
-        self._update_summary()
+        self._update_summary_for_all_docks()
         self._update_button_states()
         
         # Update status
@@ -539,33 +588,46 @@ class ComprehensiveDemo(QMainWindow):
             
         self.setWindowTitle(title)
     
-    def _update_summary(self):
-        """Update the project summary display."""
-        if not hasattr(self, 'summary_label'):
+    def _update_summary_for_all_docks(self):
+        """Update all summary docks."""
+        for dock_id, dock_data in self.dock_manager._dock_states.items():
+            dock = dock_data.get("widget")
+            if isinstance(dock, ObservableDockWidget) and hasattr(dock, "summary_label"):
+                self._update_summary(dock)
+    
+    def _update_summary(self, dock):
+        """Update the project summary display for a dock."""
+        if not hasattr(dock, 'summary_label'):
             return
             
+        # Make sure we have a valid model to create summary from
+        if not hasattr(dock, 'model') or not isinstance(dock.model, ProjectModel):
+            return
+            
+        model = dock.model
+        
         html = "<table width='100%'>"
-        html += f"<tr><td><b>Name:</b></td><td>{self.model.name}</td></tr>"
+        html += f"<tr><td><b>Name:</b></td><td>{model.name}</td></tr>"
         
         categories = ["Development", "Design", "Marketing", "Research"]
-        category = categories[self.model.category_index]
+        category = categories[model.category_index]
         html += f"<tr><td><b>Category:</b></td><td>{category}</td></tr>"
         
-        html += f"<tr><td><b>Priority:</b></td><td>{self.model.priority}</td></tr>"
-        html += f"<tr><td><b>Budget:</b></td><td>${self.model.budget:,.2f}</td></tr>"
-        html += f"<tr><td><b>Progress:</b></td><td>{self.model.progress}%</td></tr>"
-        html += f"<tr><td><b>Active:</b></td><td>{'Yes' if self.model.is_active else 'No'}</td></tr>"
-        html += f"<tr><td><b>Deadline:</b></td><td>{self.model.deadline.strftime('%Y-%m-%d')}</td></tr>"
+        html += f"<tr><td><b>Priority:</b></td><td>{model.priority}</td></tr>"
+        html += f"<tr><td><b>Budget:</b></td><td>${model.budget:,.2f}</td></tr>"
+        html += f"<tr><td><b>Progress:</b></td><td>{model.progress}%</td></tr>"
+        html += f"<tr><td><b>Active:</b></td><td>{'Yes' if model.is_active else 'No'}</td></tr>"
+        html += f"<tr><td><b>Deadline:</b></td><td>{model.deadline.strftime('%Y-%m-%d')}</td></tr>"
         html += "</table>"
         
         # Add description excerpt if available
-        if self.model.description:
-            excerpt = self.model.description[:100]
-            if len(self.model.description) > 100:
+        if model.description:
+            excerpt = model.description[:100]
+            if len(model.description) > 100:
                 excerpt += "..."
             html += f"<p><b>Description:</b><br>{excerpt}</p>"
         
-        self.summary_label.setText(html)
+        dock.summary_label.setText(html)
     
     def _update_button_states(self):
         """Update button states based on command availability."""
@@ -588,7 +650,7 @@ class ComprehensiveDemo(QMainWindow):
             self.status_label.setText("Undo: Nothing to undo")
             
         self._update_button_states()
-        self._update_summary()
+        self._update_summary_for_all_docks()
     
     def _on_redo(self):
         """Handle redo action."""
@@ -598,7 +660,7 @@ class ComprehensiveDemo(QMainWindow):
             self.status_label.setText("Redo: Nothing to redo")
             
         self._update_button_states()
-        self._update_summary()
+        self._update_summary_for_all_docks()
     
     def _on_add_note_dock(self):
         """Handle add note dock action."""
@@ -678,7 +740,7 @@ class ComprehensiveDemo(QMainWindow):
         
         # Update UI
         self._update_window_title()
-        self._update_summary()
+        self._update_summary_for_all_docks()
         
         self.status_label.setText("New project created")
     
@@ -702,7 +764,11 @@ class ComprehensiveDemo(QMainWindow):
         # Get current layout setting
         include_layout = self.save_layout_action.isChecked()
         
-        # Load project
+        # Print debug info
+        print(f"Loading project: {filename}")
+        print(f"Include layout: {include_layout}")
+        
+        # Load project - this will trigger structure recreation
         model = self.project_manager.load_project(filename, load_layout=include_layout)
         
         if model is not None:
@@ -724,7 +790,7 @@ class ComprehensiveDemo(QMainWindow):
             
             # Update UI
             self._update_window_title()
-            self._update_summary()
+            self._update_summary_for_all_docks()
             
             self.status_label.setText(f"Project loaded: {filename}")
         else:

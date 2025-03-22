@@ -95,4 +95,12 @@ def deserialize_layout(json_str: str) -> Dict[str, Any]:
     Returns:
         Layout data dictionary
     """
-    return json.loads(json_str, object_hook=layout_decoder)
+    # Parse the JSON data
+    layout_data = json.loads(json_str, object_hook=layout_decoder)
+    
+    # Add some debug information
+    print(f"Deserialized layout with {len(layout_data.get('widgets', {}))} widgets")
+    if 'dock_creation_order' in layout_data:
+        print(f"Dock creation order: {layout_data['dock_creation_order']}")
+    
+    return layout_data
