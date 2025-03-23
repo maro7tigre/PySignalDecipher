@@ -31,11 +31,13 @@ class ObservableEncoder(json.JSONEncoder):
         cls = obj.__class__
         properties = {}
         
-        # Store object ID
+        # Store object ID and metadata
         result = {
             "__type__": "observable",
             "__class__": f"{cls.__module__}.{cls.__name__}",
             "id": obj.get_id(),
+            "parent_id": obj.get_parent_id(),  # Add parent_id
+            "generation": obj.get_generation(),  # Add generation
             "properties": properties
         }
         
@@ -85,6 +87,14 @@ def observable_decoder(obj_dict):
             # Set the ID
             instance.set_id(obj_dict["id"])
             
+            # Set parent_id if present
+            if "parent_id" in obj_dict:
+                instance.set_parent_id(obj_dict["parent_id"])
+                
+            # Set generation if present
+            if "generation" in obj_dict:
+                instance.set_generation(obj_dict["generation"])
+                
             # Set properties
             for prop_name, prop_value in obj_dict["properties"].items():
                 setattr(instance, prop_name, prop_value)
@@ -93,8 +103,6 @@ def observable_decoder(obj_dict):
         except (ImportError, AttributeError) as e:
             print(f"Error deserializing {class_path}: {e}")
             return obj_dict
-    
-    return obj_dict
 
 
 class ProjectSerializer:

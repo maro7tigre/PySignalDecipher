@@ -45,11 +45,20 @@ class Observable:
     """
     Base class for objects that need to track property changes.
     """
-    def __init__(self):
+    def __init__(self, parent=None):
         """Initialize an observable object."""
         self._property_observers: Dict[str, Dict[str, Callable]] = {}
         self._id = str(uuid.uuid4())
         self._is_updating = False  # Flag to prevent recursive updates
+        
+        # Add parent_id tracking
+        self._parent_id = getattr(parent, 'get_id', lambda: None)() if parent else None
+        
+        # Add generation tracking
+        if parent and hasattr(parent, 'get_generation'):
+            self._generation = parent.get_generation() + 1
+        else:
+            self._generation = 0  # Base generation if no parent
         
     def add_property_observer(self, property_name: str, callback: Callable[[str, Any, Any], None]) -> str:
         """
@@ -118,3 +127,19 @@ class Observable:
     def is_updating(self) -> bool:
         """Check if we're currently processing a property update."""
         return self._is_updating
+
+    def get_parent_id(self) -> str | None:
+        """Get parent identifier."""
+        return self._parent_id
+        
+    def set_parent_id(self, parent_id: str) -> None:
+        """Set parent identifier (for deserialization or reparenting)."""
+        self._parent_id = parent_id
+        
+    def get_generation(self) -> int:
+        """Get object generation."""
+        return self._generation
+        
+    def set_generation(self, generation: int) -> None:
+        """Set object generation (for deserialization)."""
+        self._generation = generation

@@ -1,164 +1,78 @@
-# PySignalDecipher Command System - User Guide
+## Observable Hierarchy
 
-This guide provides a comprehensive overview of how to use the PySignalDecipher command system in your applications. It covers the core components, their relationships, and practical usage examples.
+The Observable system supports parent-child relationships and generational tracking for more complex object models.
 
-## Table of Contents
+### Parent-Child Relationships
 
-1. [System Architecture](#system-architecture)
-2. [Core Command System](#core-command-system)
-3. [Observable Properties](#observable-properties)
-4. [Command Management](#command-management)
-5. [UI Integration](#ui-integration)
-6. [Dock Management](#dock-management)
-7. [Layout Management](#layout-management)
-8. [Project Serialization](#project-serialization)
-9. [Integrating All Components](#integrating-all-components)
-10. [Best Practices](#best-practices)
-
-## System Architecture
-
-The PySignalDecipher command system is designed with a modular architecture that separates concerns while providing seamless integration between components:
-
-### Core Components and Their Relationships
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                        UI Layer                             │
-│                                                             │
-│  ┌─────────────────┐   ┌────────────────┐   ┌────────────┐  │
-│  │  Command Widgets │───│  Dock Widgets  │───│  Layouts   │  │
-│  └─────────────────┘   └────────────────┘   └────────────┘  │
-└──────────────┬────────────────┬───────────────┬─────────────┘
-               │                │               │
-               ▼                ▼               ▼
-┌─────────────────┐   ┌────────────────┐   ┌────────────────┐
-│ CommandManager  │───│  DockManager   │───│ LayoutManager  │
-└─────────────────┘   └────────────────┘   └────────────────┘
-         │                    │                    │
-         │                    │                    │
-         ▼                    ▼                    ▼
-┌─────────────────┐   ┌────────────────┐   ┌────────────────┐
-│    Commands     │   │   Observable   │───│ ProjectManager │
-└─────────────────┘   └────────────────┘   └────────────────┘
-                               │                    │
-                               │                    │
-                               ▼                    ▼
-                      ┌────────────────┐   ┌────────────────┐
-                      │ObservableProps │   │ Serialization  │
-                      └────────────────┘   └────────────────┘
-```
-
-The system consists of several interconnected components that work together:
-
-1. **Core Command System**: Command pattern implementation for undo/redo
-2. **Observable System**: Property change notification system 
-3. **UI Integration**: Widgets that automatically create commands
-4. **Dock Management**: Management of dock widgets with undo/redo support
-5. **Layout Management**: Saving and restoring UI configurations
-6. **Project Serialization**: Saving and loading application state
-
-Each component can be used independently, but they are designed to work together seamlessly.
-
-## Core Command System
-
-The command system implements the Command pattern to encapsulate actions that can be executed, undone, and redone.
-
-### Command Base Class
-
-```python
-from command_system import Command
-
-class MyCommand(Command):
-    def __init__(self, data, new_value):
-        self.data = data
-        self.new_value = new_value
-        self.old_value = data.value
-        
-    def execute(self):
-        """Execute the command."""
-        self.data.value = self.new_value
-        
-    def undo(self):
-        """Undo the command."""
-        self.data.value = self.old_value
-```
-
-### CompoundCommand
-
-Group multiple commands together to be executed and undone as a unit:
-
-```python
-from command_system import CompoundCommand
-
-# Create compound command
-compound = CompoundCommand("Complex Operation")
-
-# Add child commands
-compound.add_command(Command1(...))
-compound.add_command(Command2(...))
-
-# Execute entire group
-cmd_manager.execute(compound)
-```
-
-### PropertyCommand
-
-A specialized command for changing properties:
-
-```python
-from command_system import PropertyCommand
-
-# Create command to change a property
-cmd = PropertyCommand(model, "name", "New Name")
-
-# Execute the command
-cmd_manager.execute(cmd)
-```
-
-## Observable Properties
-
-The Observable pattern enables objects to notify observers when their properties change.
-
-### Creating Observable Models
+Observable objects can maintain parent-child relationships:
 
 ```python
 from command_system import Observable, ObservableProperty
 
-class PersonModel(Observable):
-    name = ObservableProperty[str](default="")
-    age = ObservableProperty[int](default=0)
-    is_active = ObservableProperty[bool](default=True)
+# Parent model
+class DocumentModel(Observable):
+    title = ObservableProperty[str](default="Untitled")
+    author = ObservableProperty[str](default="")
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+# Child model with parent reference
+class SectionModel(Observable):
+    heading = ObservableProperty[str](default="Untitled Section")
+    content = ObservableProperty[str](default="")
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+
+# Create parent document
+document = DocumentModel()
+document.title = "My Report"
+
+# Create child sections with parent reference
+section1 = SectionModel(parent=document)
+section1.heading = "Introduction"
+
+section2 = SectionModel(parent=document)
+section2.heading = "Methodology"
 ```
 
-### Using Observable Properties
+### Accessing Hierarchy Information
+
+You can access the parent ID and generation information:
 
 ```python
-# Create a model
-person = PersonModel()
+# Get parent ID
+parent_id = section1.get_parent_id()
+print(f"Section's parent ID: {parent_id}")
 
-# Get property values
-print(person.name)  # ""
-
-# Set property values (triggers notifications)
-person.name = "John"
-person.age = 30
+# Get generation
+generation = section1.get_generation()
+print(f"Section's generation: {generation}")  # Should be 1 (parent is 0)
 ```
 
-### Observing Property Changes
+### Benefits of Hierarchy Support
+
+1. **Structural Modeling**: Create proper hierarchy of related objects
+2. **Parent-Child Navigation**: Track relationships between objects
+3. **Bulk Operations**: Perform operations on entire subtrees
+4. **Generation-Based Logic**: Execute different code based on object generation
+
+### Implementing Hierarchy-Aware Operations
 
 ```python
-# Define a change handler
-def on_name_changed(property_name, old_value, new_value):
-    print(f"Name changed from '{old_value}' to '{new_value}'")
-
-# Register the observer
-observer_id = person.add_property_observer("name", on_name_changed)
-
-# Later, remove the observer if needed
-person.remove_property_observer("name", observer_id)
+def process_model_tree(model, process_func, max_generation=None):
+    """Process a model and all its children recursively."""
+    # Skip if generation exceeds maximum (if specified)
+    if max_generation is not None and model.get_generation() > max_generation:
+        return
+        
+    # Process this model
+    process_func(model)
+    
+    # Process children (would need a method to find children)
+    for child in find_children(model):
+        process_model_tree(child, process_func, max_generation)
 ```
 
 ## Command Management
@@ -323,6 +237,25 @@ cmd = DockLocationCommand("dock_id")
 cmd_manager.execute(cmd)
 ```
 
+### Dock Hierarchy
+
+Docks can have parent-child relationships:
+
+```python
+# Create a parent dock
+parent_dock = CommandDockWidget("parent_dock", "Parent", main_window)
+
+# Create a child dock with parent reference
+child_dock = CommandDockWidget("child_dock", "Child", main_window)
+
+# Add both docks with proper parent-child relationship
+cmd1 = CreateDockCommand("parent_dock", parent_dock, None, Qt.RightDockWidgetArea)
+cmd_manager.execute(cmd1)
+
+cmd2 = CreateDockCommand("child_dock", child_dock, "parent_dock", Qt.RightDockWidgetArea)
+cmd_manager.execute(cmd2)
+```
+
 ## Layout Management
 
 The layout management system allows saving and restoring UI layouts.
@@ -457,10 +390,17 @@ from command_system.layout import get_layout_manager, extend_project_manager
 from command_system.ui.dock import get_dock_manager
 from command_system.ui.widgets import CommandLineEdit, CommandTextEdit
 
-# Define model
+# Define model hierarchy
 class DocumentModel(Observable):
     title = ObservableProperty[str](default="Untitled")
     content = ObservableProperty[str](default="")
+
+class SectionModel(Observable):
+    title = ObservableProperty[str](default="Untitled Section")
+    content = ObservableProperty[str](default="")
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
 
 # Application initialization
 class MainWindow(QMainWindow):
@@ -479,6 +419,7 @@ class MainWindow(QMainWindow):
         
         # Register model types
         self.project_manager.register_model_type("document", lambda: DocumentModel())
+        self.project_manager.register_model_type("section", lambda: SectionModel())
         
         # Enable layout saving with projects
         project_manager.set_save_layouts(True)
@@ -486,8 +427,10 @@ class MainWindow(QMainWindow):
         # Begin initialization (disable command tracking)
         self.cmd_manager.begin_init()
         
-        # Create model
-        self.model = DocumentModel()
+        # Create model hierarchy
+        self.document = DocumentModel()
+        self.section1 = SectionModel(parent=self.document)
+        self.section2 = SectionModel(parent=self.document)
         
         # Set up UI
         self._create_ui()
@@ -501,32 +444,66 @@ class MainWindow(QMainWindow):
     def _create_ui(self):
         # Create UI components and bind to model
         self.title_edit = CommandLineEdit()
-        self.title_edit.bind_to_model(self.model, "title")
+        self.title_edit.bind_to_model(self.document, "title")
         
         self.content_edit = CommandTextEdit()
-        self.content_edit.bind_to_model(self.model, "content")
+        self.content_edit.bind_to_model(self.document, "content")
         
-        # Create and add docks...
+        # Create section docks
+        self._create_section_dock(self.section1, "section1_dock", "Section 1")
+        self._create_section_dock(self.section2, "section2_dock", "Section 2")
+        
+    def _create_section_dock(self, section_model, dock_id, title):
+        # Create content widget
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        
+        # Create widgets bound to section model
+        title_edit = CommandLineEdit()
+        title_edit.bind_to_model(section_model, "title")
+        
+        content_edit = CommandTextEdit()
+        content_edit.bind_to_model(section_model, "content")
+        
+        layout.addWidget(QLabel("Title:"))
+        layout.addWidget(title_edit)
+        layout.addWidget(QLabel("Content:"))
+        layout.addWidget(content_edit)
+        
+        # Create dock with model
+        dock = ObservableDockWidget(dock_id, title, self, section_model)
+        dock.setWidget(content)
+        
+        # Add dock to main window
+        cmd = CreateDockCommand(dock_id, dock, None, Qt.RightDockWidgetArea)
+        self.cmd_manager.execute(cmd)
         
     def _register_layout_widgets(self):
         self.layout_manager.register_widget("main_splitter", self.main_splitter)
         # Register other widgets...
         
     def save_project(self, filename):
-        return self.project_manager.save_project(self.model, filename)
+        return self.project_manager.save_project(self.document, filename)
         
     def load_project(self, filename):
-        model = self.project_manager.load_project(filename)
-        if model:
-            self.model = model
+        document = self.project_manager.load_project(filename)
+        if document:
+            self.document = document
+            # Find child sections based on parent IDs
+            self._find_sections()
             self._update_bindings()
             return True
         return False
         
+    def _find_sections(self):
+        # This method would search all loaded models to find sections with
+        # parent_id matching self.document.get_id()
+        pass
+        
     def _update_bindings(self):
-        # Rebind widgets to the new model
-        self.title_edit.bind_to_model(self.model, "title")
-        self.content_edit.bind_to_model(self.model, "content")
+        # Rebind widgets to the new models
+        self.title_edit.bind_to_model(self.document, "title")
+        self.content_edit.bind_to_model(self.document, "content")
         # Update other bindings...
 
 # Initialize application
@@ -550,6 +527,8 @@ app.exec()
 1. **Distinct properties**: Avoid redundant properties
 2. **Use type hints**: Provide type hints for better IDE support
 3. **Avoid circular updates**: Be careful with property observers that modify other properties
+4. **Use proper hierarchy**: Create meaningful parent-child relationships
+5. **Track generations**: Use generation info for optimizing operations
 
 ### UI Integration
 
@@ -568,6 +547,14 @@ app.exec()
 1. **Register model types**: Register factories for all model types you'll save/load
 2. **Match IDs**: Use the same IDs for models and their corresponding widgets
 3. **Test serialization**: Verify serialization works with complex nested models
+4. **Preserve hierarchy**: Ensure parent-child relationships are maintained during save/load
+
+### Hierarchy Management
+
+1. **Establish clear hierarchies**: Design parent-child relationships thoughtfully
+2. **Limit hierarchy depth**: Avoid excessively deep hierarchies (>5 levels)
+3. **Use generations for logic**: Base refreshing logic on object generations
+4. **Keep parent references**: Always pass parent when creating child objects
 
 ### Error Handling
 
@@ -580,3 +567,4 @@ app.exec()
 1. **Batch commands**: Use compound commands for bulk operations
 2. **Lazy property updates**: Only update UI when property actually changes
 3. **Consider memory usage**: Be cautious with large history stacks
+4. **Use generations for optimization**: Only process newer generations when appropriate

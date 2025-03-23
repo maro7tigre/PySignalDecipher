@@ -50,6 +50,8 @@ Let's examine how these components relate to each other and their specific respo
 - Notifying observers when properties change
 - Preventing infinite notification loops
 - Maintaining unique object IDs
+- Tracking parent-child relationships
+- Maintaining generational information
 
 **Dependencies**:
 - Used by UI widgets, dock system, and serialization
@@ -142,6 +144,14 @@ Let's examine how these components relate to each other and their specific respo
 
 ## Component Interactions
 
+### How Observable Hierarchy and Generations Work
+
+1. Each `Observable` object can have a parent, tracked via `parent_id`
+2. When an `Observable` is created with a parent, it inherits the parent's generation + 1
+3. The generation counter helps track object ancestry and can optimize refreshes
+4. During serialization, both `parent_id` and `generation` are saved
+5. When deserializing, the parent-child relationships are reconstructed
+
 ### How Commands and Observables Interact
 
 1. When an `ObservableProperty` changes, it notifies all registered observers
@@ -176,7 +186,7 @@ Let's examine how these components relate to each other and their specific respo
 ### How Project Serialization Connects Everything
 
 1. `ProjectManager` coordinates model serialization and layout saving
-2. `ObservableEncoder` serializes observable models and their properties
+2. `ObservableEncoder` serializes observable models, their properties, and hierarchy information
 3. `ProjectSerializer` handles different file formats and storage
 4. When saving layouts with projects, layout data is appended to the project file
 5. When loading, the model is reconstructed first, then layout is applied
@@ -190,7 +200,7 @@ Let's examine how these components relate to each other and their specific respo
 ```
 User → UI → ProjectManager.save_project()
   ↓
-ProjectSerializer.save_to_file() → ObservableEncoder → File (model data)
+ProjectSerializer.save_to_file() → ObservableEncoder → File (model data + hierarchy)
   ↓
 save_layout_with_project() → LayoutManager.capture_current_layout()
   ↓
@@ -202,7 +212,7 @@ LayoutManager → DockManager → Widget states → File (layout data)
 ```
 User → UI → ProjectManager.load_project()
   ↓
-ProjectSerializer.load_from_file() → observable_decoder → Model reconstruction
+ProjectSerializer.load_from_file() → observable_decoder → Model reconstruction with hierarchy
   ↓
 load_layout_from_project() → LayoutManager.apply_layout()
   ↓
@@ -250,10 +260,11 @@ The tight integration between these components provides several benefits:
 
 1. **Consistent Undo/Redo**: All changes, whether from direct API calls or UI interactions, are tracked in the same history
 2. **Automatic UI Updates**: When model properties change, UI widgets automatically update
-3. **Separation of Concerns**: Each component focuses on a specific responsibility
-4. **Extensibility**: New commands, widgets, or serialization formats can be added without changing existing code
-5. **Persistence**: Application state, including UI layout, can be saved and restored
-6. **Type Safety**: ObservableProperty uses generics for type checking
+3. **Hierarchical Modeling**: Parent-child relationships and generations facilitate complex model structures
+4. **Separation of Concerns**: Each component focuses on a specific responsibility
+5. **Extensibility**: New commands, widgets, or serialization formats can be added without changing existing code
+6. **Persistence**: Application state, including UI layout, can be saved and restored
+7. **Type Safety**: ObservableProperty uses generics for type checking
 
 ## Extension Points
 
@@ -265,6 +276,7 @@ The system is designed to be extended in various ways:
 4. **Layout Extensions**: Add support for custom widget state serialization
 5. **Serialization Formats**: Implement support for additional formats
 6. **Integration Points**: Connect with other frameworks or libraries
+7. **Hierarchy Tracking**: Implement custom operations based on object generations
 
 ## Component Initialization Order
 
@@ -276,7 +288,7 @@ When setting up an application, components should be initialized in this order:
 4. Get `LayoutManager` and `DockManager` instances
 5. Set main window references for both managers
 6. Begin initialization mode (`cmd_manager.begin_init()`)
-7. Create model instances
+7. Create model instances with appropriate parent/child relationships
 8. Create UI components and bind to models
 9. Register widgets with layout manager
 10. End initialization mode (`cmd_manager.end_init()`)
