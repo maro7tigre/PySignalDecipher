@@ -1,0 +1,33 @@
+```mermaid
+flowchart TD
+    User[User Action] --> UI[UI Component]
+    UI -- "Property Change" --> Binding[Property Binding]
+    UI -- "Command Creation" --> CMD[Command]
+    
+    Binding -- "Creates" --> PropCmd[Property Command]
+    PropCmd --> CmdMgr[Command Manager]
+    CMD --> CmdMgr
+    
+    CmdMgr -- "Execute" --> ModelUpdate[Model Update]
+    CmdMgr -- "Add to" --> History[Command History]
+    
+    ModelUpdate -- "Notify" --> PropObserver["Property Observer\n(Observable)"]
+    PropObserver -- "Update" --> UIUpdate[UI Update]
+    
+    CmdMgr -- "Undo/Redo" --> UndoRedo[Undo/Redo Actions]
+    UndoRedo --> ModelUpdate
+    
+    SaveProject[Save Project] --> ProjectSerialize["Project Serialization\n(Incomplete)"]
+    LoadProject[Load Project] --> ProjectDeserialize["Project Deserialization\n(Incomplete)"]
+    
+    subgraph "Separate System"
+        SaveLayout[Save Layout] --> LayoutSerialize[Layout Serialization]
+        LoadLayout[Load Layout] --> LayoutDeserialize[Layout Deserialization]
+    end
+    
+    ProjectSerialize -.- LayoutSerialize
+    ProjectDeserialize -.- LayoutDeserialize
+    
+    ModelUpdate -.- SaveProject
+    ProjectDeserialize -.- ModelUpdate
+```

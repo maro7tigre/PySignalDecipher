@@ -1,0 +1,126 @@
+```mermaid
+classDiagram
+    %% Core Command System (Existing Components)
+    class Observable {
+        -_property_observers: Dict
+        -_id: str
+        -_is_updating: bool
+        -_parent_id: Optional[str]
+        -_generation: int
+        +add_property_observer()
+        +remove_property_observer()
+        +_notify_property_changed()
+        +get_id()
+        +set_id()
+    }
+    
+    class Command {
+        <<abstract>>
+        +execute()* 
+        +undo()*
+        +redo()
+    }
+    
+    class CommandManager {
+        -_history: CommandHistory
+        -_is_updating: bool
+        -_is_initializing: bool
+        +execute()
+        +undo()
+        +redo()
+        +clear()
+    }
+    
+    %% Serialization System (New Components)
+    class SerializationManager {
+        -_format_adapters: Dict
+        -_type_registry: Dict
+        -_serializers: Dict
+        -_factories: Dict
+        +register_format_adapter()
+        +register_type()
+        +register_factory()
+        +register_serializer()
+        +serialize()
+        +deserialize()
+    }
+    
+    class RegistryEngine {
+        -_type_mappings: Dict
+        -_factories: Dict
+        -_serializers: Dict
+        -_type_hierarchy: Dict
+        +register_type()
+        +register_factory()
+        +register_serializer()
+        +create_instance()
+        +serialize_object()
+        +deserialize_object()
+    }
+    
+    class FormatAdapter {
+        <<interface>>
+        +serialize()*
+        +deserialize()*
+    }
+    
+    class JSONAdapter {
+        +serialize()
+        +deserialize()
+    }
+    
+    class BinaryAdapter {
+        +serialize()
+        +deserialize()
+    }
+    
+    class ObservableSerializer {
+        +serialize_observable()
+        +deserialize_observable()
+    }
+    
+    class CommandSerializer {
+        +serialize_command()
+        +deserialize_command()
+    }
+    
+    class ProjectManager {
+        -_command_manager: CommandManager
+        -_current_filename: Optional[str]
+        -_model_factory: Dict
+        -_save_layouts: bool
+        +register_model_type()
+        +save_project()
+        +load_project()
+    }
+    
+    class LayoutManager {
+        -_main_window: QMainWindow
+        -_registered_widgets: Dict
+        -_layout_presets: Dict
+        +set_main_window()
+        +register_widget()
+        +capture_current_layout()
+        +apply_layout()
+    }
+    
+    %% Relationships
+    SerializationManager --> RegistryEngine : uses
+    SerializationManager --> FormatAdapter : uses
+    FormatAdapter <|-- JSONAdapter : implements
+    FormatAdapter <|-- BinaryAdapter : implements
+    
+    RegistryEngine --> ObservableSerializer : uses
+    RegistryEngine --> CommandSerializer : uses
+    
+    ObservableSerializer --> Observable : serializes
+    CommandSerializer --> Command : serializes
+    
+    ProjectManager --> SerializationManager : uses
+    ProjectManager --> RegistryEngine : uses
+    
+    LayoutManager --> SerializationManager : uses
+    
+    CommandManager --> Command : executes
+    Observable --> ObservableProperty : uses
+```
