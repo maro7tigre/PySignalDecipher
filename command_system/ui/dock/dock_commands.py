@@ -6,8 +6,8 @@ from typing import Dict, List, Optional, Any, Set
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDockWidget, QMainWindow
 
-from ...command import Command, CompoundCommand
-from ...observable import Observable
+from ...core.command import Command, CompoundCommand
+from ...core.observable import Observable
 from .dock_manager import get_dock_manager
 
 
@@ -53,7 +53,8 @@ class CreateDockCommand(Command):
             
             # Save initial state for undo
             self.dock_manager.save_dock_state(self.dock_id)
-            self.dock_state = self.dock_manager._dock_states[self.dock_id].copy()
+            if self.dock_id in self.dock_manager._dock_states:
+                self.dock_state = self.dock_manager._dock_states[self.dock_id].copy()
         
     def undo(self) -> None:
         """Undo the command, removing the dock widget."""
@@ -106,7 +107,8 @@ class DeleteDockCommand(Command):
                 # Save states of children as well
                 for child_id in self.dock_manager.get_all_descendant_docks(self.dock_id):
                     self.dock_manager.save_dock_state(child_id)
-                    self.children_states[child_id] = self.dock_manager._dock_states[child_id].copy()
+                    if child_id in self.dock_manager._dock_states:
+                        self.children_states[child_id] = self.dock_manager._dock_states[child_id].copy()
             
             # Remove the dock and all its children from the main window
             self._remove_dock_and_children(self.dock_id)
@@ -203,11 +205,13 @@ class DockLocationCommand(Command):
         # Save old state before changes
         if self.old_state is None:  # Only on first execute
             self.dock_manager.save_dock_state(self.dock_id)
-            self.old_state = self.dock_manager._dock_states[self.dock_id]["state"].copy()
+            if self.dock_id in self.dock_manager._dock_states:
+                self.old_state = self.dock_manager._dock_states[self.dock_id]["state"].copy()
             
         # Save new state after changes
         self.dock_manager.save_dock_state(self.dock_id)
-        self.new_state = self.dock_manager._dock_states[self.dock_id]["state"].copy()
+        if self.dock_id in self.dock_manager._dock_states:
+            self.new_state = self.dock_manager._dock_states[self.dock_id]["state"].copy()
         
     def undo(self) -> None:
         """Undo the command."""
@@ -229,19 +233,35 @@ class DockLocationCommand(Command):
 
 
 class SaveLayoutCommand(Command):
-    # TODO: Replace SaveLayoutCommand implementation
-    #
-    # This command was responsible for:
-    # 1. Capturing the current dock layout state
-    # 2. Storing it for potential undo/redo
-    #
-    # Expected inputs:
-    #   - Layout name
-    #
-    # Main methods:
-    #   - execute(): Called dock_manager.serialize_layout() to capture layout
-    #   - undo(): Was a no-op or restored previous layout
-    #   - redo(): Redirected to execute()
-    #
-    # This command created a command-system integration for layout saving
-    pass
+    """
+    Command for saving the current layout state.
+    """
+    
+    def __init__(self, layout_name: str):
+        """
+        Initialize the save layout command.
+        
+        Args:
+            layout_name: Name to identify the layout
+        """
+        self.layout_name = layout_name
+        self.dock_manager = get_dock_manager()
+        
+        # We'll store the layout data for potential restoration
+        self.layout_data = None
+        
+    def execute(self) -> None:
+        """Execute the command to save the layout."""
+        # Capture the current layout state
+        self.layout_data = self.dock_manager.prepare_for_serialization()
+        
+        # TODO: Integration with layout manager
+        # This command now only captures the layout state
+        # Integration with the layout manager will be handled separately
+        
+    def undo(self) -> None:
+        """
+        Undo is a no-op for save layout command.
+        Saving a layout doesn't change any state that needs to be undone.
+        """
+        pass

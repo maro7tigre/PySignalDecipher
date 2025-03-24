@@ -29,7 +29,7 @@ class LineEditBinding(Binding):
         
     def _set_widget_value(self, value: Any) -> None:
         """Set text in widget."""
-        self.widget.setText(str(value))
+        self.widget.setText(str(value) if value is not None else "")
 
 
 class SpinBoxBinding(Binding):
@@ -190,7 +190,7 @@ class LabelBinding(Binding):
         
     def _set_widget_value(self, value: Any) -> None:
         """Set text in widget."""
-        self.widget.setText(str(value))
+        self.widget.setText(str(value) if value is not None else "")
         
     def _on_widget_changed(self) -> None:
         """Override to do nothing, since this is a one-way binding."""

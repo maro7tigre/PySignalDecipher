@@ -6,15 +6,33 @@ providing working undo/redo functionality, and integrating with Qt widgets.
 """
 
 # Public API
-from .command import Command, CompoundCommand
-from .observable import Observable, ObservableProperty
-from .command_manager import CommandManager, get_command_manager
+from .core.observable import Observable, ObservableProperty
+from .core.command import Command, CompoundCommand, PropertyCommand, MacroCommand
+from .core.command_manager import CommandManager, get_command_manager
 from .ui.property_binding import PropertyBinder
-from .serialization import ProjectSerializer
-from .project_manager import ProjectManager, get_project_manager
+from .project.project_manager import ProjectManager, get_project_manager
 
 # Initialize system components - this will auto-initialize layout integration
-from . import _auto_init  # Fixed the import name
+from . import _auto_init
 
 # Version info
-__version__ = "0.1.2"
+__version__ = "0.2.0"  # Incremented for new architecture
+
+__all__ = [
+    # Core components
+    'Observable',
+    'ObservableProperty',
+    'Command',
+    'CompoundCommand',
+    'PropertyCommand',
+    'MacroCommand',
+    'CommandManager',
+    'get_command_manager',
+    
+    # Project management
+    'ProjectManager',
+    'get_project_manager',
+    
+    # UI integration
+    'PropertyBinder',
+]

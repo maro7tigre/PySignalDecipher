@@ -1,6 +1,5 @@
 """
-Comprehensive fix for the dock widgets in the command system.
-This provides fixed versions of both CommandDockWidget and ObservableDockWidget classes.
+Command-aware dock widgets for the command system.
 """
 
 from typing import Optional, Any, Dict, List
@@ -8,8 +7,8 @@ from typing import Optional, Any, Dict, List
 from PySide6.QtCore import Qt, Signal, QEvent, QTimer
 from PySide6.QtWidgets import QDockWidget, QMainWindow, QWidget
 
-from ...command_manager import get_command_manager
-from ...observable import Observable
+from ...core.command_manager import get_command_manager
+from ...core.observable import Observable, ObservableProperty
 from .dock_manager import get_dock_manager
 from .dock_commands import DockLocationCommand
 
@@ -24,7 +23,7 @@ class CommandDockWidget(QDockWidget):
     closeRequested = Signal(str)  # Emits dock_id
     
     def __init__(self, dock_id: str, title: str, parent: Optional[QMainWindow] = None,
-                model: Optional[Observable] = None):
+                model: Optional[Observable] = None, dock_type: str = None):
         """
         Initialize the command dock widget.
         
@@ -33,12 +32,14 @@ class CommandDockWidget(QDockWidget):
             title: Title to display in the dock header
             parent: Parent widget (typically the main window)
             model: Optional Observable model associated with this dock
+            dock_type: Type identifier for serialization
         """
         super().__init__(title, parent)
         
         # Store properties
         self.dock_id = dock_id
         self.model = model
+        self.dock_type = dock_type or self.__class__.__name__
 
         # Set objectName to match dock_id - this ensures Qt can track the widget
         self.setObjectName(dock_id)
@@ -149,7 +150,7 @@ class ObservableDockWidget(CommandDockWidget):
     """
     
     def __init__(self, dock_id: str, title: str, parent: Optional[QMainWindow] = None,
-                model: Optional[Observable] = None):
+                model: Optional[Observable] = None, dock_type: str = None):
         """
         Initialize the observable dock widget.
         
@@ -158,11 +159,12 @@ class ObservableDockWidget(CommandDockWidget):
             title: Title to display in the dock header
             parent: Parent widget (typically the main window)
             model: Optional Observable model associated with this dock
+            dock_type: Type identifier for serialization
         """
-        super().__init__(dock_id, title, parent, model)
+        super().__init__(dock_id, title, parent, model, dock_type)
         
         # Create Observable model for dock properties
-        from ...observable import Observable, ObservableProperty
+        from ...core.observable import Observable, ObservableProperty
         
         # Save initial values for class definition
         _initial_title = title

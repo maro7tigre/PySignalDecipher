@@ -1,19 +1,27 @@
 """
 Observable pattern implementation for property change tracking.
+
+This module provides a clean implementation of the observable pattern
+with property change notifications, independent of serialization concerns.
 """
 import uuid
-from typing import Any, Dict, Callable, TypeVar, Generic
+from typing import Any, Dict, Callable, TypeVar, Generic, Optional, Set
 
-# MARK: - Observable Pattern
-
+# Type variable for generic property types
 T = TypeVar('T')
+
 
 class ObservableProperty(Generic[T]):
     """
     Descriptor for observable properties that notifies observers when changed.
     """
-    def __init__(self, default: T = None):
-        """Initialize a new observable property."""
+    def __init__(self, default: Optional[T] = None):
+        """
+        Initialize a new observable property.
+        
+        Args:
+            default: Default value for the property if not set
+        """
         self.default = default
         self.name = None
         self.private_name = None
@@ -45,22 +53,33 @@ class Observable:
     """
     Base class for objects that need to track property changes.
     """
-    def __init__(self, parent=None):
-        """Initialize an observable object."""
+    def __init__(self, parent: Optional['Observable'] = None):
+        """
+        Initialize an observable object.
+        
+        Args:
+            parent: Optional parent observable object
+        """
+        # Property change observers
         self._property_observers: Dict[str, Dict[str, Callable]] = {}
+        
+        # Unique identity management
         self._id = str(uuid.uuid4())
-        self._is_updating = False  # Flag to prevent recursive updates
         
-        # Add parent_id tracking
-        self._parent_id = getattr(parent, 'get_id', lambda: None)() if parent else None
+        # Update status tracking
+        self._is_updating = False
         
-        # Add generation tracking
+        # Relationship tracking
+        self._parent_id = parent.get_id() if parent else None
+        
+        # Hierarchy tracking
         if parent and hasattr(parent, 'get_generation'):
             self._generation = parent.get_generation() + 1
         else:
-            self._generation = 0  # Base generation if no parent
+            self._generation = 0
         
-    def add_property_observer(self, property_name: str, callback: Callable[[str, Any, Any], None]) -> str:
+    def add_property_observer(self, property_name: str, 
+                             callback: Callable[[str, Any, Any], None]) -> str:
         """
         Add observer for property changes.
         
@@ -117,45 +136,71 @@ class Observable:
                 self._is_updating = False
                 
     def get_id(self) -> str:
-        """Get unique identifier."""
+        """
+        Get unique identifier.
+        
+        Returns:
+            String UUID for this object
+        """
         return self._id
         
     def set_id(self, id_value: str) -> None:
-        """Set unique identifier (for deserialization)."""
+        """
+        Set unique identifier.
+        
+        Args:
+            id_value: New ID value (for deserialization)
+        """
         self._id = id_value
         
     def is_updating(self) -> bool:
-        """Check if we're currently processing a property update."""
+        """
+        Check if object is currently processing a property update.
+        
+        Returns:
+            True if the object is updating, False otherwise
+        """
         return self._is_updating
 
-    def get_parent_id(self) -> str | None:
-        """Get parent identifier."""
+    def get_parent_id(self) -> Optional[str]:
+        """
+        Get parent identifier.
+        
+        Returns:
+            Parent ID or None if no parent
+        """
         return self._parent_id
         
-    def set_parent_id(self, parent_id: str) -> None:
-        """Set parent identifier (for deserialization or reparenting)."""
+    def set_parent_id(self, parent_id: Optional[str]) -> None:
+        """
+        Set parent identifier.
+        
+        Args:
+            parent_id: New parent ID or None to clear parent
+        """
         self._parent_id = parent_id
         
     def get_generation(self) -> int:
-        """Get object generation."""
+        """
+        Get object generation (hierarchical depth).
+        
+        Returns:
+            Generation number (0 for root objects)
+        """
         return self._generation
         
     def set_generation(self, generation: int) -> None:
-        """Set object generation (for deserialization)."""
+        """
+        Set object generation.
+        
+        Args:
+            generation: New generation value
+        """
         self._generation = generation
         
-        
-# TODO: Enhance Observable class for better serialization support
-#
-# The Observable class contains key properties used during serialization:
-# - _id: Unique identifier for the object
-# - _parent_id: ID of parent object
-# - _generation: Object generation number
-#
-# These are accessed/modified via:
-# - get_id()/set_id()
-# - get_parent_id()/set_parent_id()
-# - get_generation()/set_generation()
-#
-# Any new serialization approach must handle these properties
-# to maintain proper object relationships and hierarchy
+    # TODO: Add serialization support hooks
+    # These methods will provide integration points for the serialization system
+    # without directly implementing serialization logic in this class
+    # 1. Support for property metadata and serialization hints
+    # 2. Support for relationship tracking during serialization
+    # 3. Hooks for pre/post serialization processing

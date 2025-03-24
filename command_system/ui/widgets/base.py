@@ -1,12 +1,11 @@
 """
-command_system/ui/widgets/base.py
-Base class for all command-aware widgets - with fix for observer_id
+Base class for all command-aware widgets.
 """
 
 from typing import Any, Optional, Callable, TypeVar, Generic, Dict, Type
-from ...command import Command, PropertyCommand
-from ...command_manager import get_command_manager
-from ...observable import Observable
+from ...core.command import Command, PropertyCommand
+from ...core.command_manager import get_command_manager
+from ...core.observable import Observable
 
 T = TypeVar('T')
 
@@ -27,7 +26,7 @@ class CommandWidgetBase(Generic[T]):
         self._value_property_name = None  # Must be set by subclass
         self._observable_model = None
         self._observable_property = None
-        self._observer_id = None  # Fixed: Initialize the observer_id
+        self._observer_id = None
         self._is_updating = False
         self._old_value = None
         self._custom_command_factory = None

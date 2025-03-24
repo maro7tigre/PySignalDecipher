@@ -7,69 +7,126 @@ import os
 import json
 from typing import Dict, Any, Optional, Tuple
 
-from ..project_manager import get_project_manager
+from ..project.project_manager import get_project_manager
 from .layout_manager import get_layout_manager
 
 
 def save_layout_with_project(filename: str) -> bool:
-    # TODO: Replace layout saving with project
-    #
-    # This function was responsible for:
-    # 1. Capturing current layout from layout manager
-    # 2. Converting to JSON using layout serialization
-    # 3. Appending to project file with special markers
-    #
-    # Expected inputs:
-    #   - Project filename
-    #
-    # Expected outputs:
-    #   - Boolean indicating success
-    #
-    # Called:
-    #   - layout_manager.capture_current_layout()
-    #   - json.dumps() with layout data
-    #
-    # The layout data was appended to the project file after
-    # "__LAYOUT_DATA_BEGIN__" and "__LAYOUT_DATA_END__" markers
-    pass
+    """
+    Save the current layout with a project file.
+    
+    Args:
+        filename: Project filename
+        
+    Returns:
+        True if saved successfully
+    """
+    layout_manager = get_layout_manager()
+    
+    try:
+        # Get current layout
+        layout_data = layout_manager.capture_current_layout()
+        
+        # Convert to JSON
+        layout_json = json.dumps(layout_data)
+        
+        # Check if file exists
+        if not os.path.exists(filename):
+            return False
+            
+        # Read existing file content
+        with open(filename, 'r') as f:
+            content = f.read()
+            
+        # Check if file already has layout section
+        start_marker = "__LAYOUT_DATA_BEGIN__"
+        end_marker = "__LAYOUT_DATA_END__"
+        
+        start_pos = content.find(start_marker)
+        end_pos = content.find(end_marker)
+        
+        if start_pos >= 0 and end_pos >= 0:
+            # Replace existing layout section
+            before = content[:start_pos]
+            after = content[end_pos + len(end_marker):]
+            new_content = before + start_marker + "\n" + layout_json + "\n" + end_marker + after
+        else:
+            # Append layout section
+            new_content = content + "\n\n" + start_marker + "\n" + layout_json + "\n" + end_marker + "\n"
+            
+        # Write updated content
+        with open(filename, 'w') as f:
+            f.write(new_content)
+            
+        return True
+    except Exception as e:
+        print(f"Error saving layout with project: {e}")
+        return False
+
 
 def load_layout_from_project(filename: str) -> bool:
-    # TODO: Replace layout loading from project
-    #
-    # This function was responsible for:
-    # 1. Reading project file and extracting layout section
-    # 2. Parsing layout JSON
-    # 3. Applying layout to current UI
-    #
-    # Expected inputs:
-    #   - Project filename
-    #
-    # Expected outputs:
-    #   - Boolean indicating success
-    #
-    # Called:
-    #   - json.loads() to parse layout data
-    #   - layout_manager.apply_layout() to restore layout
-    #
-    # The layout data was extracted from between
-    # "__LAYOUT_DATA_BEGIN__" and "__LAYOUT_DATA_END__" markers
-    pass
+    """
+    Load layout from a project file.
+    
+    Args:
+        filename: Project filename
+        
+    Returns:
+        True if loaded successfully
+    """
+    layout_manager = get_layout_manager()
+    
+    try:
+        # Check if file exists
+        if not os.path.exists(filename):
+            return False
+            
+        # Read file content
+        with open(filename, 'r') as f:
+            content = f.read()
+            
+        # Extract layout section
+        start_marker = "__LAYOUT_DATA_BEGIN__"
+        end_marker = "__LAYOUT_DATA_END__"
+        
+        start_pos = content.find(start_marker)
+        end_pos = content.find(end_marker)
+        
+        if start_pos < 0 or end_pos < 0 or start_pos >= end_pos:
+            # No valid layout section found
+            return False
+            
+        # Extract layout JSON
+        layout_json = content[start_pos + len(start_marker):end_pos].strip()
+        
+        # Parse layout data
+        layout_data = json.loads(layout_json)
+        
+        # Apply layout
+        return layout_manager.apply_layout(layout_data)
+    except Exception as e:
+        print(f"Error loading layout from project: {e}")
+        return False
 
 
 def initialize_layout_integration():
-    # TODO: Replace layout integration initialization
-    #
-    # This function was responsible for:
-    # 1. Registering layout save/load handlers with project manager
-    # 2. Setting default layout save behavior
-    #
-    # Called:
-    #   - project_manager.register_layout_handlers() with 
-    #     save_layout_with_project and load_layout_from_project functions
-    #   - project_manager.set_save_layouts(True)
-    #
-    # This connected the layout serialization system with the project system
-    pass
+    """
+    Initialize integration between layout system and project manager.
+    
+    Registers layout save/load handlers with the project manager.
+    """
+    project_manager = get_project_manager()
+    
+    # Register layout handlers
+    project_manager.register_layout_handlers(
+        save_layout_with_project,
+        load_layout_from_project
+    )
+    
+    # Enable layout saving by default
+    project_manager.set_save_layouts(True)
+    
+    print("Layout integration initialized")
 
 
 # For backward compatibility

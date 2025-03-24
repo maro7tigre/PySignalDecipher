@@ -1,13 +1,13 @@
 """
 Dock management system for handling dock widgets in a Qt application.
 """
-from typing import Dict, List, Optional, Any, Set
+from typing import Dict, List, Optional, Any, Set, Callable, Tuple
 
 from PySide6.QtCore import QPoint, QSize, QByteArray, Qt
 from PySide6.QtWidgets import QDockWidget, QMainWindow
 
-from ...command_manager import get_command_manager
-from ...observable import Observable
+from ...core.command_manager import get_command_manager
+from ...core.observable import Observable
 
 
 class DockManager:
@@ -34,6 +34,18 @@ class DockManager:
         self._dock_states: Dict[str, Dict[str, Any]] = {}
         self._main_window: Optional[QMainWindow] = None
         
+        # Dock creation order for restoration
+        self._dock_creation_order: List[str] = []
+        
+        # Serialization callbacks
+        self._before_serialize_callbacks: Dict[str, Callable[[], None]] = {}
+        self._after_serialize_callbacks: Dict[str, Callable[[Dict], None]] = {}
+        self._before_deserialize_callbacks: Dict[str, Callable[[Dict], None]] = {}
+        self._after_deserialize_callbacks: Dict[str, Callable[[], None]] = {}
+        
+        # Dock factory functions
+        self._dock_factories: Dict[str, Callable[[], QDockWidget]] = {}
+        
     def set_main_window(self, main_window: QMainWindow) -> None:
         """
         Set the main window that holds the docks.
@@ -57,12 +69,17 @@ class DockManager:
             "parent_id": parent_id,
             "children": [],
             "state": {},
-            "model": getattr(dock_widget, "model", None)
+            "model": getattr(dock_widget, "model", None),
+            "type": getattr(dock_widget, "dock_type", dock_widget.__class__.__name__)
         }
         
         # Add as child to parent if applicable
         if parent_id and parent_id in self._dock_states:
             self._dock_states[parent_id]["children"].append(dock_id)
+            
+        # Track dock creation order
+        if dock_id not in self._dock_creation_order:
+            self._dock_creation_order.append(dock_id)
             
         # Save initial state
         self.save_dock_state(dock_id)
@@ -83,8 +100,22 @@ class DockManager:
             if dock_id in self._dock_states[parent_id]["children"]:
                 self._dock_states[parent_id]["children"].remove(dock_id)
                 
+        # Remove from creation order if present
+        if dock_id in self._dock_creation_order:
+            self._dock_creation_order.remove(dock_id)
+                
         # Remove state
         del self._dock_states[dock_id]
+        
+    def register_dock_factory(self, dock_type: str, factory: Callable[[], QDockWidget]) -> None:
+        """
+        Register a factory function for creating docks during restoration.
+        
+        Args:
+            dock_type: Type identifier for the dock
+            factory: Function that creates a new dock widget
+        """
+        self._dock_factories[dock_type] = factory
         
     def get_dock_widget(self, dock_id: str) -> Optional[QDockWidget]:
         """
@@ -115,41 +146,80 @@ class DockManager:
         return None
         
     def save_dock_state(self, dock_id: str) -> None:
-        # TODO: Replace dock state saving
-        #
-        # This method was responsible for:
-        # 1. Capturing state of a specific dock widget
-        # 2. Storing geometry, position, visibility, floating state
-        #
-        # Expected inputs:
-        #   - Dock widget ID
-        #
-        # Expected outputs:
-        #   - None (stores state in self._dock_states)
-        #
-        # Called from:
-        #   - register_dock()
-        #   - DockLocationCommand
-        #   - serialize_layout()
-        pass
+        """
+        Save the current state of a dock widget.
+        
+        Args:
+            dock_id: ID of the dock to save state for
+        """
+        if dock_id not in self._dock_states:
+            return
+            
+        dock_widget = self._dock_states[dock_id]["widget"]
+        if not dock_widget:
+            return
+            
+        # Store state information
+        state = {
+            "visible": dock_widget.isVisible(),
+            "floating": dock_widget.isFloating(),
+            "area": self._get_dock_area(dock_widget),
+            "title": dock_widget.windowTitle()
+        }
+        
+        # Store position and size for floating docks
+        if dock_widget.isFloating():
+            state["position"] = {
+                "x": dock_widget.x(),
+                "y": dock_widget.y(),
+                "width": dock_widget.width(),
+                "height": dock_widget.height()
+            }
+            
+        # Update the state in dock_states
+        self._dock_states[dock_id]["state"] = state
         
     def restore_dock_state(self, dock_id: str) -> bool:
-        # TODO: Replace dock state restoration
-        #
-        # This method was responsible for:
-        # 1. Applying saved state to a dock widget
-        # 2. Restoring geometry, position, visibility, floating state
-        #
-        # Expected inputs:
-        #   - Dock widget ID
-        #
-        # Expected outputs:
-        #   - Boolean indicating success
-        #
-        # Called from:
-        #   - DockLocationCommand
-        #   - deserialize_layout()
-        pass
+        """
+        Restore a dock widget's state.
+        
+        Args:
+            dock_id: ID of the dock to restore
+            
+        Returns:
+            True if state was restored
+        """
+        if dock_id not in self._dock_states:
+            return False
+            
+        dock_widget = self._dock_states[dock_id]["widget"]
+        state = self._dock_states[dock_id]["state"]
+        
+        if not dock_widget or not state or not self._main_window:
+            return False
+            
+        # Set dock title
+        if "title" in state:
+            dock_widget.setWindowTitle(state["title"])
+            
+        # Set floating state
+        dock_widget.setFloating(state.get("floating", False))
+        
+        # Restore dock area if docked
+        area = state.get("area")
+        if not state.get("floating", False) and area is not None:
+            self._main_window.addDockWidget(area, dock_widget)
+            
+        # Restore position for floating docks
+        if state.get("floating", False) and "position" in state:
+            pos = state["position"]
+            dock_widget.resize(pos["width"], pos["height"])
+            dock_widget.move(pos["x"], pos["y"])
+            
+        # Set visibility last
+        dock_widget.setVisible(state.get("visible", True))
+        
+        return True
         
     def _get_dock_area(self, dock_widget: QDockWidget) -> Optional[int]:
         """
@@ -164,8 +234,7 @@ class DockManager:
         if not self._main_window or dock_widget.isFloating():
             return None
             
-        # Try to determine the dock area - this is an approximation
-        # since Qt doesn't provide a direct way to get the current area
+        # Try to determine the dock area
         for area in [
             Qt.DockWidgetArea.LeftDockWidgetArea,
             Qt.DockWidgetArea.RightDockWidgetArea,
@@ -211,41 +280,204 @@ class DockManager:
             
         return result
         
-    def serialize_layout(self) -> Dict[str, Dict[str, Any]]:
-        # TODO: Replace dock layout serialization
-        #
-        # This method was responsible for:
-        # 1. Saving current state of all registered docks
-        # 2. Creating a serializable structure with dock layout info
-        #
-        # Expected inputs:
-        #   - None (uses internal dock states)
-        #
-        # Expected outputs:
-        #   - Dictionary with dock layout information
-        #
-        # The structure included:
-        #   - Dock states
-        #   - Parent-child relationships
-        pass
+    def get_dock_creation_order(self) -> List[str]:
+        """
+        Get the order in which docks were created.
         
-    def deserialize_layout(self, layout: Dict[str, Dict[str, Any]]) -> bool:
-        # TODO: Replace dock layout deserialization
-        #
-        # This method was responsible for:
-        # 1. Updating internal dock states from serialized data
-        # 2. Restoring dock states in dependency order (parents first)
-        #
-        # Expected inputs:
-        #   - Dictionary with dock layout data
-        #
-        # Expected outputs:
-        #   - Boolean indicating success
-        #
-        # Processed docks in topological order to maintain hierarchy
-        pass
+        Returns:
+            List of dock IDs in creation order
+        """
+        return self._dock_creation_order.copy()
+        
+    def get_tabified_dock_groups(self) -> List[List[str]]:
+        """
+        Get groups of tabified docks.
+        
+        Returns:
+            List of lists, where each inner list contains dock IDs that are tabified together
+        """
+        if not self._main_window:
+            return []
+            
+        # Find all dock widgets
+        all_docks = [dock for dock_id, dock in 
+                   [(dock_id, self.get_dock_widget(dock_id)) for dock_id in self._dock_states]
+                   if dock and isinstance(dock, QDockWidget)]
+        
+        # Track processed docks to avoid duplicates
+        processed_docks = set()
+        tabified_groups = []
+        
+        # For each dock, find all docks tabified with it
+        for dock in all_docks:
+            if dock in processed_docks:
+                continue
+                
+            # Find the dock ID
+            dock_id = None
+            for d_id, state in self._dock_states.items():
+                if state["widget"] == dock:
+                    dock_id = d_id
+                    break
+                    
+            if not dock_id:
+                continue
+                
+            # Get tabified docks
+            tabified_docks = self._main_window.tabifiedDockWidgets(dock)
+            
+            # If there are tabified docks, create a group
+            if tabified_docks:
+                group = [dock_id]
+                
+                for tabified_dock in tabified_docks:
+                    # Find the tabified dock ID
+                    tabified_id = None
+                    for d_id, state in self._dock_states.items():
+                        if state["widget"] == tabified_dock:
+                            tabified_id = d_id
+                            break
+                            
+                    if tabified_id:
+                        group.append(tabified_id)
+                        processed_docks.add(tabified_dock)
+                
+                tabified_groups.append(group)
+                processed_docks.add(dock)
+        
+        return tabified_groups
+        
+    def add_before_serialize_callback(self, callback_id: str, callback: Callable[[], None]) -> None:
+        """
+        Add a callback to be called before serialization.
+        
+        Args:
+            callback_id: Unique identifier for the callback
+            callback: Function to call before serialization
+        """
+        self._before_serialize_callbacks[callback_id] = callback
+        
+    def add_after_serialize_callback(self, callback_id: str, 
+                                    callback: Callable[[Dict], None]) -> None:
+        """
+        Add a callback to be called after serialization.
+        
+        Args:
+            callback_id: Unique identifier for the callback
+            callback: Function to call after serialization with the serialized data
+        """
+        self._after_serialize_callbacks[callback_id] = callback
+        
+    def add_before_deserialize_callback(self, callback_id: str, 
+                                       callback: Callable[[Dict], None]) -> None:
+        """
+        Add a callback to be called before deserialization.
+        
+        Args:
+            callback_id: Unique identifier for the callback
+            callback: Function to call before deserialization with the serialized data
+        """
+        self._before_deserialize_callbacks[callback_id] = callback
+        
+    def add_after_deserialize_callback(self, callback_id: str, 
+                                      callback: Callable[[], None]) -> None:
+        """
+        Add a callback to be called after deserialization.
+        
+        Args:
+            callback_id: Unique identifier for the callback
+            callback: Function to call after deserialization
+        """
+        self._after_deserialize_callbacks[callback_id] = callback
+        
+    def remove_callback(self, callback_id: str) -> None:
+        """
+        Remove a callback by ID.
+        
+        Args:
+            callback_id: ID of the callback to remove
+        """
+        if callback_id in self._before_serialize_callbacks:
+            del self._before_serialize_callbacks[callback_id]
+        if callback_id in self._after_serialize_callbacks:
+            del self._after_serialize_callbacks[callback_id]
+        if callback_id in self._before_deserialize_callbacks:
+            del self._before_deserialize_callbacks[callback_id]
+        if callback_id in self._after_deserialize_callbacks:
+            del self._after_deserialize_callbacks[callback_id]
+            
+    def prepare_for_serialization(self) -> Dict[str, Any]:
+        """
+        Prepare dock state data for serialization.
+        
+        Returns:
+            Dictionary with dock layout information
+        """
+        # Call before serialize callbacks
+        for callback in self._before_serialize_callbacks.values():
+            callback()
+            
+        # Save all dock states first
+        for dock_id in self._dock_states:
+            self.save_dock_state(dock_id)
+            
+        # Build serializable structure
+        result = {
+            "docks": {},
+            "tabified_groups": self.get_tabified_dock_groups(),
+            "creation_order": self._dock_creation_order.copy()
+        }
+        
+        # Extract dock data without widget references
+        for dock_id, state in self._dock_states.items():
+            result["docks"][dock_id] = {
+                "state": state["state"].copy(),
+                "parent_id": state["parent_id"],
+                "children": state["children"].copy(),
+                "type": state.get("type", "QDockWidget")
+            }
+            
+        # Call after serialize callbacks
+        for callback in self._after_serialize_callbacks.values():
+            callback(result)
+            
+        return result
+        
+    def restore_from_serialization(self, data: Dict[str, Any]) -> bool:
+        """
+        Restore dock state from serialization data.
+        
+        Args:
+            data: Serialized dock layout data
+            
+        Returns:
+            True if restored successfully
+        """
+        if not isinstance(data, dict) or "docks" not in data:
+            return False
+            
+        # Call before deserialize callbacks
+        for callback in self._before_deserialize_callbacks.values():
+            callback(data)
+            
+        # TODO: Implement dock state restoration from serialization data
+        # 1. Create missing docks using factories
+        # 2. Restore dock states
+        # 3. Restore tabification relationships
+        # 4. Restore dock ordering
+        
+        # Call after deserialize callbacks
+        for callback in self._after_deserialize_callbacks.values():
+            callback()
+            
+        return True
 
 
 def get_dock_manager():
-    """Get the singleton dock manager instance."""
+    """
+    Get the singleton dock manager instance.
+    
+    Returns:
+        DockManager singleton instance
+    """
     return DockManager.get_instance()
