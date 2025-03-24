@@ -10,7 +10,6 @@ from .command import Command
 
 
 # MARK: - Command History
-
 class CommandHistory:
     """
     Tracks command history for undo/redo operations.
@@ -83,27 +82,7 @@ class CommandHistory:
         """
         return len(self._undone_commands) > 0
 
-    def get_executed_commands(self) -> List[Command]:
-        """
-        Get a copy of the executed commands stack.
-        
-        Returns:
-            List of executed commands
-        """
-        return self._executed_commands.copy()
-        
-    def get_undone_commands(self) -> List[Command]:
-        """
-        Get a copy of the undone commands stack.
-        
-        Returns:
-            List of undone commands
-        """
-        return self._undone_commands.copy()
-
-
 # MARK: - Command Manager
-
 class CommandManager:
     """
     Singleton manager for command execution and history tracking.
@@ -125,7 +104,7 @@ class CommandManager:
     def __init__(self):
         """Initialize the command manager."""
         if CommandManager._instance is not None:
-            raise RuntimeError("Use CommandManager.get_instance() to get the singleton instance")
+            raise RuntimeError("You can't have multiple instances of CommandManager, Import and Use get_command_manager() to get the singleton instance")
             
         CommandManager._instance = self
         self._history = CommandHistory()
@@ -150,7 +129,7 @@ class CommandManager:
         """
         
         if self._is_updating:
-            return True  # Skip if we're already processing a command
+            return True  # Skip if we're already processing a command ? TODO: indicate that the command was skipped ?
             
         try:
             self._is_updating = True
@@ -160,7 +139,7 @@ class CommandManager:
                 callback(command)
             
             # Only add to history if not in initialization mode
-            if not getattr(self, '_is_initializing', False):
+            if not self._is_initializing:
                 self._history.add_command(command)
                 
             command.execute()

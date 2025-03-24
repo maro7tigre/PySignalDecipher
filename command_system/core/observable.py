@@ -10,7 +10,7 @@ from typing import Any, Dict, Callable, TypeVar, Generic, Optional, Set
 # Type variable for generic property types
 T = TypeVar('T')
 
-
+# MARK: -ObservableProperty
 class ObservableProperty(Generic[T]):
     """
     Descriptor for observable properties that notifies observers when changed.
@@ -48,7 +48,7 @@ class ObservableProperty(Generic[T]):
             setattr(instance, self.private_name, value)
             instance._notify_property_changed(self.name, old_value, value)
 
-
+# MARK: -Observable
 class Observable:
     """
     Base class for objects that need to track property changes.
@@ -197,7 +197,8 @@ class Observable:
             generation: New generation value
         """
         self._generation = generation
-        
+
+    # MARK: - Serialization Support
     # TODO: Add serialization support hooks
     # These methods will provide integration points for the serialization system
     # without directly implementing serialization logic in this class

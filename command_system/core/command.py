@@ -11,7 +11,7 @@ from typing import List, Any, Optional, TypeVar, Dict
 # Type for command targets
 T = TypeVar('T')
 
-
+# MARK: - Command
 class Command(ABC):
     """
     Abstract base class for all commands.
@@ -31,13 +31,8 @@ class Command(ABC):
     def redo(self) -> None:
         """Redo the command. Default implementation is to call execute again."""
         self.execute()
-        
-    # TODO: Add serialization metadata support
-    # 1. Command type identification
-    # 2. Parameter serialization hints
-    # 3. Custom serialization hooks if needed
 
-
+# MARK: - Concrete Commands
 class CompoundCommand(Command):
     """
     A command that groups multiple commands together.
@@ -82,7 +77,7 @@ class CompoundCommand(Command):
         """
         return len(self.commands) == 0
 
-
+# MARK: - Property Commands
 class PropertyCommand(Command):
     """Command for changing a property on an observable object."""
     
@@ -107,17 +102,12 @@ class PropertyCommand(Command):
     def undo(self) -> None:
         """Undo the command by restoring the old property value."""
         setattr(self.target, self.property_name, self.old_value)
-        
-    # TODO: Add property command metadata
-    # 1. Track property type information
-    # 2. Support for complex property values
-    # 3. Validation hooks
 
-
+# MARK: - MacroCommand
 class MacroCommand(CompoundCommand):
     """
     A specialized compound command that represents a user-level action.
-    Used for grouping related commands with a single descriptive name.
+    Used for grouping related commands with a describtion of the action.
     """
     
     def __init__(self, name: str):
