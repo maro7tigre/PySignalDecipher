@@ -243,3 +243,13 @@ class PropertyBinder:
             
         # No supported binding found
         return None
+    
+    
+# TODO: Consider property binding implications in new serialization
+#
+# PropertyBinder creates connections between Observable properties and UI widgets
+# When redesigning serialization, consider:
+#
+# 1. Should binding state be serialized? (Currently it's not)
+# 2. How binding reestablishment works after deserialization
+# 3. Handling transient UI elements vs. persistent model data

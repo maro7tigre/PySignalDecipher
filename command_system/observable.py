@@ -143,3 +143,19 @@ class Observable:
     def set_generation(self, generation: int) -> None:
         """Set object generation (for deserialization)."""
         self._generation = generation
+        
+        
+# TODO: Enhance Observable class for better serialization support
+#
+# The Observable class contains key properties used during serialization:
+# - _id: Unique identifier for the object
+# - _parent_id: ID of parent object
+# - _generation: Object generation number
+#
+# These are accessed/modified via:
+# - get_id()/set_id()
+# - get_parent_id()/set_parent_id()
+# - get_generation()/set_generation()
+#
+# Any new serialization approach must handle these properties
+# to maintain proper object relationships and hierarchy

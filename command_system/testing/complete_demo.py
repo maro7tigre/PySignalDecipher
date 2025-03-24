@@ -1,18 +1,8 @@
 """
-Improved comprehensive demonstration of the command system.
-
-This demo shows all key features:
-- Observable properties
-- Command-aware widgets
-- Undo/redo functionality
-- Dock management with observable models
-- Layout management
-- Project save/load with integrated layouts
+Simple test for dock system where parameters are children of the dock.
 """
 import sys
 import os
-from datetime import date
-from pathlib import Path
 
 # Add project root to path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -21,11 +11,9 @@ if project_root not in sys.path:
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QGroupBox, QGridLayout, QFileDialog,
-    QMessageBox, QSplitter, QTabWidget, QMenu, QMenuBar, QStatusBar, QInputDialog,
-    QCheckBox
+    QLabel, QPushButton, QFileDialog, QMessageBox, QGroupBox
 )
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import Qt
 
 # Import from the command system
 from command_system import (
@@ -33,824 +21,344 @@ from command_system import (
     get_project_manager
 )
 from command_system.ui.widgets import (
-    CommandLineEdit, CommandSpinBox, CommandDoubleSpinBox,
-    CommandComboBox, CommandCheckBox, CommandSlider,
-    CommandDateEdit, CommandTextEdit
+    CommandLineEdit, CommandSpinBox, CommandCheckBox
 )
 from command_system.ui.dock import (
-    get_dock_manager, CommandDockWidget, ObservableDockWidget,
+    get_dock_manager, ObservableDockWidget,
     CreateDockCommand, DeleteDockCommand
 )
 from command_system.layout import get_layout_manager
 
 
-class ProjectModel(Observable):
-    """Main model for the demonstration project."""
-    
-    # Text properties
-    name = ObservableProperty[str](default="Untitled Project")
-    description = ObservableProperty[str](default="")
-    
-    # Number properties
-    priority = ObservableProperty[int](default=3)
-    budget = ObservableProperty[float](default=1000.0)
-    progress = ObservableProperty[int](default=0)
-    
-    # Selection properties
-    category_index = ObservableProperty[int](default=0)
-    is_active = ObservableProperty[bool](default=True)
-    
-    # Date property
-    deadline = ObservableProperty[date](default=date.today())
-
-
 class ParameterModel(Observable):
-    """Model for parameter docks."""
-    
-    name = ObservableProperty[str](default="Parameter Set")
-    value1 = ObservableProperty[int](default=50)
-    value2 = ObservableProperty[float](default=10.5)
+    """Simple model for a parameter."""
+    name = ObservableProperty[str](default="Parameter")
+    value = ObservableProperty[int](default=0)
     enabled = ObservableProperty[bool](default=True)
-
-
-class NoteModel(Observable):
-    """Model for note docks."""
     
-    title = ObservableProperty[str](default="Notes")
-    content = ObservableProperty[str](default="")
+    def __init__(self, name="Parameter", value=0, parent=None):
+        """Initialize with optional parent."""
+        super().__init__(parent)
+        self.name = name
+        self.value = value
 
 
-class ComprehensiveDemo(QMainWindow):
-    """Main window for the comprehensive demo."""
+class SimpleDockTest(QMainWindow):
+    """Simple test for dock system."""
     
     def __init__(self):
-        """Initialize the demo window."""
+        """Initialize the application."""
         super().__init__()
         
-        # Set up the window
-        self.setWindowTitle("Command System Demo")
-        self.setMinimumSize(1000, 700)
+        # Set up window
+        self.setWindowTitle("Simple Dock Test")
+        self.setMinimumSize(800, 600)
         
-        # Get all managers
+        # Get managers
         self.cmd_manager = get_command_manager()
         self.dock_manager = get_dock_manager()
         self.layout_manager = get_layout_manager()
         self.project_manager = get_project_manager()
         
-        # Register model types for project manager
-        self.project_manager.register_model_type("project", lambda: ProjectModel())
-        self.project_manager.register_model_type("parameter", lambda: ParameterModel())
-        self.project_manager.register_model_type("note", lambda: NoteModel())
-        
-        # Set main window for dock and layout managers
+        # Set main window for managers
         self.dock_manager.set_main_window(self)
         self.layout_manager.set_main_window(self)
         
-        # Set layouts directory
-        demo_dir = os.path.dirname(os.path.abspath(__file__))
-        layouts_dir = os.path.join(demo_dir, "layouts")
-        self.layout_manager.set_layouts_directory(layouts_dir)
+        # Register model type
+        self.project_manager.register_model_type("parameter", lambda: ParameterModel())
         
-        # Begin initialization (disable command tracking)
+        # Begin initialization
         self.cmd_manager.begin_init()
         
-        # Create the model
-        self.model = ProjectModel()
+        # Create main parameter
+        self.main_param = ParameterModel(name="Main Parameter", value=50)
         
-        # Create the UI components
-        self._create_menu()
-        self._create_status_bar()
-        self._create_central_widget()
-        self._create_docks()
+        # Create UI
+        self._create_ui()
         
-        # Initialize dock counter
-        self.dock_counter = 1
-        self.param_dock_counter = 1
+        # Counter for dock IDs
+        self.dock_counter = 0
         
-        # Register widgets with layout manager
-        self._register_layout_widgets()
-        
-        # Connect model observers
-        self._connect_model_observers()
-        
-        # End initialization (re-enable command tracking)
+        # End initialization
         self.cmd_manager.end_init()
         
-        # Update window title
-        self._update_window_title()
-    
-    def _create_menu(self):
-        """Create the menu bar."""
-        menu_bar = QMenuBar(self)
-        
-        # File menu
-        file_menu = QMenu("&File", self)
-        
-        new_action = file_menu.addAction("&New")
-        new_action.triggered.connect(self._on_new)
-        
-        open_action = file_menu.addAction("&Open...")
-        open_action.triggered.connect(self._on_open)
-        
-        save_action = file_menu.addAction("&Save")
-        save_action.triggered.connect(self._on_save)
-        
-        save_as_action = file_menu.addAction("Save &As...")
-        save_as_action.triggered.connect(self._on_save_as)
-        
-        file_menu.addSeparator()
-        
-        # Format submenu
-        format_menu = QMenu("File &Format", self)
-        
-        json_action = format_menu.addAction("&JSON")
-        json_action.setCheckable(True)
-        json_action.setChecked(self.project_manager.get_default_format() == "json")
-        json_action.triggered.connect(lambda: self._set_format("json"))
-        
-        binary_action = format_menu.addAction("&Binary")
-        binary_action.setCheckable(True)
-        binary_action.setChecked(self.project_manager.get_default_format() == "bin")
-        binary_action.triggered.connect(lambda: self._set_format("bin"))
-        
-        yaml_action = format_menu.addAction("&YAML")
-        yaml_action.setCheckable(True)
-        yaml_action.setChecked(self.project_manager.get_default_format() == "yaml")
-        yaml_action.triggered.connect(lambda: self._set_format("yaml"))
-        
-        # Store format actions for updating
-        self.format_actions = {
-            "json": json_action,
-            "bin": binary_action,
-            "yaml": yaml_action
-        }
-        
-        file_menu.addMenu(format_menu)
-        
-        # Save layout options checkbox
-        file_menu.addSeparator()
-        self.save_layout_action = file_menu.addAction("Save Layout with Project")
-        self.save_layout_action.setCheckable(True)
-        self.save_layout_action.setChecked(True)  # Default is True
-        self.save_layout_action.triggered.connect(self._on_toggle_save_layout)
-        
-        file_menu.addSeparator()
-        
-        exit_action = file_menu.addAction("E&xit")
-        exit_action.triggered.connect(self.close)
-        
-        # Edit menu
-        edit_menu = QMenu("&Edit", self)
-        
-        undo_action = edit_menu.addAction("&Undo")
-        undo_action.triggered.connect(self._on_undo)
-        self.undo_action = undo_action
-        
-        redo_action = edit_menu.addAction("&Redo")
-        redo_action.triggered.connect(self._on_redo)
-        self.redo_action = redo_action
-        
-        # View menu
-        view_menu = QMenu("&View", self)
-        
-        # Layout submenu
-        layout_menu = QMenu("&Layouts", self)
-        
-        save_layout_action = layout_menu.addAction("&Save Layout...")
-        save_layout_action.triggered.connect(self._on_save_layout)
-        
-        load_layout_action = layout_menu.addAction("&Load Layout...")
-        load_layout_action.triggered.connect(self._on_load_layout)
-        
-        view_menu.addMenu(layout_menu)
-        view_menu.addSeparator()
-        
-        add_dock_action = view_menu.addAction("Add &Note Dock")
-        add_dock_action.triggered.connect(self._on_add_note_dock)
-        
-        add_param_dock_action = view_menu.addAction("Add &Parameter Dock")
-        add_param_dock_action.triggered.connect(self._on_add_param_dock)
-        
-        # Add menus to menu bar
-        menu_bar.addMenu(file_menu)
-        menu_bar.addMenu(edit_menu)
-        menu_bar.addMenu(view_menu)
-        
-        self.setMenuBar(menu_bar)
-    
-    def _on_toggle_save_layout(self, checked):
-        """Handle toggling of layout saving."""
-        # Update project manager setting
-        self.project_manager.set_save_layouts(checked)
-        self.status_label.setText(f"Layout saving with projects {'enabled' if checked else 'disabled'}")
-    
-    def _create_status_bar(self):
-        """Create the status bar."""
-        status_bar = QStatusBar(self)
-        self.status_label = QLabel("Ready")
-        status_bar.addWidget(self.status_label)
-        self.setStatusBar(status_bar)
-    
-    def _create_central_widget(self):
-        """Create the central widget."""
-        # Main container widget
-        central_widget = QWidget()
-        main_layout = QVBoxLayout(central_widget)
-        
-        # Splitter for resizable panels
-        main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        main_splitter.setObjectName("main_splitter")
-        
-        # Left panel - Project Properties
-        left_panel = QGroupBox("Project Properties")
-        left_layout = QGridLayout(left_panel)
-        
-        # Add project property widgets
-        row = 0
-        
-        # Name field
-        left_layout.addWidget(QLabel("Name:"), row, 0)
-        self.name_edit = CommandLineEdit()
-        self.name_edit.bind_to_model(self.model, "name")
-        left_layout.addWidget(self.name_edit, row, 1)
-        row += 1
-        
-        # Category field
-        left_layout.addWidget(QLabel("Category:"), row, 0)
-        self.category_combo = CommandComboBox()
-        self.category_combo.addItems(["Development", "Design", "Marketing", "Research"])
-        self.category_combo.bind_to_model(self.model, "category_index")
-        left_layout.addWidget(self.category_combo, row, 1)
-        row += 1
-        
-        # Priority field
-        left_layout.addWidget(QLabel("Priority (1-5):"), row, 0)
-        self.priority_spin = CommandSpinBox()
-        self.priority_spin.setRange(1, 5)
-        self.priority_spin.bind_to_model(self.model, "priority")
-        left_layout.addWidget(self.priority_spin, row, 1)
-        row += 1
-        
-        # Budget field
-        left_layout.addWidget(QLabel("Budget:"), row, 0)
-        self.budget_spin = CommandDoubleSpinBox()
-        self.budget_spin.setRange(0, 1000000)
-        self.budget_spin.setPrefix("$")
-        self.budget_spin.bind_to_model(self.model, "budget")
-        left_layout.addWidget(self.budget_spin, row, 1)
-        row += 1
-        
-        # Progress field
-        left_layout.addWidget(QLabel("Progress:"), row, 0)
-        self.progress_slider = CommandSlider(Qt.Orientation.Horizontal)
-        self.progress_slider.setRange(0, 100)
-        self.progress_slider.bind_to_model(self.model, "progress")
-        left_layout.addWidget(self.progress_slider, row, 1)
-        row += 1
-        
-        # Active field
-        left_layout.addWidget(QLabel("Active:"), row, 0)
-        self.active_check = CommandCheckBox()
-        self.active_check.bind_to_model(self.model, "is_active")
-        left_layout.addWidget(self.active_check, row, 1)
-        row += 1
-        
-        # Deadline field
-        left_layout.addWidget(QLabel("Deadline:"), row, 0)
-        self.deadline_edit = CommandDateEdit()
-        self.deadline_edit.bind_to_model(self.model, "deadline")
-        left_layout.addWidget(self.deadline_edit, row, 1)
-        row += 1
-        
-        # Right panel - Description + Command controls
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        
-        # Description field
-        desc_group = QGroupBox("Description")
-        desc_layout = QVBoxLayout(desc_group)
-        
-        self.desc_edit = CommandTextEdit()
-        self.desc_edit.bind_to_model(self.model, "description")
-        desc_layout.addWidget(self.desc_edit)
-        
-        right_layout.addWidget(desc_group)
-        
-        # Command controls
-        cmd_group = QGroupBox("Commands")
-        cmd_layout = QHBoxLayout(cmd_group)
-        
-        self.undo_btn = QPushButton("Undo")
-        self.undo_btn.clicked.connect(self._on_undo)
-        cmd_layout.addWidget(self.undo_btn)
-        
-        self.redo_btn = QPushButton("Redo")
-        self.redo_btn.clicked.connect(self._on_redo)
-        cmd_layout.addWidget(self.redo_btn)
-        
-        right_layout.addWidget(cmd_group)
-        
-        # Add panels to splitter
-        main_splitter.addWidget(left_panel)
-        main_splitter.addWidget(right_panel)
-        
-        # Set initial sizes
-        main_splitter.setSizes([400, 600])
-        
-        # Add to main layout
-        main_layout.addWidget(main_splitter)
-        
-        # Set as central widget
-        self.setCentralWidget(central_widget)
-    
-    def _create_docks(self):
-        """Create the initial dock widgets."""
-        # Project Summary dock
-        self._create_summary_dock("summary_dock", "Project Summary", 
-                                  Qt.DockWidgetArea.RightDockWidgetArea)
-        
-        # Notes dock
-        self._create_note_dock("notes_dock", "Project Notes", 
-                               Qt.DockWidgetArea.BottomDockWidgetArea)
-                               
-        # Parameter dock
-        self._create_parameter_dock("param_dock_1", "Parameters 1", 
-                                   Qt.DockWidgetArea.LeftDockWidgetArea)
-    
-    def _create_summary_dock(self, dock_id, title, area):
-        """Create a summary dock widget."""
-        # Create content widget
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        
-        # Summary label
-        self.summary_label = QLabel()
-        self.summary_label.setTextFormat(Qt.TextFormat.RichText)
-        layout.addWidget(self.summary_label)
-        
-        # Create dock with associated model
-        dock = ObservableDockWidget(dock_id, title, self, self.model)
-        dock.setWidget(content)
-        dock.closeRequested.connect(self._on_dock_close_requested)
-        
-        # Create and execute command to add dock
-        cmd = CreateDockCommand(dock_id, dock, None, area)
-        self.cmd_manager.execute(cmd)
-        
-        # Update summary
-        self._update_summary()
-        
-        return dock
-    
-    def _create_note_dock(self, dock_id, title, area):
-        """Create a notes dock widget with its own observable model."""
-        # Create note model
-        note_model = NoteModel()
-        note_model.title = title
-        
-        # Create content widget
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        
-        # Title field
-        title_layout = QHBoxLayout()
-        title_layout.addWidget(QLabel("Title:"))
-        title_edit = CommandLineEdit()
-        title_edit.bind_to_model(note_model, "title")
-        title_layout.addWidget(title_edit)
-        layout.addLayout(title_layout)
-        
-        # Add a command-aware text edit bound to the model
-        notes_edit = CommandTextEdit()
-        notes_edit.bind_to_model(note_model, "content")
-        layout.addWidget(notes_edit)
-        
-        # Create dock with model
-        dock = ObservableDockWidget(dock_id, title, self, note_model)
-        dock.setWidget(content)
-        dock.closeRequested.connect(self._on_dock_close_requested)
-        
-        # Link dock title to model title
-        note_model.add_property_observer("title", lambda p, o, n: dock.setWindowTitle(n))
-        
-        # Create and execute command to add dock
-        cmd = CreateDockCommand(dock_id, dock, None, area)
-        self.cmd_manager.execute(cmd)
-        
-        return dock
-    
-    def _create_parameter_dock(self, dock_id, title, area):
-        """Create a parameter dock with its own observable model."""
-        # Create parameter model
-        param_model = ParameterModel()
-        param_model.name = title
-        
-        # Create content widget
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        
-        # Add parameter controls
-        form_layout = QGridLayout()
-        
-        # Name field
-        form_layout.addWidget(QLabel("Name:"), 0, 0)
+    def _create_ui(self):
+        """Create the UI."""
+        # Central widget
+        central = QWidget()
+        main_layout = QVBoxLayout(central)
+        
+        # Parameter controls
+        param_group = QGroupBox("Main Parameter")
+        param_layout = QVBoxLayout(param_group)
+        
+        # Name control
+        name_layout = QHBoxLayout()
+        name_layout.addWidget(QLabel("Name:"))
         name_edit = CommandLineEdit()
-        name_edit.bind_to_model(param_model, "name")
-        form_layout.addWidget(name_edit, 0, 1)
+        name_edit.bind_to_model(self.main_param, "name")
+        name_layout.addWidget(name_edit)
+        param_layout.addLayout(name_layout)
         
-        # Value 1 field
-        form_layout.addWidget(QLabel("Value 1:"), 1, 0)
-        value1_spin = CommandSpinBox()
-        value1_spin.setRange(0, 100)
-        value1_spin.bind_to_model(param_model, "value1")
-        form_layout.addWidget(value1_spin, 1, 1)
+        # Value control
+        value_layout = QHBoxLayout()
+        value_layout.addWidget(QLabel("Value:"))
+        value_spin = CommandSpinBox()
+        value_spin.setRange(0, 100)
+        value_spin.bind_to_model(self.main_param, "value")
+        value_layout.addWidget(value_spin)
+        param_layout.addLayout(value_layout)
         
-        # Value 2 field
-        form_layout.addWidget(QLabel("Value 2:"), 2, 0)
-        value2_spin = CommandDoubleSpinBox()
-        value2_spin.setRange(0, 100)
-        value2_spin.setDecimals(1)
-        value2_spin.bind_to_model(param_model, "value2")
-        form_layout.addWidget(value2_spin, 2, 1)
-        
-        # Enabled field
-        form_layout.addWidget(QLabel("Enabled:"), 3, 0)
+        # Enabled control
+        enabled_layout = QHBoxLayout()
+        enabled_layout.addWidget(QLabel("Enabled:"))
         enabled_check = CommandCheckBox()
-        enabled_check.bind_to_model(param_model, "enabled")
-        form_layout.addWidget(enabled_check, 3, 1)
+        enabled_check.bind_to_model(self.main_param, "enabled")
+        enabled_layout.addWidget(enabled_check)
+        param_layout.addLayout(enabled_layout)
         
-        layout.addLayout(form_layout)
+        # Generation info
+        gen_layout = QHBoxLayout()
+        gen_layout.addWidget(QLabel("Generation:"))
+        gen_layout.addWidget(QLabel(str(self.main_param.get_generation())))
+        param_layout.addLayout(gen_layout)
+        
+        # Add parameter group to main layout
+        main_layout.addWidget(param_group)
+        
+        # Action buttons
+        buttons_layout = QHBoxLayout()
+        
+        # Undo/Redo buttons
+        undo_btn = QPushButton("Undo")
+        undo_btn.clicked.connect(self.cmd_manager.undo)
+        buttons_layout.addWidget(undo_btn)
+        
+        redo_btn = QPushButton("Redo")
+        redo_btn.clicked.connect(self.cmd_manager.redo)
+        buttons_layout.addWidget(redo_btn)
+        
+        # Add dock button
+        add_dock_btn = QPushButton("Add Dock")
+        add_dock_btn.clicked.connect(self._on_add_dock)
+        buttons_layout.addWidget(add_dock_btn)
+        
+        # Save/Open buttons
+        save_btn = QPushButton("Save")
+        save_btn.clicked.connect(self._on_save)
+        buttons_layout.addWidget(save_btn)
+        
+        open_btn = QPushButton("Open")
+        open_btn.clicked.connect(self._on_open)
+        buttons_layout.addWidget(open_btn)
+        
+        main_layout.addLayout(buttons_layout)
+        
+        # Set central widget
+        self.setCentralWidget(central)
+        
+    def _create_dock(self):
+        """Create a dock with parameters as children of the dock."""
+        # Increment dock counter
+        self.dock_counter += 1
+        
+        # Create unique ID
+        dock_id = f"dock_{self.dock_counter}"
+        
+        # Create dock model (will be the parent)
+        dock_model = ParameterModel(
+            name=f"Dock {self.dock_counter}", 
+            value=25
+        )
+        
+        # Create parameter models that are children of the dock
+        param1 = ParameterModel(
+            name=f"Parameter 1", 
+            value=10, 
+            parent=dock_model
+        )
+        
+        param2 = ParameterModel(
+            name=f"Parameter 2", 
+            value=20, 
+            parent=dock_model
+        )
+        
+        param3 = ParameterModel(
+            name=f"Parameter 3", 
+            value=30, 
+            parent=dock_model
+        )
+        
+        # Create dock content widget
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        
+        # Dock label
+        layout.addWidget(QLabel(f"Dock Model - Generation {dock_model.get_generation()}"))
+        
+        # Parameter 1 controls
+        param1_group = QGroupBox("Parameter 1")
+        param1_layout = QVBoxLayout(param1_group)
+        
+        # Name control
+        name_layout = QHBoxLayout()
+        name_layout.addWidget(QLabel("Name:"))
+        name_edit = CommandLineEdit()
+        name_edit.bind_to_model(param1, "name")
+        name_layout.addWidget(name_edit)
+        param1_layout.addLayout(name_layout)
+        
+        # Value control
+        value_layout = QHBoxLayout()
+        value_layout.addWidget(QLabel("Value:"))
+        value_spin = CommandSpinBox()
+        value_spin.setRange(0, 100)
+        value_spin.bind_to_model(param1, "value")
+        value_layout.addWidget(value_spin)
+        param1_layout.addLayout(value_layout)
+        
+        # Generation info
+        gen_layout = QHBoxLayout()
+        gen_layout.addWidget(QLabel("Generation:"))
+        gen_layout.addWidget(QLabel(str(param1.get_generation())))
+        param1_layout.addLayout(gen_layout)
+        
+        layout.addWidget(param1_group)
+        
+        # Parameter 2 controls
+        param2_group = QGroupBox("Parameter 2")
+        param2_layout = QVBoxLayout(param2_group)
+        
+        # Name control
+        name_layout = QHBoxLayout()
+        name_layout.addWidget(QLabel("Name:"))
+        name_edit = CommandLineEdit()
+        name_edit.bind_to_model(param2, "name")
+        name_layout.addWidget(name_edit)
+        param2_layout.addLayout(name_layout)
+        
+        # Value control
+        value_layout = QHBoxLayout()
+        value_layout.addWidget(QLabel("Value:"))
+        value_spin = CommandSpinBox()
+        value_spin.setRange(0, 100)
+        value_spin.bind_to_model(param2, "value")
+        value_layout.addWidget(value_spin)
+        param2_layout.addLayout(value_layout)
+        
+        # Generation info
+        gen_layout = QHBoxLayout()
+        gen_layout.addWidget(QLabel("Generation:"))
+        gen_layout.addWidget(QLabel(str(param2.get_generation())))
+        param2_layout.addLayout(gen_layout)
+        
+        layout.addWidget(param2_group)
+        
+        # Parameter 3 controls
+        param3_group = QGroupBox("Parameter 3")
+        param3_layout = QVBoxLayout(param3_group)
+        
+        # Name control
+        name_layout = QHBoxLayout()
+        name_layout.addWidget(QLabel("Name:"))
+        name_edit = CommandLineEdit()
+        name_edit.bind_to_model(param3, "name")
+        name_layout.addWidget(name_edit)
+        param3_layout.addLayout(name_layout)
+        
+        # Value control
+        value_layout = QHBoxLayout()
+        value_layout.addWidget(QLabel("Value:"))
+        value_spin = CommandSpinBox()
+        value_spin.setRange(0, 100)
+        value_spin.bind_to_model(param3, "value")
+        value_layout.addWidget(value_spin)
+        param3_layout.addLayout(value_layout)
+        
+        # Generation info
+        gen_layout = QHBoxLayout()
+        gen_layout.addWidget(QLabel("Generation:"))
+        gen_layout.addWidget(QLabel(str(param3.get_generation())))
+        param3_layout.addLayout(gen_layout)
+        
+        layout.addWidget(param3_group)
         
         # Create dock with model
-        dock = ObservableDockWidget(dock_id, title, self, param_model)
+        dock = ObservableDockWidget(dock_id, f"Dock {self.dock_counter}", self, dock_model)
         dock.setWidget(content)
         dock.closeRequested.connect(self._on_dock_close_requested)
         
-        # Link dock title to model name
-        param_model.add_property_observer("name", lambda p, o, n: dock.setWindowTitle(n))
+        # Determine dock area based on dock number
+        area = Qt.DockWidgetArea.RightDockWidgetArea
+        if self.dock_counter % 3 == 0:
+            area = Qt.DockWidgetArea.LeftDockWidgetArea
+        elif self.dock_counter % 3 == 2:
+            area = Qt.DockWidgetArea.BottomDockWidgetArea
         
         # Create and execute command to add dock
         cmd = CreateDockCommand(dock_id, dock, None, area)
         self.cmd_manager.execute(cmd)
         
         return dock
-    
-    def _register_layout_widgets(self):
-        """Register widgets with the layout manager."""
-        # Register main UI components
-        for widget in self.findChildren(QSplitter):
-            if widget.objectName():
-                self.layout_manager.register_widget(widget.objectName(), widget)
-    
-    def _connect_model_observers(self):
-        """Connect observers to model properties."""
-        # Connect to all properties
-        properties = ["name", "description", "priority", "budget", 
-                     "progress", "category_index", "is_active", "deadline"]
         
-        for prop in properties:
-            self.model.add_property_observer(prop, self._on_model_changed)
-    
-    def _on_model_changed(self, property_name, old_value, new_value):
-        """Handle model property changes."""
-        # Update UI
-        self._update_window_title()
-        self._update_summary()
-        self._update_button_states()
+    def _on_add_dock(self):
+        """Handle add dock button click."""
+        self._create_dock()
         
-        # Update status
-        self.status_label.setText(f"Property '{property_name}' changed")
-    
-    def _update_window_title(self):
-        """Update the window title."""
-        filename = self.project_manager.get_current_filename()
-        
-        if filename:
-            # Show filename in title
-            base_filename = os.path.basename(filename)
-            title = f"{base_filename} - Command System Demo"
-        else:
-            # No filename yet
-            title = f"{self.model.name} - Command System Demo"
-            
-        # Add asterisk if modified
-        if self.cmd_manager.can_undo():
-            title = f"*{title}"
-            
-        self.setWindowTitle(title)
-    
-    def _update_summary(self):
-        """Update the project summary display."""
-        if not hasattr(self, 'summary_label'):
-            return
-            
-        html = "<table width='100%'>"
-        html += f"<tr><td><b>Name:</b></td><td>{self.model.name}</td></tr>"
-        
-        categories = ["Development", "Design", "Marketing", "Research"]
-        category = categories[self.model.category_index]
-        html += f"<tr><td><b>Category:</b></td><td>{category}</td></tr>"
-        
-        html += f"<tr><td><b>Priority:</b></td><td>{self.model.priority}</td></tr>"
-        html += f"<tr><td><b>Budget:</b></td><td>${self.model.budget:,.2f}</td></tr>"
-        html += f"<tr><td><b>Progress:</b></td><td>{self.model.progress}%</td></tr>"
-        html += f"<tr><td><b>Active:</b></td><td>{'Yes' if self.model.is_active else 'No'}</td></tr>"
-        html += f"<tr><td><b>Deadline:</b></td><td>{self.model.deadline.strftime('%Y-%m-%d')}</td></tr>"
-        html += "</table>"
-        
-        # Add description excerpt if available
-        if self.model.description:
-            excerpt = self.model.description[:100]
-            if len(self.model.description) > 100:
-                excerpt += "..."
-            html += f"<p><b>Description:</b><br>{excerpt}</p>"
-        
-        self.summary_label.setText(html)
-    
-    def _update_button_states(self):
-        """Update button states based on command availability."""
-        can_undo = self.cmd_manager.can_undo()
-        can_redo = self.cmd_manager.can_redo()
-        
-        # Update undo/redo buttons
-        self.undo_btn.setEnabled(can_undo)
-        self.redo_btn.setEnabled(can_redo)
-        
-        # Update menu actions
-        self.undo_action.setEnabled(can_undo)
-        self.redo_action.setEnabled(can_redo)
-    
-    def _on_undo(self):
-        """Handle undo action."""
-        if self.cmd_manager.undo():
-            self.status_label.setText("Undo: Success")
-        else:
-            self.status_label.setText("Undo: Nothing to undo")
-            
-        self._update_button_states()
-        self._update_summary()
-    
-    def _on_redo(self):
-        """Handle redo action."""
-        if self.cmd_manager.redo():
-            self.status_label.setText("Redo: Success")
-        else:
-            self.status_label.setText("Redo: Nothing to redo")
-            
-        self._update_button_states()
-        self._update_summary()
-    
-    def _on_add_note_dock(self):
-        """Handle add note dock action."""
-        # Generate a unique ID
-        self.dock_counter += 1
-        dock_id = f"note_dock_{self.dock_counter}"
-        
-        # Create a note dock
-        dock = self._create_note_dock(
-            dock_id, 
-            f"Notes {self.dock_counter}", 
-            Qt.DockWidgetArea.RightDockWidgetArea
-        )
-        
-        self.status_label.setText(f"Added new note dock: {dock_id}")
-    
-    def _on_add_param_dock(self):
-        """Handle add parameter dock action."""
-        # Generate a unique ID
-        self.param_dock_counter += 1
-        dock_id = f"param_dock_{self.param_dock_counter}"
-        
-        # Create a parameter dock
-        dock = self._create_parameter_dock(
-            dock_id, 
-            f"Parameters {self.param_dock_counter}", 
-            Qt.DockWidgetArea.RightDockWidgetArea
-        )
-        
-        self.status_label.setText(f"Added new parameter dock: {dock_id}")
-    
     def _on_dock_close_requested(self, dock_id):
         """Handle dock close request."""
-        dock = self.dock_manager.get_dock_widget(dock_id)
+        cmd = DeleteDockCommand(dock_id)
+        self.cmd_manager.execute(cmd)
         
-        if dock:
-            # Create and execute command to delete dock
-            cmd = DeleteDockCommand(dock_id)
-            self.cmd_manager.execute(cmd)
-            
-            self.status_label.setText(f"Closed dock: {dock_id}")
-    
-    def _set_format(self, format_type):
-        """Set the project file format."""
-        # Update project manager
-        self.project_manager.set_default_format(format_type)
-        
-        # Update checkable state of menu items
-        for fmt, action in self.format_actions.items():
-            action.setChecked(fmt == format_type)
-            
-        # Show status message
-        extension = self.project_manager.get_default_extension()
-        self.status_label.setText(f"File format set to {format_type.upper()} ({extension})")
-    
-    def _on_new(self):
-        """Handle New action."""
-        # Check for unsaved changes
-        if self.cmd_manager.can_undo() and not self._confirm_discard_changes():
-            return
-            
-        # Create new model
-        self.model = self.project_manager.new_project("project")
-        
-        # Rebind widgets to new model
-        self.name_edit.bind_to_model(self.model, "name")
-        self.category_combo.bind_to_model(self.model, "category_index")
-        self.priority_spin.bind_to_model(self.model, "priority")
-        self.budget_spin.bind_to_model(self.model, "budget")
-        self.progress_slider.bind_to_model(self.model, "progress")
-        self.active_check.bind_to_model(self.model, "is_active")
-        self.deadline_edit.bind_to_model(self.model, "deadline")
-        self.desc_edit.bind_to_model(self.model, "description")
-        
-        # Reconnect model observers
-        self._connect_model_observers()
-        
-        # Update UI
-        self._update_window_title()
-        self._update_summary()
-        
-        self.status_label.setText("New project created")
-    
-    def _on_open(self):
-        """Handle Open action."""
-        # Check for unsaved changes
-        if self.cmd_manager.can_undo() and not self._confirm_discard_changes():
-            return
-            
-        # Get file format details
-        extension = self.project_manager.get_default_extension()
-        
-        # Show file dialog
-        filename, _ = QFileDialog.getOpenFileName(
-            self, "Open Project", "", f"Project Files (*{extension});;All Files (*)"
-        )
-        
-        if not filename:
-            return
-            
-        # Get current layout setting
-        include_layout = self.save_layout_action.isChecked()
-        
-        # Load project
-        model = self.project_manager.load_project(filename, load_layout=include_layout)
-        
-        if model is not None:
-            # Update model
-            self.model = model
-            
-            # Rebind widgets to new model
-            self.name_edit.bind_to_model(self.model, "name")
-            self.category_combo.bind_to_model(self.model, "category_index")
-            self.priority_spin.bind_to_model(self.model, "priority")
-            self.budget_spin.bind_to_model(self.model, "budget")
-            self.progress_slider.bind_to_model(self.model, "progress")
-            self.active_check.bind_to_model(self.model, "is_active")
-            self.deadline_edit.bind_to_model(self.model, "deadline")
-            self.desc_edit.bind_to_model(self.model, "description")
-            
-            # Reconnect model observers
-            self._connect_model_observers()
-            
-            # Update UI
-            self._update_window_title()
-            self._update_summary()
-            
-            self.status_label.setText(f"Project loaded: {filename}")
-        else:
-            QMessageBox.critical(self, "Error", "Failed to load the project file.")
-    
     def _on_save(self):
-        """Handle Save action."""
-        # Check if we have a filename
-        if self.project_manager.get_current_filename() is None:
-            # No filename, do Save As instead
-            self._on_save_as()
-        else:
-            # Get current layout setting
-            include_layout = self.save_layout_action.isChecked()
-            
-            # Save to current filename
-            if self.project_manager.save_project(self.model, save_layout=include_layout):
-                # Update window title to reflect saved state
-                self._update_window_title()
-                self.status_label.setText("Project saved")
-            else:
-                QMessageBox.critical(self, "Error", "Failed to save the project file.")
-    
-    def _on_save_as(self):
-        """Handle Save As action."""
-        # Get file format details
-        extension = self.project_manager.get_default_extension()
-        
-        # Show file dialog
+        """Handle save button click."""
         filename, _ = QFileDialog.getSaveFileName(
-            self, "Save Project", "", f"Project Files (*{extension});;All Files (*)"
+            self, "Save Project", "", "JSON Files (*.json)"
         )
         
-        if not filename:
-            return
-            
-        # Add extension if not present
-        if not filename.lower().endswith(extension):
-            filename += extension
-            
-        # Get current layout setting
-        include_layout = self.save_layout_action.isChecked()
-            
-        # Save project
-        if self.project_manager.save_project(self.model, filename, save_layout=include_layout):
-            # Update window title
-            self._update_window_title()
-            self.status_label.setText(f"Project saved as: {filename}")
-        else:
-            QMessageBox.critical(self, "Error", "Failed to save the project file.")
-    
-    def _on_save_layout(self):
-        """Handle save layout action."""
-        # Ask for a name
-        name, ok = QInputDialog.getText(
-            self, "Save Layout", "Enter layout name:"
-        )
-        
-        if ok and name:
-            # Save layout
-            success = self.layout_manager.save_layout_preset(name)
+        if filename:
+            if not filename.lower().endswith(".json"):
+                filename += ".json"
+                
+            # Save project with layout
+            success = self.project_manager.save_project(
+                self.main_param, filename, save_layout=True
+            )
             
             if success:
-                self.status_label.setText(f"Layout saved: {name}")
+                self.statusBar().showMessage(f"Project saved to {filename}")
             else:
-                QMessageBox.warning(self, "Error", "Failed to save layout")
-    
-    def _on_load_layout(self):
-        """Handle load layout action."""
-        # Get available presets
-        presets = self.layout_manager.get_available_presets()
-        
-        if not presets:
-            QMessageBox.information(self, "No Layouts", "No saved layouts found")
-            return
-            
-        # Show dialog with presets
-        preset, ok = QInputDialog.getItem(
-            self, "Load Layout", "Select layout:", presets, 0, False
+                QMessageBox.critical(self, "Error", "Failed to save the project")
+                
+    def _on_open(self):
+        """Handle open button click."""
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Open Project", "", "JSON Files (*.json)"
         )
         
-        if ok and preset:
-            # Load layout
-            success = self.layout_manager.load_layout_preset(preset)
+        if filename:
+            # Load project with layout
+            loaded_model = self.project_manager.load_project(
+                filename, load_layout=True
+            )
             
-            if success:
-                self.status_label.setText(f"Layout loaded: {preset}")
+            if loaded_model:
+                # Update our main parameter
+                self.main_param = loaded_model
+                
+                # Rebind main parameter widgets
+                # In a real app, you'd need to handle child models properly
+                
+                self.statusBar().showMessage(f"Project loaded from {filename}")
             else:
-                QMessageBox.warning(self, "Error", "Failed to load layout")
-    
-    def _confirm_discard_changes(self):
-        """
-        Ask user to confirm discarding unsaved changes.
-        
-        Returns:
-            True if changes can be discarded, False otherwise
-        """
-        result = QMessageBox.question(
-            self,
-            "Unsaved Changes",
-            "You have unsaved changes. Do you want to discard them?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        
-        return result == QMessageBox.StandardButton.Yes
-    
-    def closeEvent(self, event):
-        """Handle window close event."""
-        # Check for unsaved changes
-        if self.cmd_manager.can_undo() and not self._confirm_discard_changes():
-            # Cancel close
-            event.ignore()
-        else:
-            # Accept close
-            event.accept()
+                QMessageBox.critical(self, "Error", "Failed to load the project")
 
 
 def main():
-    """Application entry point."""
+    """Run the application."""
     app = QApplication(sys.argv)
-    
-    # NOTE: We no longer need to call extend_project_manager() here
-    # since layout integration is now automatic
-    
-    window = ComprehensiveDemo()
+    window = SimpleDockTest()
     window.show()
     sys.exit(app.exec())
 

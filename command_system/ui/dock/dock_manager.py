@@ -115,79 +115,41 @@ class DockManager:
         return None
         
     def save_dock_state(self, dock_id: str) -> None:
-        """
-        Save the current state of a dock.
-        
-        Args:
-            dock_id: ID of the dock to save state for
-        """
-        if dock_id not in self._dock_states:
-            return
-            
-        dock_widget = self._dock_states[dock_id]["widget"]
-        
-        # Save geometry and state
-        self._dock_states[dock_id]["state"] = {
-            "geometry": dock_widget.saveGeometry().toBase64().data().decode('ascii'),
-            "position": {
-                "x": dock_widget.pos().x(),
-                "y": dock_widget.pos().y(),
-                "width": dock_widget.width(),
-                "height": dock_widget.height()
-            },
-            "visible": dock_widget.isVisible(),
-            "floating": dock_widget.isFloating(),
-            "area": self._get_dock_area(dock_widget)
-        }
+        # TODO: Replace dock state saving
+        #
+        # This method was responsible for:
+        # 1. Capturing state of a specific dock widget
+        # 2. Storing geometry, position, visibility, floating state
+        #
+        # Expected inputs:
+        #   - Dock widget ID
+        #
+        # Expected outputs:
+        #   - None (stores state in self._dock_states)
+        #
+        # Called from:
+        #   - register_dock()
+        #   - DockLocationCommand
+        #   - serialize_layout()
+        pass
         
     def restore_dock_state(self, dock_id: str) -> bool:
-        """
-        Restore the saved state of a dock.
-        
-        Args:
-            dock_id: ID of the dock to restore
-            
-        Returns:
-            True if state was restored successfully
-        """
-        if dock_id not in self._dock_states or "state" not in self._dock_states[dock_id]:
-            return False
-            
-        dock_widget = self._dock_states[dock_id]["widget"]
-        state = self._dock_states[dock_id]["state"]
-        
-        # Restore geometry
-        if "geometry" in state:
-            try:
-                geometry = QByteArray.fromBase64(state["geometry"].encode('ascii'))
-                dock_widget.restoreGeometry(geometry)
-            except Exception as e:
-                print(f"Error restoring dock geometry: {e}")
-                
-        # Restore position and size for floating docks
-        if "position" in state and state.get("floating", False):
-            try:
-                pos = state["position"]
-                dock_widget.resize(pos["width"], pos["height"])
-                dock_widget.move(pos["x"], pos["y"])
-            except Exception as e:
-                print(f"Error restoring dock position: {e}")
-                
-        # Restore visibility
-        if "visible" in state:
-            dock_widget.setVisible(state["visible"])
-            
-        # Restore floating state
-        if "floating" in state:
-            dock_widget.setFloating(state["floating"])
-            
-        # Restore dock area
-        if "area" in state and self._main_window:
-            area = state["area"]
-            if area is not None:
-                self._main_window.addDockWidget(area, dock_widget)
-                
-        return True
+        # TODO: Replace dock state restoration
+        #
+        # This method was responsible for:
+        # 1. Applying saved state to a dock widget
+        # 2. Restoring geometry, position, visibility, floating state
+        #
+        # Expected inputs:
+        #   - Dock widget ID
+        #
+        # Expected outputs:
+        #   - Boolean indicating success
+        #
+        # Called from:
+        #   - DockLocationCommand
+        #   - deserialize_layout()
+        pass
         
     def _get_dock_area(self, dock_widget: QDockWidget) -> Optional[int]:
         """
@@ -250,66 +212,38 @@ class DockManager:
         return result
         
     def serialize_layout(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Serialize the layout state of all docks.
-        
-        Returns:
-            Dictionary containing dock layout state
-        """
-        # Save current state of all docks
-        for dock_id in self._dock_states:
-            self.save_dock_state(dock_id)
-            
-        # Create serializable layout
-        layout = {}
-        for dock_id, dock_data in self._dock_states.items():
-            layout[dock_id] = {
-                "state": dock_data["state"],
-                "parent_id": dock_data["parent_id"],
-                "children": dock_data["children"]
-            }
-            
-        return layout
+        # TODO: Replace dock layout serialization
+        #
+        # This method was responsible for:
+        # 1. Saving current state of all registered docks
+        # 2. Creating a serializable structure with dock layout info
+        #
+        # Expected inputs:
+        #   - None (uses internal dock states)
+        #
+        # Expected outputs:
+        #   - Dictionary with dock layout information
+        #
+        # The structure included:
+        #   - Dock states
+        #   - Parent-child relationships
+        pass
         
     def deserialize_layout(self, layout: Dict[str, Dict[str, Any]]) -> bool:
-        """
-        Restore layout from serialized state.
-        
-        Args:
-            layout: Serialized layout state
-            
-        Returns:
-            True if layout was restored successfully
-        """
-        try:
-            # First pass: Update states
-            for dock_id, dock_data in layout.items():
-                if dock_id in self._dock_states:
-                    self._dock_states[dock_id]["state"] = dock_data["state"]
-                    
-            # Second pass: Restore states in dependency order (parents first)
-            processed = set()
-            to_process = [dock_id for dock_id, data in self._dock_states.items() 
-                          if data["parent_id"] is None]
-            
-            while to_process:
-                dock_id = to_process.pop(0)
-                
-                if dock_id in processed:
-                    continue
-                    
-                # Process this dock
-                self.restore_dock_state(dock_id)
-                processed.add(dock_id)
-                
-                # Add children to process queue
-                children = self.get_child_docks(dock_id)
-                to_process.extend([c for c in children if c not in processed])
-                
-            return True
-        except Exception as e:
-            print(f"Error deserializing layout: {e}")
-            return False
+        # TODO: Replace dock layout deserialization
+        #
+        # This method was responsible for:
+        # 1. Updating internal dock states from serialized data
+        # 2. Restoring dock states in dependency order (parents first)
+        #
+        # Expected inputs:
+        #   - Dictionary with dock layout data
+        #
+        # Expected outputs:
+        #   - Boolean indicating success
+        #
+        # Processed docks in topological order to maintain hierarchy
+        pass
 
 
 def get_dock_manager():

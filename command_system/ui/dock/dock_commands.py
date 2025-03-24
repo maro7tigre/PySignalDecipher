@@ -229,35 +229,19 @@ class DockLocationCommand(Command):
 
 
 class SaveLayoutCommand(Command):
-    """
-    Command for saving the current dock layout.
-    """
-    
-    def __init__(self, layout_name: str):
-        """
-        Initialize the save layout command.
-        
-        Args:
-            layout_name: Name to identify the layout
-        """
-        self.layout_name = layout_name
-        self.dock_manager = get_dock_manager()
-        self.old_layout = None
-        self.new_layout = None
-        
-    def execute(self) -> None:
-        """Execute the command."""
-        # Save the current layout
-        self.new_layout = self.dock_manager.serialize_layout()
-        
-        # TODO: If needed, integrate with a layout manager to store named layouts
-        
-    def undo(self) -> None:
-        """Undo the command."""
-        # TODO: If needed, restore the previous layout
-        pass
-    
-    def redo(self) -> None:
-        """Redo the command."""
-        # Redirect to execute for simplicity
-        self.execute()
+    # TODO: Replace SaveLayoutCommand implementation
+    #
+    # This command was responsible for:
+    # 1. Capturing the current dock layout state
+    # 2. Storing it for potential undo/redo
+    #
+    # Expected inputs:
+    #   - Layout name
+    #
+    # Main methods:
+    #   - execute(): Called dock_manager.serialize_layout() to capture layout
+    #   - undo(): Was a no-op or restored previous layout
+    #   - redo(): Redirected to execute()
+    #
+    # This command created a command-system integration for layout saving
+    pass

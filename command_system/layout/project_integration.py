@@ -12,114 +12,64 @@ from .layout_manager import get_layout_manager
 
 
 def save_layout_with_project(filename: str) -> bool:
-    """
-    Save the current layout with the project file.
-    
-    This is done by appending a special layout section to the end of the 
-    project file. The layout data is stored separately from the main project
-    data to avoid affecting the command system.
-    
-    Args:
-        filename: Path to the project file
-        
-    Returns:
-        True if layout was saved successfully
-    """
-    try:
-        # Get layout data
-        layout_manager = get_layout_manager()
-        layout_data = layout_manager.capture_current_layout()
-        
-        if not layout_data:
-            return False
-            
-        # Convert to JSON string
-        layout_json = json.dumps(layout_data)
-        
-        # Append to file with a special marker
-        with open(filename, 'a', encoding='utf-8') as f:
-            f.write("\n__LAYOUT_DATA_BEGIN__\n")
-            f.write(layout_json)
-            f.write("\n__LAYOUT_DATA_END__\n")
-            
-        return True
-    except Exception as e:
-        print(f"Error saving layout with project: {e}")
-        return False
-
+    # TODO: Replace layout saving with project
+    #
+    # This function was responsible for:
+    # 1. Capturing current layout from layout manager
+    # 2. Converting to JSON using layout serialization
+    # 3. Appending to project file with special markers
+    #
+    # Expected inputs:
+    #   - Project filename
+    #
+    # Expected outputs:
+    #   - Boolean indicating success
+    #
+    # Called:
+    #   - layout_manager.capture_current_layout()
+    #   - json.dumps() with layout data
+    #
+    # The layout data was appended to the project file after
+    # "__LAYOUT_DATA_BEGIN__" and "__LAYOUT_DATA_END__" markers
+    pass
 
 def load_layout_from_project(filename: str) -> bool:
-    """
-    Load and apply layout data from a project file.
-    
-    Extracts layout data that was appended to the project file
-    and applies it to the current UI.
-    
-    Args:
-        filename: Path to the project file
-        
-    Returns:
-        True if layout was loaded and applied successfully
-    """
-    try:
-        # Check if file exists
-        if not os.path.exists(filename):
-            return False
-            
-        # Read the file
-        with open(filename, 'r', encoding='utf-8') as f:
-            content = f.read()
-            
-        # Extract layout data
-        start_marker = "__LAYOUT_DATA_BEGIN__"
-        end_marker = "__LAYOUT_DATA_END__"
-        
-        start_pos = content.find(start_marker)
-        if start_pos == -1:
-            return False  # No layout data found
-            
-        start_pos += len(start_marker)
-        end_pos = content.find(end_marker, start_pos)
-        
-        if end_pos == -1:
-            return False  # Incomplete layout data
-            
-        # Extract and parse layout JSON
-        layout_json = content[start_pos:end_pos].strip()
-        layout_data = json.loads(layout_json)
-        
-        # Apply layout
-        layout_manager = get_layout_manager()
-        return layout_manager.apply_layout(layout_data)
-            
-    except Exception as e:
-        print(f"Error loading layout from project: {e}")
-        return False
+    # TODO: Replace layout loading from project
+    #
+    # This function was responsible for:
+    # 1. Reading project file and extracting layout section
+    # 2. Parsing layout JSON
+    # 3. Applying layout to current UI
+    #
+    # Expected inputs:
+    #   - Project filename
+    #
+    # Expected outputs:
+    #   - Boolean indicating success
+    #
+    # Called:
+    #   - json.loads() to parse layout data
+    #   - layout_manager.apply_layout() to restore layout
+    #
+    # The layout data was extracted from between
+    # "__LAYOUT_DATA_BEGIN__" and "__LAYOUT_DATA_END__" markers
+    pass
 
 
 def initialize_layout_integration():
-    """
-    Initialize the layout system integration with the project manager.
-    
-    This function registers the layout save/load handlers with the project manager.
-    Unlike the previous approach that used monkey patching, this uses the new
-    handler registration approach.
-    """
-    # Get the project manager
-    project_manager = get_project_manager()
-    
-    # Register layout handlers
-    project_manager.register_layout_handlers(
-        save_layout_with_project,
-        load_layout_from_project
-    )
-    
-    # Default to saving layouts with projects
-    project_manager.set_save_layouts(True)
-    
-    # Add an attribute to indicate integration has been applied
-    # This is for backward compatibility with existing code
-    project_manager._layout_extension_applied = True
+    # TODO: Replace layout integration initialization
+    #
+    # This function was responsible for:
+    # 1. Registering layout save/load handlers with project manager
+    # 2. Setting default layout save behavior
+    #
+    # Called:
+    #   - project_manager.register_layout_handlers() with 
+    #     save_layout_with_project and load_layout_from_project functions
+    #   - project_manager.set_save_layouts(True)
+    #
+    # This connected the layout serialization system with the project system
+    pass
 
 
 # For backward compatibility

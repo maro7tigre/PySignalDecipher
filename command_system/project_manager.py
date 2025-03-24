@@ -97,79 +97,48 @@ class ProjectManager:
     
     def save_project(self, model: Observable, filename: Optional[str] = None, 
                     format_type: Optional[str] = None, save_layout: Optional[bool] = None) -> bool:
-        """
-        Save the project to a file.
-        
-        Args:
-            model: Observable model to save
-            filename: Optional filename to save to (uses current filename if not provided)
-            format_type: Optional format type (uses default if not provided)
-            save_layout: Optional flag to save layout (uses default setting if not provided)
-            
-        Returns:
-            True if save was successful
-        """
-        # Use current filename if not provided
-        if filename is None:
-            if self._current_filename is None:
-                return False
-            filename = self._current_filename
-        else:
-            # Update current filename
-            self._current_filename = filename
-            
-        # Use default format if not provided
-        format_type = format_type or self._default_format
-            
-        # Save the model
-        success = ProjectSerializer.save_to_file(model, filename, format_type)
-        
-        # Save layout if enabled and handlers are available
-        if success and (save_layout if save_layout is not None else self._save_layouts):
-            if self._save_layout_func:
-                try:
-                    self._save_layout_func(filename)
-                except Exception as e:
-                    print(f"Warning: Failed to save layout with project: {e}")
-        
-        # Clear command history after successful save
-        if success:
-            self._command_manager.clear()
-            
-        return success
-    
+        # TODO: Replace project saving functionality
+        #
+        # This method was responsible for:
+        # 1. Saving Observable model to a file using ProjectSerializer
+        # 2. Optionally saving layout with the project
+        # 3. Clearing command history after successful save
+        #
+        # Expected inputs:
+        #   - Observable model to save
+        #   - Filename (uses current filename if None)
+        #   - Format type (json, bin, xml, yaml)
+        #   - Flag to include layout (uses default setting if None)
+        #
+        # Expected outputs:
+        #   - Boolean indicating success
+        #
+        # Called:
+        #   - ProjectSerializer.save_to_file() for model
+        #   - self._save_layout_func() for layout if enabled
+        pass
+
     def load_project(self, filename: str, format_type: Optional[str] = None,
                     load_layout: Optional[bool] = None) -> Optional[Observable]:
-        """
-        Load a project from a file.
-        
-        Args:
-            filename: Path to the file to load
-            format_type: Optional format type (will try to deduce from extension if not provided)
-            load_layout: Optional flag to load layout (uses default setting if not provided)
-            
-        Returns:
-            Loaded model, or None if loading failed
-        """
-        # Load the model
-        model = ProjectSerializer.load_from_file(filename, format_type)
-        
-        if model is not None:
-            # Update current filename
-            self._current_filename = filename
-            
-            # Clear command history since we're loading a fresh state
-            self._command_manager.clear()
-            
-            # Load layout if enabled and handlers are available
-            if load_layout if load_layout is not None else self._save_layouts:
-                if self._load_layout_func:
-                    try:
-                        self._load_layout_func(filename)
-                    except Exception as e:
-                        print(f"Warning: Failed to load layout from project: {e}")
-        
-        return model
+        # TODO: Replace project loading functionality
+        #
+        # This method was responsible for:
+        # 1. Loading Observable model from file using ProjectSerializer
+        # 2. Optionally loading layout data
+        # 3. Clearing command history after successful load
+        #
+        # Expected inputs:
+        #   - Filename to load from
+        #   - Format type (or deduce from extension)
+        #   - Flag to load layout (uses default setting if None)
+        #
+        # Expected outputs:
+        #   - Loaded Observable model, or None if loading failed
+        #
+        # Called:
+        #   - ProjectSerializer.load_from_file() for model
+        #   - self._load_layout_func() for layout if enabled
+        pass
     
     def get_current_filename(self) -> Optional[str]:
         """Get the current project filename."""

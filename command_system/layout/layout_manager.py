@@ -115,39 +115,28 @@ class LayoutManager:
         os.makedirs(self._layouts_dir, exist_ok=True)
         
     def capture_current_layout(self) -> Dict[str, Any]:
-        """
-        Capture the current UI layout.
-        
-        Returns:
-            Dictionary containing layout data
-        """
-        if not self._main_window:
-            return {}
-            
-        # Capture main window state
-        layout_data = {
-            "main_window": {
-                "geometry": self._main_window.saveGeometry().toBase64().data().decode('ascii'),
-                "state": self._main_window.saveState().toBase64().data().decode('ascii'),
-                "size": {
-                    "width": self._main_window.width(),
-                    "height": self._main_window.height()
-                }
-            },
-            "widgets": {},
-            "dock_creation_order": self._dock_creation_order.copy()
-        }
-        
-        # Capture registered widget states
-        for widget_id, widget in self._registered_widgets.items():
-            widget_data = self._capture_widget_state(widget)
-            if widget_data:
-                layout_data["widgets"][widget_id] = widget_data
-        
-        # Capture dock tabification relationships
-        layout_data["tabified_docks"] = self._capture_tabified_docks()
-                
-        return layout_data
+        # TODO: Replace layout capturing functionality
+        #
+        # This method was responsible for:
+        # 1. Capturing main window state and geometry
+        # 2. Capturing all registered widget states
+        # 3. Capturing dock tabification relationships
+        #
+        # Expected inputs:
+        #   - None (uses internal widget registry)
+        #
+        # Expected outputs:
+        #   - Dictionary with complete layout state
+        #
+        # Called from:
+        #   - save_layout_preset()
+        #   - save_layout_with_project()
+        #
+        # Created a data structure with:
+        #   - Main window geometry and state
+        #   - Individual widget states
+        #   - Dock widget relationships and ordering
+        pass
     
     def _capture_tabified_docks(self) -> List[List[str]]:
         """
@@ -210,50 +199,27 @@ class LayoutManager:
         return None
         
     def _capture_widget_state(self, widget: QWidget) -> Dict[str, Any]:
-        """
-        Capture the state of a specific widget.
-        
-        Args:
-            widget: Widget to capture state from
-            
-        Returns:
-            Dictionary with widget state data
-        """
-        # Skip if widget isn't valid
-        if not widget or not widget.isVisible():
-            return {}
-            
-        # Basic widget data
-        widget_data = {
-            "type": widget.__class__.__name__,
-            "geometry": {
-                "x": widget.x(),
-                "y": widget.y(),
-                "width": widget.width(),
-                "height": widget.height()
-            },
-            "visible": widget.isVisible()
-        }
-        
-        # Special handling for different widget types
-        if isinstance(widget, QSplitter):
-            widget_data["splitter"] = {
-                "sizes": widget.sizes()
-            }
-        elif isinstance(widget, QTabWidget):
-            widget_data["tabs"] = {
-                "current": widget.currentIndex(),
-                "count": widget.count(),
-                "tab_names": [widget.tabText(i) for i in range(widget.count())]
-            }
-        elif isinstance(widget, QDockWidget):
-            widget_data["dock"] = {
-                "floating": widget.isFloating(),
-                "area": self._get_dock_area(widget),
-                "object_name": widget.objectName()
-            }
-            
-        return widget_data
+        # TODO: Replace widget state capturing
+        #
+        # This method was responsible for:
+        # 1. Capturing state of a specific widget
+        # 2. Adding special handling for different widget types
+        #    (QSplitter, QTabWidget, QDockWidget)
+        #
+        # Expected inputs:
+        #   - QWidget instance
+        #
+        # Expected outputs:
+        #   - Dictionary with widget state
+        #
+        # Called from:
+        #   - capture_current_layout()
+        #
+        # Captured properties like:
+        #   - Geometry (position and size)
+        #   - Visibility
+        #   - Special properties for specific widget types
+        pass
         
     def _get_dock_area(self, dock_widget: QDockWidget) -> Any:
         """
@@ -281,65 +247,26 @@ class LayoutManager:
         return None
         
     def apply_layout(self, layout_data: Dict[str, Any]) -> bool:
-        """
-        Apply a saved layout.
-        
-        Args:
-            layout_data: Layout data dictionary
-            
-        Returns:
-            True if layout was applied successfully
-        """
-        if not self._main_window or not layout_data:
-            return False
-            
-        try:
-            # Get main window info
-            main_window_data = layout_data.get("main_window", {})
-            
-            # Calculate scaling factors if window size has changed
-            current_size = (self._main_window.width(), self._main_window.height())
-            saved_size = main_window_data.get("size", {})
-            saved_width = saved_size.get("width", current_size[0])
-            saved_height = saved_size.get("height", current_size[1])
-            
-            # Only scale if dimensions are significantly different
-            scale_x = current_size[0] / saved_width if abs(current_size[0] - saved_width) > 10 else 1.0
-            scale_y = current_size[1] / saved_height if abs(current_size[1] - saved_height) > 10 else 1.0
-            
-            # Get dock creation order from layout data
-            dock_creation_order = layout_data.get("dock_creation_order", [])
-            
-            # First, restore basic widget states
-            widget_data = layout_data.get("widgets", {})
-            
-            # First pass: Apply state to non-dock widgets
-            for widget_id, state in widget_data.items():
-                if not isinstance(self._get_or_create_widget(widget_id, state), QDockWidget):
-                    self._restore_widget_state(widget_id, state, scale_x, scale_y)
-                    
-            # Second pass: Apply state to dock widgets in creation order
-            # Restore dock widgets in the saved creation order
-            for dock_id in dock_creation_order:
-                if dock_id in widget_data:
-                    self._restore_widget_state(dock_id, widget_data[dock_id], scale_x, scale_y)
-                    
-            # Restore main window state if specified
-            if "state" in main_window_data:
-                try:
-                    state_bytes = QByteArray.fromBase64(main_window_data["state"].encode('ascii'))
-                    self._main_window.restoreState(state_bytes)
-                except Exception as e:
-                    print(f"Error restoring main window state: {e}")
-                    
-            # Restore tabified dock relationships
-            self._restore_tabified_docks(layout_data.get("tabified_docks", []))
-                
-            return True
-            
-        except Exception as e:
-            print(f"Error applying layout: {e}")
-            return False
+        # TODO: Replace layout application functionality
+        #
+        # This method was responsible for:
+        # 1. Restoring widget states from layout data
+        # 2. Restoring main window state
+        # 3. Restoring tabified dock relationships
+        #
+        # Expected inputs:
+        #   - Dictionary with layout data
+        #
+        # Expected outputs:
+        #   - Boolean indicating success
+        #
+        # Called from:
+        #   - load_layout_preset()
+        #   - load_layout_from_project()
+        #
+        # Handled scaling for window size differences
+        # Restored widgets in specific order (non-docks first, then docks in creation order)
+        pass
             
     def _restore_tabified_docks(self, tabified_groups: List[List[str]]) -> None:
         """
@@ -367,80 +294,30 @@ class LayoutManager:
                     self._main_window.tabifyDockWidget(first_dock, dock)
         
     def _restore_widget_state(self, widget_id: str, state: Dict[str, Any], 
-                             scale_x: float, scale_y: float) -> None:
-        """
-        Restore a widget's state.
-        
-        Args:
-            widget_id: ID of the widget to restore
-            state: Widget state data
-            scale_x: Horizontal scaling factor
-            scale_y: Vertical scaling factor
-        """
-        # Get widget or create if missing
-        widget = self._get_or_create_widget(widget_id, state)
-        if not widget:
-            return
-            
-        # Apply geometry with scaling
-        if "geometry" in state:
-            geometry = state["geometry"]
-            scaled_geometry = QRect(
-                int(geometry["x"] * scale_x),
-                int(geometry["y"] * scale_y),
-                int(geometry["width"] * scale_x),
-                int(geometry["height"] * scale_y)
-            )
-            widget.setGeometry(scaled_geometry)
-            
-        # Set visibility
-        if "visible" in state:
-            widget.setVisible(state["visible"])
-            
-        # Handle specific widget types
-        if isinstance(widget, QSplitter) and "splitter" in state:
-            splitter_data = state["splitter"]
-            
-            # Scale the sizes
-            original_sizes = splitter_data.get("sizes", [])
-            scaled_sizes = []
-            
-            # Scale based on orientation
-            orientation = widget.orientation()
-            scale = scale_x if orientation == Qt.Orientation.Horizontal else scale_y
-            
-            for size in original_sizes:
-                scaled_sizes.append(int(size * scale))
-                
-            # Apply scaled sizes
-            if scaled_sizes:
-                widget.setSizes(scaled_sizes)
-                
-        elif isinstance(widget, QTabWidget) and "tabs" in state:
-            tabs_data = state["tabs"]
-            
-            # Set active tab
-            current_tab = tabs_data.get("current", 0)
-            if 0 <= current_tab < widget.count():
-                widget.setCurrentIndex(current_tab)
-                
-        elif isinstance(widget, QDockWidget) and "dock" in state:
-            dock_data = state["dock"]
-            
-            # Store object name if present
-            if "object_name" in dock_data and dock_data["object_name"]:
-                widget.setObjectName(dock_data["object_name"])
-            
-            # Set dock area
-            if "area" in dock_data and not dock_data.get("floating", False):
-                area = dock_data["area"]
-                if area is not None and self._main_window:
-                    # Add to the main window
-                    self._main_window.addDockWidget(area, widget)
-            
-            # Set floating state
-            if "floating" in dock_data:
-                widget.setFloating(dock_data["floating"])
+                            scale_x: float, scale_y: float) -> None:
+        # TODO: Replace widget state restoration
+        #
+        # This method was responsible for:
+        # 1. Getting or creating the widget
+        # 2. Applying geometry with scaling
+        # 3. Setting visibility and specific widget state
+        #
+        # Expected inputs:
+        #   - Widget ID
+        #   - Widget state dictionary
+        #   - Horizontal and vertical scaling factors
+        #
+        # Expected outputs:
+        #   - None (modifies widgets directly)
+        #
+        # Called from:
+        #   - apply_layout()
+        #
+        # Handled specific widget types:
+        #   - QSplitter (sizes)
+        #   - QTabWidget (current tab)
+        #   - QDockWidget (area, floating state)
+        pass
         
     def _get_or_create_widget(self, widget_id: str, state: Dict[str, Any]) -> Optional[QWidget]:
         """
@@ -474,71 +351,46 @@ class LayoutManager:
         return None
         
     def save_layout_preset(self, preset_name: str) -> bool:
-        """
-        Save current layout as a preset.
-        
-        Args:
-            preset_name: Name of the preset
-            
-        Returns:
-            True if saved successfully
-        """
-        # Capture current layout
-        layout_data = self.capture_current_layout()
-        if not layout_data:
-            return False
-            
-        # Add to in-memory presets
-        self._layout_presets[preset_name] = layout_data
-        
-        # Save to file
-        try:
-            os.makedirs(self._layouts_dir, exist_ok=True)
-            
-            file_path = os.path.join(self._layouts_dir, f"{preset_name}.json")
-            with open(file_path, 'w', encoding='utf-8') as f:
-                json_str = serialize_layout(layout_data)
-                f.write(json_str)
-                
-            return True
-        except Exception as e:
-            print(f"Error saving layout preset: {e}")
-            return False
-            
+        # TODO: Replace layout preset saving
+        #
+        # This method was responsible for:
+        # 1. Capturing current layout data
+        # 2. Storing layout in memory and in file
+        # 3. Using serialize_layout() from layout_serialization.py
+        #
+        # Expected inputs:
+        #   - Preset name
+        #
+        # Expected outputs:
+        #   - Boolean indicating success
+        #
+        # Called:
+        #   - self.capture_current_layout() to get layout data
+        #   - serialize_layout() from layout_serialization.py to convert to JSON
+        #
+        # Stored presets in self._layout_presets and in self._layouts_dir directory
+        pass
+
     def load_layout_preset(self, preset_name: str) -> bool:
-        """
-        Load and apply a saved layout preset.
-        
-        Args:
-            preset_name: Name of the preset
-            
-        Returns:
-            True if loaded and applied successfully
-        """
-        # Check if already in memory
-        if preset_name in self._layout_presets:
-            return self.apply_layout(self._layout_presets[preset_name])
-            
-        # Try to load from file
-        try:
-            file_path = os.path.join(self._layouts_dir, f"{preset_name}.json")
-            
-            if not os.path.exists(file_path):
-                return False
-                
-            with open(file_path, 'r', encoding='utf-8') as f:
-                json_str = f.read()
-                layout_data = deserialize_layout(json_str)
-                
-            # Store in memory for future use
-            self._layout_presets[preset_name] = layout_data
-            
-            # Apply layout
-            return self.apply_layout(layout_data)
-            
-        except Exception as e:
-            print(f"Error loading layout preset: {e}")
-            return False
+        # TODO: Replace layout preset loading
+        #
+        # This method was responsible for:
+        # 1. Finding layout preset in memory or on disk
+        # 2. Deserializing layout using deserialize_layout()
+        # 3. Applying the layout
+        #
+        # Expected inputs:
+        #   - Preset name
+        #
+        # Expected outputs:
+        #   - Boolean indicating success
+        #
+        # Called:
+        #   - deserialize_layout() from layout_serialization.py
+        #   - self.apply_layout() to restore the layout
+        #
+        # Looked for presets in memory first, then in self._layouts_dir directory
+        pass
             
     def get_available_presets(self) -> List[str]:
         """
