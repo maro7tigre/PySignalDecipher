@@ -3,9 +3,9 @@ Base class for all command-aware widgets.
 """
 
 from typing import Any, Optional, Callable, TypeVar, Generic, Dict, Type
-from ...core.command import Command, PropertyCommand
-from ...core.command_manager import get_command_manager
-from ...core.observable import Observable
+from ..core.command import Command, PropertyCommand
+from ..core.command_manager import get_command_manager
+from ..core.observable import Observable
 
 T = TypeVar('T')
 

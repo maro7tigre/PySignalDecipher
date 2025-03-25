@@ -31,6 +31,17 @@ classDiagram
         +clear()
     }
     
+    class CommandWidgetBase {
+        -_command_enabled: bool
+        -_command_manager: CommandManager
+        -_observable_model: Observable
+        -_observable_property: str
+        +bind_to_model()
+        +unbind_from_model()
+        +_update_widget_from_model()
+        +_on_widget_value_changed()
+    }
+    
     %% Serialization System (New Components)
     class SerializationManager {
         -_format_adapters: Dict
@@ -123,4 +134,5 @@ classDiagram
     
     CommandManager --> Command : executes
     Observable --> ObservableProperty : uses
+    CommandWidgetBase --> Observable : binds
 ```

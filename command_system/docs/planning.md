@@ -183,15 +183,18 @@ graph LR
         PS[ProjectSerializer]
     end
     
-    subgraph Models
+    subgraph Components
         OBS[Observable]
         PROP[Properties]
+        CWB[CommandWidgetBase]
     end
     
     CM --> CH
     CM --> PC
     PC --> PROP
     PROP --> OBS
+    CWB --> CM
+    CWB --> OBS
     PS --> SM
     SM --> OBS
 ```
@@ -245,14 +248,11 @@ register_type(type_name, class_type, factory)
 register_serializer(type_name, serializer, deserializer)
 ```
 
-### 9.2. Extensible Component API
+### 9.2. Widget Integration API
 ```
-# Serializer protocol
-serialize(obj, context) -> dict
-deserialize(data, context) -> obj
-
-# Factory protocol
-create_instance(type_name, **kwargs) -> obj
+# Command widget approach
+widget = CommandAwareWidget()
+widget.bind_to_model(model, "property_name")
 ```
 
 ### 9.3. Clean Integration Points

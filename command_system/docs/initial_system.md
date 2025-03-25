@@ -95,12 +95,15 @@ classDiagram
         +load_project()
     }
     
-    class PropertyBinder {
-        -_bindings: Dict
+    class CommandWidgetBase {
+        -_command_enabled: bool
         -_command_manager: CommandManager
-        +bind()
-        +unbind()
-        +unbind_all()
+        -_observable_model: Observable
+        -_observable_property: str
+        +bind_to_model()
+        +unbind_from_model()
+        +_update_widget_from_model()
+        +_on_widget_value_changed()
     }
     
     class DockManager {
@@ -118,8 +121,8 @@ classDiagram
     CompoundCommand <|-- MacroCommand : extends
     CommandManager --> CommandHistory : uses
     CommandManager --> Command : executes
-    PropertyBinder --> Observable : binds
-    PropertyBinder --> CommandManager : uses
+    CommandWidgetBase --> Observable : binds
+    CommandWidgetBase --> CommandManager : uses
     ProjectManager --> CommandManager : uses
     ProjectManager --> Observable : serializes
     LayoutManager --> DockManager : uses

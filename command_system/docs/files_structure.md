@@ -33,20 +33,14 @@ command_system/
 │   ├── layout_manager.py
 │   ├── layout_serialization.py
 │   └── project_integration.py
-├── ui/                           # UI components (unchanged structure)
+├── widgets/                      # UI components (renamed from ui/)
 │   ├── __init__.py
-│   ├── property_binding.py
-│   ├── qt_bindings.py
-│   ├── dock/
-│   │   ├── __init__.py
-│   │   ├── dock_manager.py
-│   │   ├── dock_commands.py
-│   │   └── dock_widgets.py
-│   └── widgets/
+│   ├── base.py                   # Base class for command-aware widgets
+│   └── docks/                    # Dock management components
 │       ├── __init__.py
-│       ├── base.py
-│       ├── line_edit.py
-│       ├── ...
+│       ├── dock_manager.py
+│       ├── dock_commands.py
+│       └── dock_widgets.py
 ```
 
 ## Key Changes
@@ -55,6 +49,10 @@ command_system/
 2. **New serialization system**: Completely separate serialization system
 3. **Project management**: Dedicated project directory for project operations
 4. **Preserved layout system**: Keep layout system with same structure
-5. **Unchanged UI components**: Preserve existing UI components
+5. **Simplified UI components**: 
+   - Renamed `ui` directory to `widgets`
+   - Removed `property_binding.py` and `qt_bindings.py`
+   - Moved `base.py` directly under `widgets/`
+   - Consolidated dock-related files in `widgets/docks/`
 
-This structure clearly separates concerns while maintaining compatibility with existing code.
+This structure clearly separates concerns while streamlining the widget component system. By focusing on the `CommandWidgetBase` approach and removing the redundant property binding system, we've created a more consistent and maintainable architecture.

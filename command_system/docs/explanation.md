@@ -8,10 +8,14 @@ The PySignalDecipher command system is a comprehensive framework that implements
 flowchart TD
     User[User] -- "Interacts with" --> UI[UI Component]
     UI -- "Triggers" --> Command[Command Creation]
+    UI -- "Value Changes" --> CmdWidget[Command Widget]
+    CmdWidget -- "Creates" --> PropCmd[Property Command]
     Command -- "Executed by" --> CmdMgr[Command Manager]
+    PropCmd -- "Executed by" --> CmdMgr
     CmdMgr -- "Updates" --> Model[Observable Model]
     Model -- "Notifies" --> Observer[Property Observers]
     Observer -- "Updates" --> UI
+    Observer -- "Updates" --> CmdWidget
     CmdMgr -- "Adds to" --> History[Command History]
     History -- "Enables" --> UndoRedo[Undo/Redo]
     UndoRedo -- "Modifies" --> Model
@@ -100,7 +104,7 @@ class MyCustomCommand(Command):
 #### `PropertyCommand` Class
 - **Role**: Command for changing a single property value
 - **Usage**: 
-  - **Internal**: Used automatically by property bindings
+  - **Internal**: Used automatically by command-aware widgets
   - **User**: Typically not created directly
 - **How it works**: Stores old and new property values to enable undo/redo
 
@@ -147,17 +151,20 @@ class MyCustomCommand(Command):
 ```mermaid
 sequenceDiagram
     participant UI as UI Component
+    participant CW as Command Widget
     participant CM as CommandManager
     participant CH as CommandHistory
     participant CMD as Command
     participant Model as Observable Model
     
-    UI->>CM: execute(command)
+    UI->>CW: Value changes
+    CW->>CM: execute(PropertyCommand)
     CM->>CM: before_execute_callbacks
     CM->>CH: add_command(command)
     CM->>CMD: execute()
     CMD->>Model: update state
     Model-->>UI: notify property changes
+    Model-->>CW: notify property changes
     CM->>CM: after_execute_callbacks
     
     Note over UI,Model: Undo Operation
@@ -169,56 +176,91 @@ sequenceDiagram
     CM->>CMD: undo()
     CMD->>Model: restore state
     Model-->>UI: notify property changes
+    Model-->>CW: notify property changes
     CM->>CM: after_undo_callbacks
 ```
 
 ## UI Integration
 
-### Property Binding (`ui/property_binding.py`)
+### Command Widget (`widgets/base.py`)
 
-#### `Binding` Abstract Class
-- **Role**: Base class for connecting model properties to UI widgets
+#### `CommandWidgetBase` Class
+- **Role**: Base mixin for creating command-aware widgets
 - **Usage**: 
-  - **Internal**: Extended for specific widget types
-  - **User**: Not typically used directly
-- **How it works**: Observes model property changes and widget value changes, keeping them in sync
-
-#### `PropertyBinder` Class
-- **Role**: Creates and manages property bindings
-- **Usage**: 
-  - **Internal**: Framework feature
-  - **User**: Used directly to bind model properties to widgets
-- **How it works**: Creates appropriate bindings based on widget types
+  - **Internal**: Mixed into widget implementations
+  - **User**: Used directly when creating command-aware widgets
+- **How it works**: Connects widget value changes to model properties via commands
 - **Key Methods**:
-  - `bind()`: Create binding between model property and widget
-  - `unbind()`: Remove a binding
-  - `unbind_all()`: Remove all bindings
+  - `bind_to_model()`: Connect widget to a model property
+  - `unbind_from_model()`: Disconnect from model
+  - `_update_widget_from_model()`: Update widget from model property
+  - `_on_widget_value_changed()`: Handle widget value changes
+  - `_create_property_command()`: Create command for property changes
 
 ```python
 # User code example
-property_binder = PropertyBinder()
-property_binder.bind(my_model, "name", name_line_edit, "text")
-property_binder.bind(my_model, "count", count_spin_box, "value")
+class CommandLineEdit(QLineEdit, CommandWidgetBase):
+    def __init__(self, parent=None):
+        QLineEdit.__init__(self, parent)
+        CommandWidgetBase.__init__(self)
+        self._setup_command_widget("text")
+        self.textChanged.connect(self._on_widget_value_changed)
+    
+    def _get_widget_value(self):
+        return self.text()
+        
+    def _set_widget_value(self, value):
+        self.setText(value if value is not None else "")
+
+# Usage
+line_edit = CommandLineEdit()
+line_edit.bind_to_model(model, "name")
 ```
 
-### Qt Bindings (`ui/qt_bindings.py`)
+This approach provides a clean, direct connection between widgets and models with built-in command support. The widget mixin handles all the details of:
 
-Contains specific binding implementations for Qt widgets:
-- `LineEditBinding`: For QLineEdit text
-- `SpinBoxBinding`: For QSpinBox values
-- `CheckBoxBinding`: For QCheckBox checked state
-- etc.
+1. Tracking when a user edits a value
+2. Creating appropriate commands for changes
+3. Updating the widget when the model property changes
+4. Managing the binding lifecycle
+5. Preventing update loops
 
-These are used internally by PropertyBinder and not typically used directly by users.
+Using the `CommandWidgetBase` as a mixin allows creating custom command-aware versions of any widget type, while maintaining the widget's original behavior and appearance.
 
-### Command-Aware Widgets (`ui/widgets/base.py`)
+### Dock Management (`widgets/docks/`)
 
-#### `CommandWidgetBase` Class
-- **Role**: Base mixin for widgets that create commands automatically
+#### `DockManager` Class
+- **Role**: Manages dock widgets and their states
 - **Usage**: 
-  - **Internal**: Mixed into widget implementations
-  - **User**: Not typically used directly
-- **How it works**: Converts widget value changes into commands
+  - **Internal**: Used by layout system
+  - **User**: Used directly for dock management
+- **How it works**: Tracks dock widgets, their relationships, and serialization
+- **Key Methods**:
+  - `register_dock()`: Register a dock widget
+  - `save_dock_state()`: Save a dock's state
+  - `restore_dock_state()`: Restore a dock's state
+
+#### `CommandDockWidget` Class
+- **Role**: Command-aware dock widget
+- **Usage**: 
+  - **Internal**: Framework feature
+  - **User**: Used directly as base for dock widgets
+- **How it works**: Creates commands for dock state changes, such as position, floating state, etc.
+- **Key Features**:
+  - Tracks dock movement and state changes
+  - Creates appropriate commands for dock operations
+  - Integrates with dock manager
+
+#### `ObservableDockWidget` Class
+- **Role**: Dock widget that is also Observable
+- **Usage**: 
+  - **Internal**: Framework feature
+  - **User**: Used directly for bindable docks
+- **How it works**: Exposes dock properties as observable properties
+- **Key Features**:
+  - Exposes title, floating state, visibility as observable properties
+  - Enables binding dock properties to model properties
+  - Maintains synchronization between dock state and properties
 
 ## Layout and Dock Management
 
@@ -236,35 +278,6 @@ These are used internally by PropertyBinder and not typically used directly by u
   - `save_layout_preset()`: Save layout with a name
   - `load_layout_preset()`: Load a named layout
 
-### Dock Manager (`ui/dock/dock_manager.py`)
-
-#### `DockManager` Class
-- **Role**: Manages dock widgets and their states
-- **Usage**: 
-  - **Internal**: Used by layout system
-  - **User**: Used directly for dock management
-- **How it works**: Tracks dock widgets, their relationships, and serialization
-- **Key Methods**:
-  - `register_dock()`: Register a dock widget
-  - `save_dock_state()`: Save a dock's state
-  - `restore_dock_state()`: Restore a dock's state
-
-### Dock Widgets (`ui/dock/dock_widgets.py`)
-
-#### `CommandDockWidget` Class
-- **Role**: Command-aware dock widget
-- **Usage**: 
-  - **Internal**: Framework feature
-  - **User**: Used directly as base for dock widgets
-- **How it works**: Creates commands for dock state changes
-
-#### `ObservableDockWidget` Class
-- **Role**: Dock widget that is also Observable
-- **Usage**: 
-  - **Internal**: Framework feature
-  - **User**: Used directly for bindable docks
-- **How it works**: Exposes dock properties as observable properties
-
 ## Project Management
 
 ### Project Manager (`project/project_manager.py`)
@@ -280,6 +293,36 @@ These are used internally by PropertyBinder and not typically used directly by u
   - `load_project()`: Load model from file
   - `new_project()`: Create a new model
 
+## Serialization System (Planned)
+
+### Serialization Manager (`serialization/manager.py`)
+
+#### `SerializationManager` Class
+- **Role**: Central hub for serialization operations
+- **Usage**: 
+  - **Internal**: Used by other components
+  - **User**: Not typically used directly
+- **How it works**: Manages serializers, format adapters, and serialization context
+- **Key Methods**:
+  - `serialize()`: Serialize an object to a specified format
+  - `deserialize()`: Deserialize data into objects
+  - `register_type()`: Register a type for serialization
+  - `register_serializer()`: Register custom serializer functions
+
+### Registry Engine (`serialization/registry.py`)
+
+#### `RegistryEngine` Class
+- **Role**: Manages type registration and factory functions
+- **Usage**: 
+  - **Internal**: Used by SerializationManager
+  - **User**: Not typically used directly
+- **How it works**: Associates type names with classes, factories, and serializers
+- **Key Methods**:
+  - `register_type()`: Register a type with a name
+  - `register_factory()`: Register a factory function for a type
+  - `create_instance()`: Create an instance of a registered type
+  - `find_best_serializer()`: Find the appropriate serializer for an object
+
 ## Usage Patterns
 
 ### Model Definition
@@ -293,6 +336,31 @@ class SignalModel(Observable):
     def process(self):
         # Process signal data
         pass
+```
+
+### Custom Command-Aware Widgets
+
+```python
+class CommandSlider(QSlider, CommandWidgetBase):
+    def __init__(self, orientation=Qt.Horizontal, parent=None):
+        QSlider.__init__(self, orientation, parent)
+        CommandWidgetBase.__init__(self)
+        self._setup_command_widget("value")
+        self.valueChanged.connect(self._on_widget_value_changed)
+    
+    def _get_widget_value(self):
+        return self.value()
+        
+    def _set_widget_value(self, value):
+        try:
+            self.setValue(int(value))
+        except (ValueError, TypeError):
+            self.setValue(self.minimum())
+
+# Usage
+amplitude_slider = CommandSlider(Qt.Horizontal)
+amplitude_slider.setRange(0, 100)
+amplitude_slider.bind_to_model(signal_model, "amplitude")
 ```
 
 ### Command Execution
@@ -312,18 +380,6 @@ if cmd_mgr.can_undo():
 # Redo last undone command
 if cmd_mgr.can_redo():
     cmd_mgr.redo()
-```
-
-### Property Binding
-
-```python
-# Create property binder
-binder = PropertyBinder()
-
-# Bind model properties to widgets
-binder.bind(signal_model, "name", name_edit, "text")
-binder.bind(signal_model, "amplitude", amplitude_slider, "value")
-binder.bind(signal_model, "frequency", frequency_spin, "value")
 ```
 
 ### Layout Management
@@ -378,12 +434,12 @@ stateDiagram-v2
     Loading --> Updated: Project Loaded
     
     note right of Executing
-        1. Command created
+        1. Command created by widget or action
         2. Added to history
         3. Execute method called
         4. Model updated
         5. Observers notified
-        6. UI updated
+        6. Widgets updated
     end note
     
     note right of Undoing
@@ -391,7 +447,7 @@ stateDiagram-v2
         2. Call undo method
         3. Model restored
         4. Observers notified
-        5. UI updated
+        5. Widgets updated
     end note
     
     note right of Saving
@@ -401,13 +457,67 @@ stateDiagram-v2
     end note
 ```
 
-## Limitations of Current System
+## Key System Features
 
-The primary limitation is the incomplete serialization system:
+### 1. Two-Way Data Binding
+The system provides seamless two-way data binding between widgets and model properties:
+- When a widget value changes, the model is updated through a command
+- When a model property changes, all bound widgets are updated
+- All changes are automatically tracked in the command history
 
-1. **Limited Serialization**: Project serialization is not fully implemented
-2. **No Serialization Formats**: No support for different formats (JSON, Binary, XML)
-3. **No Reference Resolution**: No standard approach for complex object references
-4. **Separate Layout Serialization**: Layout and project serialization are separate
+### 2. Command-Based State Changes
+All state changes go through the command system, which provides:
+- Consistent state modification
+- Automatic undo/redo capability
+- History tracking
+- Event notifications
 
-These limitations are addressed in the planned serialization system as described in the serialization planning documents.
+### 3. Observable Property Tracking
+The observable pattern enables:
+- Automatic notification of property changes
+- Dependency tracking between properties
+- Clean model definition with typed properties
+- Separation of UI and model logic
+
+### 4. Layout Persistence
+The layout system enables:
+- Saving and restoring widget arrangements
+- Managing dock widget relationships
+- Persisting layout with projects or separately
+- Preset management for different view configurations
+
+### 5. Serialization System (Planned)
+The serialization system will provide:
+- Object identity and reference preservation
+- Support for multiple serialization formats
+- Type-safe deserialization
+- Custom serialization for complex objects
+
+## Implementation Best Practices
+
+### 1. Model-First Approach
+- Define models with observable properties first
+- Keep business logic in models
+- Use commands for all model modifications
+- Bind widgets to models, not the other way around
+
+### 2. Command Granularity
+- Keep commands small and focused
+- Use compound commands for complex operations
+- Define clear command names for user-visible operations
+- Store only necessary state for undo/redo
+
+### 3. Widget Extensions
+- Create command-aware versions of common widgets
+- Keep widget appearance and behavior consistent with originals
+- Use mixins to separate command logic from widget implementation
+- Implement standard patterns for different widget types
+
+### Current Limitations
+
+1. **Incomplete Serialization**: The serialization system is planned but not fully implemented
+2. **Reference Resolution**: No standard approach for complex object references
+3. **Limited Widget Types**: Not all widget types have command-aware versions yet
+4. **Documentation Coverage**: Some advanced features need more documentation
+
+These limitations will be addressed in future versions of the system.
