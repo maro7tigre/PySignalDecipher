@@ -233,7 +233,7 @@ class CommandWidgetBase(Generic[T]):
             
         if self._custom_command_factory:
             # Use custom command factory if provided
-            return self._custom_command_factory(
+            command = self._custom_command_factory(
                 self._observable_model, 
                 self._observable_property,
                 new_value,
@@ -241,11 +241,19 @@ class CommandWidgetBase(Generic[T]):
             )
         else:
             # Use default PropertyCommand
-            return PropertyCommand(
+            command = PropertyCommand(
                 self._observable_model,
                 self._observable_property,
                 new_value
             )
+            
+        # Add context information to the command
+        from ..core.widget_context import get_widget_context_registry
+        context = get_widget_context_registry().get_widget_container(self)
+        if context:
+            command.set_execution_context(context)
+            
+        return command
             
     def set_command_factory(self, factory: Callable[[Observable, str, Any, Any], Command]):
         """

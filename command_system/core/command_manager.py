@@ -175,6 +175,9 @@ class CommandManager:
             try:
                 self._is_updating = True
                 
+                # Navigate to command context if available
+                self._navigate_to_command_context(command)
+                
                 # Call before undo callbacks
                 for callback in self._before_undo_callbacks.values():
                     callback(command)
@@ -214,6 +217,9 @@ class CommandManager:
         if command:
             try:
                 self._is_updating = True
+                
+                # Navigate to command context if available
+                self._navigate_to_command_context(command)
                 
                 # Call before execute callbacks (same as execute)
                 for callback in self._before_execute_callbacks.values():
@@ -261,7 +267,31 @@ class CommandManager:
             True if redo is available
         """
         return self._history.can_redo()
-    
+
+    def _navigate_to_command_context(self, command: Command) -> None:
+        """
+        Navigate to the UI context where the command was created.
+        
+        Args:
+            command: Command containing execution context
+        """
+        if not command:
+            return
+            
+        context = command.get_execution_context()
+        if not context or not context.get('container'):
+            return
+            
+        container = context.get('container')
+        widget = context.get('widget')
+        
+        # Check if container has the activate_child method
+        if hasattr(container, 'activate_child') and callable(container.activate_child):
+            try:
+                container.activate_child(widget)
+            except Exception as e:
+                print(f"Error navigating to command context: {e}")
+
     def is_updating(self) -> bool:
         """
         Check if we're currently processing a command update.
