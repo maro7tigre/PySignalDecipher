@@ -128,7 +128,7 @@ class CommandManager:
             True if command executed successfully
         """
         
-        if self._is_updating:
+        if self._is_updating or command is None:
             return True  # Skip if we're already processing a command ? TODO: indicate that the command was skipped ?
             
         try:

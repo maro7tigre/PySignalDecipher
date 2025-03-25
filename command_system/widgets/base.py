@@ -3,12 +3,21 @@ Base class for all command-aware widgets.
 """
 
 from typing import Any, Optional, Callable, TypeVar, Generic, Dict, Type
+from enum import Enum
+from PySide6.QtCore import QTimer
 from ..core.command import Command, PropertyCommand
 from ..core.command_manager import get_command_manager
 from ..core.observable import Observable
 
 T = TypeVar('T')
 
+
+class CommandExecutionMode(Enum):
+    """Defines when commands should be executed for a widget."""
+    ON_CHANGE = 1      # Execute command immediately when value changes
+    DELAYED = 2        # Execute after delay + on edit end
+    ON_EDIT_END = 3    # Execute only when editing is finished
+    
 
 class CommandWidgetBase(Generic[T]):
     """
@@ -31,6 +40,12 @@ class CommandWidgetBase(Generic[T]):
         self._old_value = None
         self._custom_command_factory = None
         
+        # Command execution mode
+        self._command_execution_mode = CommandExecutionMode.ON_EDIT_END
+        self._delay_timer = None
+        self._command_delay = 300  # Default delay in milliseconds
+        self._pending_command = None
+        
     def _setup_command_widget(self, value_property_name: str):
         """
         Set up the command widget with the property name to track.
@@ -39,6 +54,24 @@ class CommandWidgetBase(Generic[T]):
             value_property_name: Name of the widget property to track
         """
         self._value_property_name = value_property_name
+        
+    def set_command_execution_mode(self, mode: CommandExecutionMode):
+        """
+        Set when commands should be executed for this widget.
+        
+        Args:
+            mode: Command execution mode
+        """
+        self._command_execution_mode = mode
+        
+    def set_command_delay(self, delay_ms: int):
+        """
+        Set the delay for DELAYED command execution mode.
+        
+        Args:
+            delay_ms: Delay in milliseconds
+        """
+        self._command_delay = delay_ms
         
     def enable_commands(self, enabled: bool = True):
         """
@@ -125,13 +158,39 @@ class CommandWidgetBase(Generic[T]):
             # Only proceed if value actually changed
             if new_value != current_model_value:
                 if self._command_enabled:
-                    # Create and execute command
-                    cmd = self._create_property_command(new_value)
-                    if cmd:  # Only execute if command was created
-                        self._command_manager.execute(cmd)
+                    # Handle according to execution mode
+                    if self._command_execution_mode == CommandExecutionMode.ON_CHANGE:
+                        # Execute immediately
+                        cmd = self._create_property_command(new_value)
+                        if cmd:
+                            self._command_manager.execute(cmd)
+                            
+                    elif self._command_execution_mode == CommandExecutionMode.DELAYED:
+                        # Cancel any pending timer
+                        if self._delay_timer and self._delay_timer.isActive():
+                            self._delay_timer.stop()
+                            
+                        # Create command to execute after delay
+                        self._pending_command = self._create_property_command(new_value)
+                        
+                        # Start timer to execute command
+                        if not self._delay_timer:
+                            self._delay_timer = QTimer(self)
+                            self._delay_timer.setSingleShot(True)
+                            self._delay_timer.timeout.connect(self._execute_delayed_command)
+                            
+                        self._delay_timer.start(self._command_delay)
+                        
+                    # ON_EDIT_END does nothing here - handled in _end_edit
                 else:
-                    # Update model directly
+                    # Update model directly if commands disabled
                     setattr(self._observable_model, self._observable_property, new_value)
+                
+    def _execute_delayed_command(self):
+        """Execute the pending command after delay."""
+        if self._pending_command:
+            self._command_manager.execute(self._pending_command)
+            self._pending_command = None
                 
     def _begin_edit(self):
         """Called when user begins editing the widget value."""
@@ -141,11 +200,21 @@ class CommandWidgetBase(Generic[T]):
         """Called when user finishes editing the widget value."""
         # If old and new values are different, create a command
         new_value = self._get_widget_value()
+        
+        # Cancel any pending delayed command
+        if self._delay_timer and self._delay_timer.isActive():
+            self._delay_timer.stop()
+            self._pending_command = None
+            
         if self._old_value != new_value:
             if self._command_enabled and self._observable_model and self._observable_property:
-                cmd = self._create_property_command(new_value, self._old_value)
-                self._command_manager.execute(cmd)
-                
+                # Only create command for ON_EDIT_END mode or to finalize DELAYED mode
+                if (self._command_execution_mode == CommandExecutionMode.ON_EDIT_END or
+                    self._command_execution_mode == CommandExecutionMode.DELAYED):
+                    cmd = self._create_property_command(new_value, self._old_value)
+                    if cmd:
+                        self._command_manager.execute(cmd)
+                        
     def _create_property_command(self, new_value: Any, old_value: Any = None) -> Command:
         """
         Create a property command for the current change.

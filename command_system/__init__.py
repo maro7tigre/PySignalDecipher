@@ -9,7 +9,6 @@ providing working undo/redo functionality, and integrating with Qt widgets.
 from .core.observable import Observable, ObservableProperty
 from .core.command import Command, CompoundCommand, PropertyCommand, MacroCommand
 from .core.command_manager import CommandManager, get_command_manager
-from .ui.property_binding import PropertyBinder
 from .project.project_manager import ProjectManager, get_project_manager
 
 # Initialize system components - this will auto-initialize layout integration
@@ -32,7 +31,4 @@ __all__ = [
     # Project management
     'ProjectManager',
     'get_project_manager',
-    
-    # UI integration
-    'PropertyBinder',
 ]
