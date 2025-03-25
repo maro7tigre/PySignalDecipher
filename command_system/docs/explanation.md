@@ -262,6 +262,68 @@ Using the `CommandWidgetBase` as a mixin allows creating custom command-aware ve
   - Enables binding dock properties to model properties
   - Maintains synchronization between dock state and properties
 
+### Command Widget Command Execution Modes
+
+The `CommandWidgetBase` class now supports different command execution modes, allowing flexibility in when commands are created and executed:
+
+```mermaid
+graph TD
+    WidgetChange[Widget Value Change] --> ExecutionMode{Command Execution Mode}
+    ExecutionMode -->|ON_CHANGE| ImmediateCmd[Execute Command Immediately]
+    ExecutionMode -->|DELAYED| DelayTimer[Start Delay Timer]
+    ExecutionMode -->|ON_EDIT_END| NoAction[No Immediate Action]
+    
+    DelayTimer --> TimerExpired{Timer Expired?}
+    TimerExpired -->|Yes| DelayedCmd[Execute Command]
+    TimerExpired -->|No| ContinueEditing[Continue Editing]
+    
+    EditEnd[Editing Ended] --> CheckMode{Command Execution Mode}
+    CheckMode -->|ON_EDIT_END| EndCmd[Execute Command]
+    CheckMode -->|DELAYED| EndDelayCmd[Execute/Finalize Command]
+    CheckMode -->|ON_CHANGE| NoEndAction[No Action - Already Executed]
+```
+
+#### Available Execution Modes
+
+1. **ON_CHANGE**: Commands are executed immediately when the widget value changes. This creates a separate command for each keystroke or change.
+
+2. **DELAYED**: Commands are created after a short delay (default 300ms) from the first change, and also when editing completes. This balances responsiveness with efficiency.
+
+3. **ON_EDIT_END**: Commands are only created when editing is complete (e.g., when the user presses Enter or focus leaves the widget). This creates a single command for an entire editing session.
+
+#### Setting Execution Modes
+
+You can set the command execution mode when creating a widget:
+
+```python
+# Create a line edit with immediate command execution
+immediate_edit = CommandLineEdit(execution_mode=CommandExecutionMode.ON_CHANGE)
+
+# Create a line edit with delayed command execution
+delayed_edit = CommandLineEdit(execution_mode=CommandExecutionMode.DELAYED)
+
+# Create a line edit with command execution only at edit end (default)
+end_edit = CommandLineEdit(execution_mode=CommandExecutionMode.ON_EDIT_END)
+```
+
+You can also change the mode after creation:
+
+```python
+# Change execution mode
+edit_field.set_command_execution_mode(CommandExecutionMode.DELAYED)
+
+# For DELAYED mode, you can customize the delay
+edit_field.set_command_delay(500)  # 500ms delay
+```
+
+#### Choosing the Right Mode
+
+- **ON_CHANGE**: Best for widgets where each change is significant and should be a separate undoable action (e.g., checkboxes, radio buttons).
+  
+- **DELAYED**: Good for text fields where you want to see changes reflected quickly in the model, but don't want an excessive number of commands (e.g., search fields).
+  
+- **ON_EDIT_END**: Ideal for form fields where only the final value matters (e.g., name, email fields).
+
 ## Layout and Dock Management
 
 ### Layout Manager (`layout/layout_manager.py`)
