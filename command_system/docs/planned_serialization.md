@@ -1,6 +1,6 @@
 ```mermaid
 classDiagram
-    %% Core Command System (Existing Components)
+    %% Core Command System (Current Components)
     class Observable {
         -_property_observers: Dict
         -_id: str
@@ -16,12 +16,10 @@ classDiagram
     
     class Command {
         <<abstract>>
-        -_execution_context: Dict
+        -trigger_widget: Any
         +execute()* 
         +undo()*
         +redo()
-        +set_execution_context()
-        +get_execution_context()
     }
     
     class CommandManager {
@@ -40,6 +38,8 @@ classDiagram
         -_command_manager: CommandManager
         -_observable_model: Observable
         -_observable_property: str
+        -container: Any
+        -container_info: Any
         +bind_to_model()
         +unbind_from_model()
         +_update_widget_from_model()
@@ -47,11 +47,13 @@ classDiagram
         +_create_property_command()
     }
     
-    class ContainerWidget {
-        <<interface>>
+    class ContainerWidgetMixin {
+        -container: Any
+        -container_info: Any
         +activate_child()*
         +get_container_id()*
-        +register_child()
+        +register_contents()
+        +navigate_to_container()
     }
     
     class CommandTabWidget {
@@ -59,6 +61,7 @@ classDiagram
         +get_container_id()
         +activate_child()
         +addTab()
+        +navigate_to_container()
     }
     
     class CommandDockWidget {
@@ -66,13 +69,7 @@ classDiagram
         +get_container_id()
         +activate_child()
         +setWidget()
-    }
-    
-    class WidgetContextRegistry {
-        -_widget_contexts: Dict
-        +register_widget_container()
-        +unregister_widget()
-        +get_widget_container()
+        +navigate_to_container()
     }
     
     %% Serialization System (New Components)
@@ -126,6 +123,8 @@ classDiagram
     class CommandSerializer {
         +serialize_command()
         +deserialize_command()
+        +serialize_trigger_widget()
+        +deserialize_trigger_widget()
     }
     
     class ContainerSerializer {
@@ -165,7 +164,7 @@ classDiagram
     
     ObservableSerializer --> Observable : serializes
     CommandSerializer --> Command : serializes
-    ContainerSerializer --> ContainerWidget : serializes
+    ContainerSerializer --> ContainerWidgetMixin : serializes
     
     ProjectManager --> SerializationManager : uses
     ProjectManager --> RegistryEngine : uses
@@ -173,12 +172,10 @@ classDiagram
     LayoutManager --> SerializationManager : uses
     
     CommandManager --> Command : executes
-    CommandManager --> WidgetContextRegistry : navigates using
     Observable --> ObservableProperty : uses
     CommandWidgetBase --> Observable : binds
-    CommandWidgetBase --> WidgetContextRegistry : registers with
+    CommandWidgetBase --> ContainerWidgetMixin : references
     
-    ContainerWidget <|-- CommandTabWidget : implements
-    ContainerWidget <|-- CommandDockWidget : implements
-    ContainerWidget --> WidgetContextRegistry : registers children
+    ContainerWidgetMixin <|-- CommandTabWidget : implements
+    ContainerWidgetMixin <|-- CommandDockWidget : implements
 ```

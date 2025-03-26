@@ -23,12 +23,10 @@ classDiagram
 
     class Command {
         <<abstract>>
-        -_execution_context: Dict
+        -trigger_widget: Any
         +execute()* 
         +undo()*
         +redo()
-        +set_execution_context()
-        +get_execution_context()
     }
     
     class CompoundCommand {
@@ -79,18 +77,13 @@ classDiagram
         -_navigate_to_command_context()
     }
     
-    class WidgetContextRegistry {
-        -_widget_contexts: Dict
-        +register_widget_container()
-        +unregister_widget()
-        +get_widget_container()
-    }
-    
-    class ContainerWidget {
-        <<interface>>
-        +activate_child()*
+    class ContainerWidgetMixin {
+        -container: Any
+        -container_info: Any
         +get_container_id()*
-        +register_child()
+        +activate_child()*
+        +register_contents()
+        +navigate_to_container()
     }
     
     class CommandTabWidget {
@@ -98,6 +91,7 @@ classDiagram
         +get_container_id()
         +activate_child()
         +addTab()
+        +navigate_to_container()
     }
     
     class CommandDockWidget {
@@ -105,6 +99,7 @@ classDiagram
         +get_container_id()
         +activate_child()
         +setWidget()
+        +navigate_to_container()
     }
     
     class LayoutManager {
@@ -132,6 +127,8 @@ classDiagram
         -_command_manager: CommandManager
         -_observable_model: Observable
         -_observable_property: str
+        -container: Any
+        -container_info: Any
         +bind_to_model()
         +unbind_from_model()
         +_update_widget_from_model()
@@ -145,13 +142,12 @@ classDiagram
     CompoundCommand <|-- MacroCommand : extends
     CommandManager --> CommandHistory : uses
     CommandManager --> Command : executes
-    CommandManager --> WidgetContextRegistry : uses for navigation
-    ContainerWidget <|-- CommandTabWidget : implements
-    ContainerWidget <|-- CommandDockWidget : implements
+    ContainerWidgetMixin <|-- CommandTabWidget : implements
+    ContainerWidgetMixin <|-- CommandDockWidget : implements
     CommandWidgetBase --> Observable : binds
     CommandWidgetBase --> CommandManager : uses
-    CommandWidgetBase --> WidgetContextRegistry : registers with
+    CommandWidgetBase --> ContainerWidgetMixin : references
     ProjectManager --> CommandManager : uses
     ProjectManager --> Observable : serializes
-    LayoutManager --> ContainerWidget : manages
+    LayoutManager --> ContainerWidgetMixin : manages
     ```

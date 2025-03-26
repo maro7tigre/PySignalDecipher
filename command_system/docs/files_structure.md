@@ -34,11 +34,11 @@ command_system/
 │   └── project_integration.py
 ├── widgets/                      # UI components
 │   ├── __init__.py
-│   ├── base_widget.py                   # Base class for command-aware widgets
+│   ├── base_widget.py            # Base class for command-aware widgets
 │   ├── line_edit.py              # Command-aware line edit
 │   ├── containers/               # Container widgets
 │   │   ├── __init__.py
-│   │   ├── base_container.py     # Base container interface
+│   │   ├── base_container.py     # Container widget mixin
 │   │   ├── tab_widget.py         # Command-aware tab widget
 │   │   └── dock_widget.py        # Command-aware dock widget
 │   └── other widget types...
@@ -46,16 +46,21 @@ command_system/
 
 ## Key Changes
 
-1. **Widget Context System**: Added `widget_context.py` to the core directory to support navigation during undo/redo
-2. **Container Organization**: Created a dedicated `containers` folder under `widgets` for all container components
-3. **Dock Simplification**: Consolidated dock-related functionality into a single `dock_widget.py` file
-4. **Container Base Class**: Added `base_container.py` to define the common interface for container widgets
-5. **Command-Aware Tab Widget**: Added a tab widget that supports command-based navigation
+1. **Direct Container References**: Replaced the widget context registry with direct container references in the widgets, simplifying the navigation architecture.
+
+2. **Container Widget Mixin**: Added `base_container.py` with `ContainerWidgetMixin` to provide common functionality for all container widgets.
+
+3. **Command Context Enhancement**: Modified the Command class to store a reference to the trigger widget instead of storing context information directly.
+
+4. **Container Navigation**: Implemented hierarchical navigation through container widgets using the container reference chain.
+
+5. **Widget Registration**: Container widgets now directly register their contents, eliminating the need for a central registry.
 
 This reorganization improves code organization by:
-- Grouping related container widgets together
-- Simplifying the dock management system
-- Providing a clear interface for all container types
-- Adding support for navigating back to the originating widget during undo/redo
+- Simplifying the navigation system with direct references
+- Providing a clear container interface through the mixin
+- Supporting nested container hierarchies
+- Reducing overhead by eliminating the central registry
+- Making the system more extensible for future container types
 
-The new structure maintains clean separation of concerns while making the system more maintainable and easier to extend with new container types in the future.
+The new structure maintains clean separation of concerns while making the system more maintainable and easier to understand. The direct reference approach also improves performance by eliminating registry lookups during navigation.

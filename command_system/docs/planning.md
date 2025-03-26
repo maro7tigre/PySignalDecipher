@@ -6,32 +6,31 @@ The goal of this redesign is to create a clean, extensible system that allows co
 
 ## 2. Core Components
 
-### 2.1. Widget Context Registry
+### 2.1. Direct Container Reference System
 ```mermaid
 graph TD
-    WCR[Widget Context Registry] --- WM{Manages}
-    WM --> RC[Register Container]
-    WM --> RW[Register Widget]
-    WM --> LW[Lookup Widget]
-    
-    CW[Command Widget] -- "Lookup during\ncommand creation" --> WCR
-    CM[Command Manager] -- "Lookup during\nundo/redo" --> WCR
+    CW[Command Widget] -- "Has reference to" --> Container
+    CMD[Command] -- "Stores reference to" --> TW[Trigger Widget]
+    CM[Command Manager] -- "Gets trigger widget from" --> CMD
+    CM -- "Navigates using" --> Container
 ```
 
 - **Purpose**: Track which container holds each widget
-- **Key Functions**:
-  - Register widget-container relationships
-  - Look up container for a given widget
-  - Handle widget lifecycle and cleanup
+- **Key Approach**:
+  - Each widget directly stores a reference to its container
+  - Commands store the trigger widget that created them
+  - Command manager uses these references for navigation
 
 ### 2.2. Container Widget Interface
 ```mermaid
 graph TD
-    CWI[Container Widget Interface] --- Req{Requires}
+    CWM[Container Widget Mixin] --- Req{Requires}
     Req --> ID["get_container_id()"]
     Req --> AC["activate_child()"]
+    Req --> RC["register_contents()"]
+    Req --> NC["navigate_to_container()"]
     
-    CWI --- Impl{Implementations}
+    CWM --- Impl{Implementations}
     Impl --> TW["Tab Widget"]
     Impl --> DW["Dock Widget"]
     Impl --> FW["Future Containers..."]
@@ -41,24 +40,25 @@ graph TD
 - **Key Methods**:
   - `activate_child()`: Focus/display specific child
   - `get_container_id()`: Unique identifier
-  - `register_child()`: Track container-child relationship
+  - `register_contents()`: Track container-child relationship
+  - `navigate_to_container()`: Navigate to this container
 
 ### 2.3. Command Context Enhancement
 ```mermaid
 graph TD
-    CMD[Command Object] -- "Stores" --> CTX[Execution Context]
-    CTX -- "Contains" --> CID[Container ID]
-    CTX -- "Contains" --> WID[Widget Reference]
+    CMD[Command Object] -- "Stores" --> TW[Trigger Widget]
+    TW -- "Has reference to" --> Container
+    TW -- "Has reference to" --> CI[Container Info]
     
-    CW[Command Widget] -- "Sets" --> CTX
-    CM[Command Manager] -- "Uses" --> CTX
+    CW[Command Widget] -- "Sets" --> TW
+    CM[Command Manager] -- "Uses" --> TW
 ```
 
 - **Purpose**: Store origin information with commands
 - **Implementation**:
-  - Add context field to base Command class
-  - Record widget and container during command creation
-  - Use context during undo/redo for navigation
+  - Add trigger_widget field to base Command class
+  - Each widget stores its container and container_info
+  - Use these references during undo/redo for navigation
 
 ## 3. Navigation Flow
 
@@ -67,15 +67,16 @@ sequenceDiagram
     participant User
     participant CommandManager as Command Manager
     participant Command
-    participant WidgetContext as Widget Context Registry
+    participant Widget
     participant Container
     
     User->>CommandManager: undo() or redo()
-    CommandManager->>Command: get context
-    Command->>CommandManager: return context
-    CommandManager->>WidgetContext: look up container
-    WidgetContext->>CommandManager: return container
-    CommandManager->>Container: activate_child(widget)
+    CommandManager->>Command: get trigger_widget
+    Command->>CommandManager: return trigger_widget
+    CommandManager->>Widget: get container
+    Widget->>CommandManager: return container
+    CommandManager->>Container: navigate_to_container(widget)
+    Container->>Container: activate_child(widget)
     Container->>User: focus shifts to relevant UI
     CommandManager->>Command: undo()/redo()
 ```
@@ -84,32 +85,31 @@ sequenceDiagram
 
 ### 4.1. Core Framework Updates
 
-1. **Add Widget Context Registry**
-   - Create `widget_context.py` in core directory
-   - Implement context registry with singleton pattern
-   - Add methods for registration and lookup
+1. **Add Command Widget Container References**
+   - Add container and container_info fields to CommandWidgetBase
+   - Use these fields to store container information
 
 2. **Extend Command Class**
-   - Add context field to store origin information
-   - Add getter/setter methods for context
+   - Add trigger_widget field to store the originating widget
+   - Set this field when commands are created
 
 3. **Update Command Manager**
-   - Add navigation method for context lookup
+   - Add navigation method to use trigger_widget for context lookup
    - Call navigation before command execution/undo/redo
 
 ### 4.2. Container Framework
 
-1. **Create Base Container Interface**
-   - Define abstract base class in `containers/base_container.py`
-   - Specify required methods
+1. **Create Container Widget Mixin**
+   - Define mixin class in `containers/base_container.py`
+   - Implement common container functionality
 
 2. **Implement Container Types**
    - Create `containers/tab_widget.py` implementation
    - Create `containers/dock_widget.py` implementation
 
-3. **Update CommandWidgetBase**
-   - Modify to capture context during command creation
-   - Support binding and registration with containers
+3. **Update Widgets for Container Integration**
+   - Modify CommandWidgetBase to capture container information
+   - Implement container registration in container widgets
 
 ## 5. Example Usage
 
@@ -135,10 +135,8 @@ tabs.addTab(tab1, "Properties")
 def _create_property_command(self, new_value):
     command = PropertyCommand(self._model, self._property, new_value)
     
-    # Get container context and attach to command
-    context = get_widget_context_registry().get_widget_container(self)
-    if context:
-        command.set_execution_context(context)
+    # Store the widget reference in the command
+    command.trigger_widget = self
     
     return command
 ```
@@ -154,30 +152,35 @@ def undo(self):
         command.undo()
     
 def _navigate_to_command_context(self, command):
-    context = command.get_execution_context()
-    if context and 'container' in context:
-        container = context['container']
-        widget = context['widget']
-        container.activate_child(widget)
+    if not command or not command.trigger_widget:
+        return
+        
+    # Get the container from the trigger widget
+    if command.trigger_widget.container:
+        command.trigger_widget.container.navigate_to_container(
+            command.trigger_widget, 
+            command.trigger_widget.container_info
+        )
 ```
 
 ## 6. Benefits and Advantages
 
-1. **Improved User Experience**
+1. **Simplified Architecture**
+   - Direct container references eliminate need for central registry
+   - Clearer component relationships and responsibilities
+   - Less overhead for navigation lookups
+
+2. **Improved User Experience**
    - Automatic focus on relevant UI elements during undo/redo
    - No need to manually locate which widget changed
 
-2. **Extensible Architecture**
-   - New container types can be easily added
+3. **Extensible Architecture**
+   - New container types can be easily added by implementing the mixin
    - Consistent interface for all containers
 
-3. **Minimal Core Changes**
-   - Most existing code remains unchanged
-   - Only adds capabilities without breaking existing functionality
-
-4. **Clear Separation of Concerns**
-   - Navigation logic separate from command execution
-   - Container interface separate from implementation details
+4. **Nested Container Support**
+   - Hierarchical navigation through nested containers
+   - Each container navigates to itself, then activates the child
 
 ## 7. Future Enhancements
 
@@ -185,14 +188,14 @@ def _navigate_to_command_context(self, command):
    - Track window ownership for cross-window navigation
    - Support for floating containers
 
-2. **Compound Navigation**
-   - Handle compound commands with multiple widget origins
-   - Potentially navigate to primary/most relevant widget
-
-3. **Visual Highlighting**
+2. **Visual Highlighting**
    - Briefly highlight the widget after navigation
    - Provide visual cue for what changed
 
-4. **Nested Container Support**
-   - Handle containers within containers (e.g., tabs in docks)
-   - Recursive activation of parent containers
+3. **Extended Container Info**
+   - Store additional context for specialized navigation
+   - Support for complex container hierarchies
+
+4. **Command Batching**
+   - Group related commands with navigation preferences
+   - Optimize navigation for compound operations

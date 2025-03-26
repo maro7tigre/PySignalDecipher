@@ -86,8 +86,9 @@ class MyModel(Observable):
   - `execute()`: Perform the command action
   - `undo()`: Reverse the command action
   - `redo()`: Re-perform the command (default is to call execute)
-  - `set_execution_context()`: Set the widget context for navigation
-  - `get_execution_context()`: Get the widget context for navigation
+- **Command Context**:
+  - Each command stores its origin widget as `trigger_widget`
+  - This allows for navigation back to the widget during undo/redo
 
 ```python
 # User code example for custom command
@@ -153,18 +154,18 @@ class MyCustomCommand(Command):
   - `_navigate_to_command_context()`: Navigate to the UI location of the command
   - `Callback hooks`: Before/after execute, before/after undo
 
-### Widget Context System (`core/widget_context.py`)
+### Container Widget System (`widgets/containers/base_container.py`)
 
-#### `WidgetContextRegistry` Class
-- **Role**: Tracks which container holds each widget
+#### `ContainerWidgetMixin` Class
+- **Role**: Base mixin for container widgets
 - **Usage**: 
-  - **Internal**: Used by command navigation system
+  - **Internal**: Mixed into container implementations
   - **User**: Not typically used directly
-- **How it works**: Maintains a registry of widget-to-container relationships
+- **How it works**: Provides common container functionality and navigation support
 - **Key Methods**:
-  - `register_widget_container()`: Associate a widget with its container
-  - `get_widget_container()`: Look up a widget's container
-  - `unregister_widget()`: Remove a widget from the registry
+  - `activate_child()`: Focus a specific child widget
+  - `register_contents()`: Register child widgets with the container
+  - `navigate_to_container()`: Navigate to this container
 
 ```mermaid
 sequenceDiagram
@@ -179,7 +180,6 @@ sequenceDiagram
     UI->>CW: Value changes
     CW->>CMD: Create command with context
     CW->>CM: execute(command)
-    CM->>Container: Navigate to context
     CM->>CM: before_execute_callbacks
     CM->>CH: add_command(command)
     CM->>CMD: execute()
@@ -204,7 +204,7 @@ sequenceDiagram
 
 ## UI Integration
 
-### Command Widget (`widgets/base.py`)
+### Command Widget (`widgets/base_widget.py`)
 
 #### `CommandWidgetBase` Class
 - **Role**: Base mixin for creating command-aware widgets
@@ -218,6 +218,9 @@ sequenceDiagram
   - `_update_widget_from_model()`: Update widget from model property
   - `_on_widget_value_changed()`: Handle widget value changes
   - `_create_property_command()`: Create command with context information
+- **Container Integration**:
+  - Each widget stores a reference to its container in `container` property
+  - Additional container-specific info can be stored in `container_info`
 
 ```python
 # User code example
@@ -241,23 +244,23 @@ line_edit.bind_to_model(model, "name")
 
 ### Container Widgets (`widgets/containers/`)
 
-#### `ContainerWidget` Interface (`widgets/containers/base_container.py`)
-- **Role**: Base interface for container widgets
+#### `ContainerWidgetMixin` Class (`widgets/containers/base_container.py`)
+- **Role**: Base mixin for container widgets
 - **Usage**: 
-  - **Internal**: Implemented by container widgets
+  - **Internal**: Mixed into container implementations
   - **User**: Used when creating custom containers
-- **How it works**: Defines interface for navigable containers
+- **How it works**: Defines common container functionality and navigation support
 - **Key Methods**:
-  - `activate_child()`: Activate a specific child widget
-  - `get_container_id()`: Get unique container identifier
-  - `register_child()`: Register a child widget with this container
+  - `activate_child()`: Focus a specific child widget
+  - `register_contents()`: Register child widgets with the container
+  - `navigate_to_container()`: Navigate to this container
 
 #### `CommandTabWidget` Class (`widgets/containers/tab_widget.py`)
 - **Role**: Tab widget that supports command-based navigation
 - **Usage**: 
   - **Internal**: Framework feature
   - **User**: Used directly as a container for command-aware widgets
-- **How it works**: Extends QTabWidget to implement the ContainerWidget interface
+- **How it works**: Extends QTabWidget with ContainerWidgetMixin
 - **Key Features**:
   - Automatically registers child widgets
   - Supports navigation to specific tabs
@@ -268,7 +271,7 @@ line_edit.bind_to_model(model, "name")
 - **Usage**: 
   - **Internal**: Framework feature
   - **User**: Used directly as a container for command-aware widgets
-- **How it works**: Extends QDockWidget to implement the ContainerWidget interface
+- **How it works**: Extends QDockWidget with ContainerWidgetMixin
 - **Key Features**:
   - Tracks dock state changes
   - Creates commands for dock operations
@@ -410,6 +413,9 @@ tab2_layout.addWidget(tab2_slider)
 # Add both tabs to the container
 tab_widget.addTab(tab1, "Properties")
 tab_widget.addTab(tab2, "Controls")
+
+# Each widget is automatically registered with the tab container
+# During undo/redo, the system will navigate to the appropriate tab
 
 # Create a command-aware dock widget
 dock = CommandDockWidget("signal_dock", "Signal Editor", main_window)

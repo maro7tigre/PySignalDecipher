@@ -52,14 +52,14 @@ graph TD
 
 2. **Command Serialization**
    - Command state extraction
-   - Execution context serialization
+   - Trigger widget reference serialization
    - CompoundCommand handling
    - MacroCommand support
 
 3. **Container Integration**
    - Container state serialization
    - Widget/container relationship preservation
-   - Layout context handling
+   - Container hierarchy handling
 
 ### Phase 3: Project Integration (1 week)
 
@@ -77,7 +77,7 @@ graph TD
 3. **Command History Support**
    - Optional command history serialization
    - Command reconstruction on load
-   - Execution context restoration
+   - Trigger widget restoration
 
 ### Phase 4: Testing & Optimization (1 week)
 
@@ -176,11 +176,11 @@ def serialize_observable(obj, context):
     }
 ```
 
-### 3.3. Command Serialization with Context
+### 3.3. Command Serialization with Trigger Widget
 
 ```python
 def serialize_command(command, context):
-    """Serialize a Command object with execution context."""
+    """Serialize a Command object with trigger widget reference."""
     registry = context["registry"]
     
     # Get command type and state
@@ -191,15 +191,16 @@ def serialize_command(command, context):
     for name, value in get_serializable_state(command).items():
         state[name] = registry.serialize_object(value, context)
     
-    # Handle execution context
-    if hasattr(command, "get_execution_context"):
-        exec_context = command.get_execution_context()
-        if exec_context:
-            # Only serialize container ID, not widget reference
-            state["execution_context"] = {
-                "container_id": exec_context.get("container_id"),
-                "container_type": exec_context.get("container_type")
-            }
+    # Handle trigger widget
+    if hasattr(command, "trigger_widget") and command.trigger_widget:
+        # Store widget ID and container ID to reconnect during deserialization
+        if hasattr(command.trigger_widget, "get_id"):
+            state["trigger_widget_id"] = command.trigger_widget.get_id()
+            
+        # If widget has container, store container ID
+        if hasattr(command.trigger_widget, "container") and command.trigger_widget.container:
+            if hasattr(command.trigger_widget.container, "get_container_id"):
+                state["container_id"] = command.trigger_widget.container.get_container_id()
     
     # Handle compound commands
     if hasattr(command, "commands"):
@@ -245,6 +246,11 @@ def serialize_container(container, context):
         properties["title"] = container.windowTitle()
         properties["floating"] = container.isFloating()
         properties["visible"] = container.isVisible()
+    
+    # Handle container hierarchy
+    if hasattr(container, "container") and container.container:
+        if hasattr(container.container, "get_container_id"):
+            properties["parent_container_id"] = container.container.get_container_id()
     
     return {
         "$type": container_type,

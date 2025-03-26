@@ -4,15 +4,15 @@ flowchart TD
     UI -- "Widget Value Change" --> CmdWidget[Command Widget]
     UI -- "Command Creation" --> CMD[Command]
     
-    CmdWidget -- "Creates with Context" --> PropCmd[Property Command]
+    CmdWidget -- "Creates with Container Reference" --> PropCmd[Property Command]
     PropCmd --> CmdMgr[Command Manager]
     CMD --> CmdMgr
     
     CmdMgr -- "Execute" --> ModelUpdate[Model Update]
     CmdMgr -- "Add to" --> History[Command History]
-    CmdMgr -- "Navigate to" --> NavContext[Widget Context]
+    CmdMgr -- "Navigate using" --> WidgetRef[Trigger Widget Reference]
     
-    NavContext -- "Activates" --> Container[Container Widget]
+    WidgetRef -- "Has reference to" --> Container[Container Widget]
     Container -- "Contains" --> CmdWidget
     
     ModelUpdate -- "Notify" --> PropObserver["Property Observer\n(Observable)"]
@@ -20,7 +20,7 @@ flowchart TD
     
     CmdMgr -- "Undo/Redo" --> UndoRedo[Undo/Redo Actions]
     UndoRedo --> ModelUpdate
-    UndoRedo -- "Navigate" --> NavContext
+    UndoRedo -- "Navigate using" --> WidgetRef
     
     %% Serialization Flow
     SaveProject[Save Project] --> SerMgr[Serialization Manager]
