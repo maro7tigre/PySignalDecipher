@@ -5,7 +5,7 @@ This module provides a mixin class for container widgets like tabs and docks
 that implement the necessary methods for command navigation.
 """
 from typing import Any, Optional
-
+from ...core.widget_context import get_widget_context_registry
 
 class ContainerWidgetMixin:
     """
@@ -39,7 +39,6 @@ class ContainerWidgetMixin:
         Args:
             widget: Child widget to register
         """
-        from ...core.widget_context import get_widget_context_registry
         
         registry = get_widget_context_registry()
         registry.register_widget_container(

@@ -51,6 +51,7 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
             if self._is_descendant(tab_widget, widget):
                 self.setCurrentIndex(i)
                 widget.setFocus()
+                print(f"Activating tab {i} for widget {widget}")
                 return True
                 
         return False
@@ -66,14 +67,10 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
         Returns:
             True if widget is a descendant of parent
         """
-        # Check direct children
-        for child in parent.findChildren(QWidget):
-            if child == widget:
-                return True
-                
-        return False
+        descendants = parent.findChildren(QWidget)
+        return widget in descendants
         
-    def addTab(self, widget: QWidget, label: str) -> int:
+    def addTab(self, tab: QWidget, label: str) -> int:
         """
         Override to register the widget with this container.
         
@@ -84,9 +81,6 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
         Returns:
             Index of the new tab
         """
-        index = super().addTab(widget, label)
-        
-        # Register widget with this container
-        self.register_child(widget)
-        
+        index = super().addTab(tab, label)
+        self.register_contents(tab)
         return index

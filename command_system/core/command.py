@@ -20,7 +20,7 @@ class Command(ABC):
     
     def __init__(self):
         """Initialize the command."""
-        self._execution_context = None
+        pass
         
     @abstractmethod
     def execute(self) -> None:
@@ -35,14 +35,6 @@ class Command(ABC):
     def redo(self) -> None:
         """Redo the command. Default implementation is to call execute again."""
         self.execute()
-        
-    def set_execution_context(self, context: dict) -> None:
-        """Set the widget context that created this command."""
-        self._execution_context = context
-        
-    def get_execution_context(self) -> dict:
-        """Get the widget context that created this command."""
-        return self._execution_context
 
 # MARK: - Concrete Commands
 class CompoundCommand(Command):

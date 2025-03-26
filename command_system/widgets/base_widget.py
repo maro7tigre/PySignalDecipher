@@ -39,6 +39,7 @@ class CommandWidgetBase(Generic[T]):
         self._is_updating = False
         self._old_value = None
         self._custom_command_factory = None
+        self.container = None
         
         # Command execution mode
         self._command_execution_mode = CommandExecutionMode.ON_EDIT_END
@@ -99,7 +100,7 @@ class CommandWidgetBase(Generic[T]):
         
         # Connect model changes to widget
         self._observer_id = model.add_property_observer(property_name, self._on_model_property_changed)
-        
+           
         # Initial update from model
         self._update_widget_from_model()
         
@@ -246,12 +247,6 @@ class CommandWidgetBase(Generic[T]):
                 self._observable_property,
                 new_value
             )
-            
-        # Add context information to the command
-        from ..core.widget_context import get_widget_context_registry
-        context = get_widget_context_registry().get_widget_container(self)
-        if context:
-            command.set_execution_context(context)
             
         return command
             

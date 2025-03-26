@@ -64,5 +64,3 @@ class CommandDockWidget(QDockWidget, ContainerWidgetMixin):
         """
         super().setWidget(widget)
         
-        # Register widget with this container
-        self.register_child(widget)

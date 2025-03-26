@@ -278,23 +278,8 @@ class CommandManager:
         if not command:
             return
             
-        # Check if command has execution context
-        if not hasattr(command, "_execution_context") or not command._execution_context:
-            return
-            
-        context = command._execution_context
-        if not context or "container" not in context:
-            return
-            
-        container = context.get("container")
-        widget = context.get("widget")
-        
-        # Check if container can activate child
-        if container and widget and hasattr(container, "activate_child"):
-            try:
-                container.activate_child(widget)
-            except Exception as e:
-                print(f"Error navigating to command context: {e}")
+        # Check if command's widget has a container
+        pass
 
     def is_updating(self) -> bool:
         """

@@ -22,7 +22,6 @@ from command_system.core.command_manager import get_command_manager
 from command_system.widgets.line_edit import CommandLineEdit
 from command_system.widgets.base_widget import CommandExecutionMode
 from command_system.widgets.containers.tab_widget import CommandTabWidget
-from command_system.core.widget_context import get_widget_context_registry
 
 
 class Person(Observable):
@@ -145,8 +144,6 @@ class TabDemo(QMainWindow):
             
     def closeEvent(self, event):
         """Handle window close event."""
-        # Clean up any registrations to prevent memory leaks
-        registry = get_widget_context_registry()
         # In a real app, you would unregister all widgets here
         event.accept()
 
