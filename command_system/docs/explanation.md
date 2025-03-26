@@ -19,6 +19,7 @@ flowchart TD
     CmdMgr -- "Adds to" --> History[Command History]
     History -- "Enables" --> UndoRedo[Undo/Redo]
     UndoRedo -- "Modifies" --> Model
+    CmdMgr -- "Navigates to" --> Container[Container Widget]
     
     Project[Project Manager] -- "Saves/Loads" --> Model
     Layout[Layout Manager] -- "Saves/Loads" --> UIState[UI Layout State]
@@ -85,11 +86,14 @@ class MyModel(Observable):
   - `execute()`: Perform the command action
   - `undo()`: Reverse the command action
   - `redo()`: Re-perform the command (default is to call execute)
+  - `set_execution_context()`: Set the widget context for navigation
+  - `get_execution_context()`: Get the widget context for navigation
 
 ```python
 # User code example for custom command
 class MyCustomCommand(Command):
     def __init__(self, target, parameter):
+        super().__init__()
         self.target = target
         self.parameter = parameter
         self.old_state = target.save_state()  # Store state for undo
@@ -146,7 +150,21 @@ class MyCustomCommand(Command):
   - `execute()`: Execute a command and add to history
   - `undo()`: Undo the most recent command
   - `redo()`: Redo most recently undone command
+  - `_navigate_to_command_context()`: Navigate to the UI location of the command
   - `Callback hooks`: Before/after execute, before/after undo
+
+### Widget Context System (`core/widget_context.py`)
+
+#### `WidgetContextRegistry` Class
+- **Role**: Tracks which container holds each widget
+- **Usage**: 
+  - **Internal**: Used by command navigation system
+  - **User**: Not typically used directly
+- **How it works**: Maintains a registry of widget-to-container relationships
+- **Key Methods**:
+  - `register_widget_container()`: Associate a widget with its container
+  - `get_widget_container()`: Look up a widget's container
+  - `unregister_widget()`: Remove a widget from the registry
 
 ```mermaid
 sequenceDiagram
@@ -156,9 +174,12 @@ sequenceDiagram
     participant CH as CommandHistory
     participant CMD as Command
     participant Model as Observable Model
+    participant Container as Container Widget
     
     UI->>CW: Value changes
-    CW->>CM: execute(PropertyCommand)
+    CW->>CMD: Create command with context
+    CW->>CM: execute(command)
+    CM->>Container: Navigate to context
     CM->>CM: before_execute_callbacks
     CM->>CH: add_command(command)
     CM->>CMD: execute()
@@ -172,6 +193,7 @@ sequenceDiagram
     UI->>CM: undo()
     CM->>CH: undo()
     CH-->>CM: command
+    CM->>Container: Navigate to context
     CM->>CM: before_undo_callbacks
     CM->>CMD: undo()
     CMD->>Model: restore state
@@ -195,7 +217,7 @@ sequenceDiagram
   - `unbind_from_model()`: Disconnect from model
   - `_update_widget_from_model()`: Update widget from model property
   - `_on_widget_value_changed()`: Handle widget value changes
-  - `_create_property_command()`: Create command for property changes
+  - `_create_property_command()`: Create command with context information
 
 ```python
 # User code example
@@ -217,54 +239,44 @@ line_edit = CommandLineEdit()
 line_edit.bind_to_model(model, "name")
 ```
 
-This approach provides a clean, direct connection between widgets and models with built-in command support. The widget mixin handles all the details of:
+### Container Widgets (`widgets/containers/`)
 
-1. Tracking when a user edits a value
-2. Creating appropriate commands for changes
-3. Updating the widget when the model property changes
-4. Managing the binding lifecycle
-5. Preventing update loops
-
-Using the `CommandWidgetBase` as a mixin allows creating custom command-aware versions of any widget type, while maintaining the widget's original behavior and appearance.
-
-### Dock Management (`widgets/docks/`)
-
-#### `DockManager` Class
-- **Role**: Manages dock widgets and their states
+#### `ContainerWidget` Interface (`widgets/containers/base_container.py`)
+- **Role**: Base interface for container widgets
 - **Usage**: 
-  - **Internal**: Used by layout system
-  - **User**: Used directly for dock management
-- **How it works**: Tracks dock widgets, their relationships, and serialization
+  - **Internal**: Implemented by container widgets
+  - **User**: Used when creating custom containers
+- **How it works**: Defines interface for navigable containers
 - **Key Methods**:
-  - `register_dock()`: Register a dock widget
-  - `save_dock_state()`: Save a dock's state
-  - `restore_dock_state()`: Restore a dock's state
+  - `activate_child()`: Activate a specific child widget
+  - `get_container_id()`: Get unique container identifier
+  - `register_child()`: Register a child widget with this container
 
-#### `CommandDockWidget` Class
-- **Role**: Command-aware dock widget
+#### `CommandTabWidget` Class (`widgets/containers/tab_widget.py`)
+- **Role**: Tab widget that supports command-based navigation
 - **Usage**: 
   - **Internal**: Framework feature
-  - **User**: Used directly as base for dock widgets
-- **How it works**: Creates commands for dock state changes, such as position, floating state, etc.
+  - **User**: Used directly as a container for command-aware widgets
+- **How it works**: Extends QTabWidget to implement the ContainerWidget interface
 - **Key Features**:
-  - Tracks dock movement and state changes
-  - Creates appropriate commands for dock operations
-  - Integrates with dock manager
+  - Automatically registers child widgets
+  - Supports navigation to specific tabs
+  - Integrates with command navigation system
 
-#### `ObservableDockWidget` Class
-- **Role**: Dock widget that is also Observable
+#### `CommandDockWidget` Class (`widgets/containers/dock_widget.py`)
+- **Role**: Dock widget that supports command-based navigation
 - **Usage**: 
   - **Internal**: Framework feature
-  - **User**: Used directly for bindable docks
-- **How it works**: Exposes dock properties as observable properties
+  - **User**: Used directly as a container for command-aware widgets
+- **How it works**: Extends QDockWidget to implement the ContainerWidget interface
 - **Key Features**:
-  - Exposes title, floating state, visibility as observable properties
-  - Enables binding dock properties to model properties
-  - Maintains synchronization between dock state and properties
+  - Tracks dock state changes
+  - Creates commands for dock operations
+  - Integrates with command navigation system
 
 ### Command Widget Command Execution Modes
 
-The `CommandWidgetBase` class now supports different command execution modes, allowing flexibility in when commands are created and executed:
+The `CommandWidgetBase` class supports different command execution modes, allowing flexibility in when commands are created and executed:
 
 ```mermaid
 graph TD
@@ -291,55 +303,6 @@ graph TD
 
 3. **ON_EDIT_END**: Commands are only created when editing is complete (e.g., when the user presses Enter or focus leaves the widget). This creates a single command for an entire editing session.
 
-#### Setting Execution Modes
-
-You can set the command execution mode when creating a widget:
-
-```python
-# Create a line edit with immediate command execution
-immediate_edit = CommandLineEdit(execution_mode=CommandExecutionMode.ON_CHANGE)
-
-# Create a line edit with delayed command execution
-delayed_edit = CommandLineEdit(execution_mode=CommandExecutionMode.DELAYED)
-
-# Create a line edit with command execution only at edit end (default)
-end_edit = CommandLineEdit(execution_mode=CommandExecutionMode.ON_EDIT_END)
-```
-
-You can also change the mode after creation:
-
-```python
-# Change execution mode
-edit_field.set_command_execution_mode(CommandExecutionMode.DELAYED)
-
-# For DELAYED mode, you can customize the delay
-edit_field.set_command_delay(500)  # 500ms delay
-```
-
-#### Choosing the Right Mode
-
-- **ON_CHANGE**: Best for widgets where each change is significant and should be a separate undoable action (e.g., checkboxes, radio buttons).
-  
-- **DELAYED**: Good for text fields where you want to see changes reflected quickly in the model, but don't want an excessive number of commands (e.g., search fields).
-  
-- **ON_EDIT_END**: Ideal for form fields where only the final value matters (e.g., name, email fields).
-
-## Layout and Dock Management
-
-### Layout Manager (`layout/layout_manager.py`)
-
-#### `LayoutManager` Class
-- **Role**: Saves and restores UI layouts
-- **Usage**: 
-  - **Internal**: Framework feature
-  - **User**: Used directly to save/load layouts
-- **How it works**: Captures and restores widget states, geometry, and relationships
-- **Key Methods**:
-  - `capture_current_layout()`: Capture current UI state
-  - `apply_layout()`: Restore a saved layout
-  - `save_layout_preset()`: Save layout with a name
-  - `load_layout_preset()`: Load a named layout
-
 ## Project Management
 
 ### Project Manager (`project/project_manager.py`)
@@ -355,7 +318,7 @@ edit_field.set_command_delay(500)  # 500ms delay
   - `load_project()`: Load model from file
   - `new_project()`: Create a new model
 
-## Serialization System (Planned)
+## Serialization System
 
 ### Serialization Manager (`serialization/manager.py`)
 
@@ -425,6 +388,45 @@ amplitude_slider.setRange(0, 100)
 amplitude_slider.bind_to_model(signal_model, "amplitude")
 ```
 
+### Using Container Widgets
+
+```python
+# Create a command-aware tab widget
+tab_widget = CommandTabWidget(parent, "main_tabs")
+
+# Add tabs with command-aware widgets
+tab1 = QWidget()
+tab1_layout = QVBoxLayout(tab1)
+tab1_edit = CommandLineEdit()
+tab1_edit.bind_to_model(model, "name")
+tab1_layout.addWidget(tab1_edit)
+
+tab2 = QWidget()
+tab2_layout = QVBoxLayout(tab2)
+tab2_slider = CommandSlider(Qt.Horizontal)
+tab2_slider.bind_to_model(model, "amplitude")
+tab2_layout.addWidget(tab2_slider)
+
+# Add both tabs to the container
+tab_widget.addTab(tab1, "Properties")
+tab_widget.addTab(tab2, "Controls")
+
+# Create a command-aware dock widget
+dock = CommandDockWidget("signal_dock", "Signal Editor", main_window)
+
+# Add content to the dock
+dock_content = QWidget()
+dock_layout = QVBoxLayout(dock_content)
+dock_edit = CommandLineEdit()
+dock_edit.bind_to_model(model, "frequency")
+dock_layout.addWidget(dock_edit)
+dock.setWidget(dock_content)
+
+# Now when undo/redo operations are performed, the system will
+# automatically navigate to the correct tab or dock that contains
+# the widget that created the command
+```
+
 ### Command Execution
 
 ```python
@@ -443,143 +445,3 @@ if cmd_mgr.can_undo():
 if cmd_mgr.can_redo():
     cmd_mgr.redo()
 ```
-
-### Layout Management
-
-```python
-# Get layout manager
-layout_mgr = get_layout_manager()
-
-# Save current layout
-layout_mgr.save_layout_preset("default")
-
-# Load a layout
-layout_mgr.load_layout_preset("default")
-```
-
-### Project Operations
-
-```python
-# Get project manager
-project_mgr = get_project_manager()
-
-# Save project
-project_mgr.save_project(model, "signal_project.json")
-
-# Load project
-model = project_mgr.load_project("signal_project.json")
-
-# Create new project
-model = project_mgr.new_project("signal_model")
-```
-
-## System Workflow
-
-```mermaid
-stateDiagram-v2
-    [*] --> Idle: Initialize
-    
-    Idle --> Executing: User Action
-    Executing --> Updated: Command Execute
-    Updated --> Idle: Complete Update
-    
-    Idle --> Undoing: Undo Request
-    Undoing --> Updated: Command Undo
-    
-    Idle --> Redoing: Redo Request
-    Redoing --> Updated: Command Redo
-    
-    Idle --> Saving: Save Request
-    Saving --> Idle: Project Saved
-    
-    Idle --> Loading: Load Request
-    Loading --> Updated: Project Loaded
-    
-    note right of Executing
-        1. Command created by widget or action
-        2. Added to history
-        3. Execute method called
-        4. Model updated
-        5. Observers notified
-        6. Widgets updated
-    end note
-    
-    note right of Undoing
-        1. Get last command from history
-        2. Call undo method
-        3. Model restored
-        4. Observers notified
-        5. Widgets updated
-    end note
-    
-    note right of Saving
-        1. Capture model state
-        2. Optionally capture layout
-        3. Serialize to file
-    end note
-```
-
-## Key System Features
-
-### 1. Two-Way Data Binding
-The system provides seamless two-way data binding between widgets and model properties:
-- When a widget value changes, the model is updated through a command
-- When a model property changes, all bound widgets are updated
-- All changes are automatically tracked in the command history
-
-### 2. Command-Based State Changes
-All state changes go through the command system, which provides:
-- Consistent state modification
-- Automatic undo/redo capability
-- History tracking
-- Event notifications
-
-### 3. Observable Property Tracking
-The observable pattern enables:
-- Automatic notification of property changes
-- Dependency tracking between properties
-- Clean model definition with typed properties
-- Separation of UI and model logic
-
-### 4. Layout Persistence
-The layout system enables:
-- Saving and restoring widget arrangements
-- Managing dock widget relationships
-- Persisting layout with projects or separately
-- Preset management for different view configurations
-
-### 5. Serialization System (Planned)
-The serialization system will provide:
-- Object identity and reference preservation
-- Support for multiple serialization formats
-- Type-safe deserialization
-- Custom serialization for complex objects
-
-## Implementation Best Practices
-
-### 1. Model-First Approach
-- Define models with observable properties first
-- Keep business logic in models
-- Use commands for all model modifications
-- Bind widgets to models, not the other way around
-
-### 2. Command Granularity
-- Keep commands small and focused
-- Use compound commands for complex operations
-- Define clear command names for user-visible operations
-- Store only necessary state for undo/redo
-
-### 3. Widget Extensions
-- Create command-aware versions of common widgets
-- Keep widget appearance and behavior consistent with originals
-- Use mixins to separate command logic from widget implementation
-- Implement standard patterns for different widget types
-
-### Current Limitations
-
-1. **Incomplete Serialization**: The serialization system is planned but not fully implemented
-2. **Reference Resolution**: No standard approach for complex object references
-3. **Limited Widget Types**: Not all widget types have command-aware versions yet
-4. **Documentation Coverage**: Some advanced features need more documentation
-
-These limitations will be addressed in future versions of the system.

@@ -35,7 +35,7 @@ command_system/
 │   └── project_integration.py
 ├── widgets/                      # UI components
 │   ├── __init__.py
-│   ├── base.py                   # Base class for command-aware widgets
+│   ├── base_widget.py                   # Base class for command-aware widgets
 │   ├── line_edit.py              # Command-aware line edit
 │   ├── containers/               # Container widgets
 │   │   ├── __init__.py

@@ -9,7 +9,7 @@ from typing import Any, Optional
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLineEdit
 
-from .base import CommandWidgetBase, CommandExecutionMode
+from .base_widget import CommandWidgetBase, CommandExecutionMode
 from ..core.observable import Observable
 
 

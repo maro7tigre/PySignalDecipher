@@ -13,10 +13,12 @@ flowchart TD
     SerObj -- "Object type" --> TypeData["{ $type: 'Observable' }"]
     SerObj -- "Object ID" --> IdData["{ $id: 'abc-123' }"]
     SerObj -- "Properties" --> PropData["{ properties: {...} }"]
+    SerObj -- "Context" --> CtxData["{ context: {...} }"]
     
     TypeData --> Result["Serialized Result"]
     IdData --> Result
     PropData --> Result
+    CtxData --> Result
     RefObj --> Result
     
     Result -- "Format using" --> Adapter[Format Adapter]
@@ -37,9 +39,11 @@ flowchart TD
         GetRef --> RefResolved[Reference resolved]
         
         CreateObj -- "Deserialize properties" --> DeserProps[Deserialize Properties]
+        DeserProps -- "Restore context" --> CtxRestore[Restore Context]
         DeserProps -- "Resolve references" --> RefResolve[Reference Resolution]
         
         RefResolved --> Result2[Deserialized Objects]
+        CtxRestore --> Result2
         RefResolve --> Result2
     end
 ```

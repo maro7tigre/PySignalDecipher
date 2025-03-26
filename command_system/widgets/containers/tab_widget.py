@@ -1,17 +1,17 @@
 """
 Command-aware tab widget.
 
-This module provides a tab widget that implements the ContainerWidget interface
+This module provides a tab widget that implements container functionality
 for navigation during undo/redo operations.
 """
-from typing import Any, Optional
+from typing import Any
 
 from PySide6.QtWidgets import QTabWidget, QWidget
 
-from .container import ContainerWidget
+from .base_container import ContainerWidgetMixin
 
 
-class CommandTabWidget(QTabWidget, ContainerWidget):
+class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
     """
     A tab widget that supports command-based navigation.
     """
@@ -25,11 +25,7 @@ class CommandTabWidget(QTabWidget, ContainerWidget):
             container_id: Optional unique ID for this container
         """
         QTabWidget.__init__(self, parent)
-        self._container_id = container_id or f"tab_widget_{id(self)}"
-        
-    def get_container_id(self) -> str:
-        """Get unique identifier for this container."""
-        return self._container_id
+        ContainerWidgetMixin.__init__(self, container_id)
         
     def activate_child(self, widget: Any) -> bool:
         """

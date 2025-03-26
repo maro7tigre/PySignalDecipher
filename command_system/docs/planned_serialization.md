@@ -16,9 +16,12 @@ classDiagram
     
     class Command {
         <<abstract>>
+        -_execution_context: Dict
         +execute()* 
         +undo()*
         +redo()
+        +set_execution_context()
+        +get_execution_context()
     }
     
     class CommandManager {
@@ -29,6 +32,7 @@ classDiagram
         +undo()
         +redo()
         +clear()
+        -_navigate_to_command_context()
     }
     
     class CommandWidgetBase {
@@ -40,6 +44,35 @@ classDiagram
         +unbind_from_model()
         +_update_widget_from_model()
         +_on_widget_value_changed()
+        +_create_property_command()
+    }
+    
+    class ContainerWidget {
+        <<interface>>
+        +activate_child()*
+        +get_container_id()*
+        +register_child()
+    }
+    
+    class CommandTabWidget {
+        -_container_id: str
+        +get_container_id()
+        +activate_child()
+        +addTab()
+    }
+    
+    class CommandDockWidget {
+        -dock_id: str
+        +get_container_id()
+        +activate_child()
+        +setWidget()
+    }
+    
+    class WidgetContextRegistry {
+        -_widget_contexts: Dict
+        +register_widget_container()
+        +unregister_widget()
+        +get_widget_container()
     }
     
     %% Serialization System (New Components)
@@ -95,6 +128,11 @@ classDiagram
         +deserialize_command()
     }
     
+    class ContainerSerializer {
+        +serialize_container()
+        +deserialize_container()
+    }
+    
     class ProjectManager {
         -_command_manager: CommandManager
         -_current_filename: Optional[str]
@@ -123,9 +161,11 @@ classDiagram
     
     RegistryEngine --> ObservableSerializer : uses
     RegistryEngine --> CommandSerializer : uses
+    RegistryEngine --> ContainerSerializer : uses
     
     ObservableSerializer --> Observable : serializes
     CommandSerializer --> Command : serializes
+    ContainerSerializer --> ContainerWidget : serializes
     
     ProjectManager --> SerializationManager : uses
     ProjectManager --> RegistryEngine : uses
@@ -133,6 +173,12 @@ classDiagram
     LayoutManager --> SerializationManager : uses
     
     CommandManager --> Command : executes
+    CommandManager --> WidgetContextRegistry : navigates using
     Observable --> ObservableProperty : uses
     CommandWidgetBase --> Observable : binds
+    CommandWidgetBase --> WidgetContextRegistry : registers with
+    
+    ContainerWidget <|-- CommandTabWidget : implements
+    ContainerWidget <|-- CommandDockWidget : implements
+    ContainerWidget --> WidgetContextRegistry : registers children
 ```

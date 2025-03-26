@@ -102,6 +102,7 @@ class PropertyCommand(Command):
             property_name: Name of property to change
             new_value: New property value
         """
+        super().__init__()  # Add this to initialize _execution_context
         self.target = target
         self.property_name = property_name
         self.new_value = new_value

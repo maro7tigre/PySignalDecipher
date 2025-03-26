@@ -1,10 +1,10 @@
 ```mermaid
 flowchart TD
     User[User Action] --> UI[UI Component]
-    UI -- "Property Change" --> Binding[Property Binding]
+    UI -- "Value Changes" --> CmdWidget[Command Widget]
     UI -- "Command Creation" --> CMD[Command]
     
-    Binding -- "Creates" --> PropCmd[Property Command]
+    CmdWidget -- "Creates" --> PropCmd[Property Command]
     PropCmd --> CmdMgr[Command Manager]
     CMD --> CmdMgr
     

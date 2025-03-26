@@ -1,34 +1,28 @@
 """
-Container widget interface for navigable UI components.
+Base container mixin for command-aware container widgets.
 
-This module defines the interface for container widgets that can hold
-command-aware widgets and activate them for navigation during undo/redo.
+This module provides a mixin class for container widgets like tabs and docks
+that implement the necessary methods for command navigation.
 """
-from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 
-class ContainerWidget(ABC):
+class ContainerWidgetMixin:
     """
-    Interface for container widgets like docks and tabs.
-    Implementations should allow navigation to specific child widgets.
+    Mixin class for container widgets that can activate child widgets.
+    This provides common functionality for all container types.
     """
     
-    @abstractmethod
-    def activate_child(self, widget: Any) -> bool:
+    def __init__(self, container_id=None):
         """
-        Activate the specified child widget.
-        This may involve showing a tab, dock, or otherwise making the widget visible.
+        Initialize the container mixin.
         
         Args:
-            widget: The child widget to activate
-            
-        Returns:
-            True if widget was successfully activated
+            container_id: Optional unique ID for this container
         """
-        pass
+        # This will be called by __init__ of the actual widget class that uses this mixin
+        self._container_id = container_id or f"container_{id(self)}"
         
-    @abstractmethod
     def get_container_id(self) -> str:
         """
         Get unique identifier for this container.
@@ -36,12 +30,11 @@ class ContainerWidget(ABC):
         Returns:
             Container identifier string
         """
-        pass
+        return self._container_id
         
     def register_child(self, widget: Any) -> None:
         """
         Register a child widget with this container.
-        Default implementation registers with the widget context registry.
         
         Args:
             widget: Child widget to register
@@ -54,3 +47,16 @@ class ContainerWidget(ABC):
             container=self,
             container_id=self.get_container_id()
         )
+    
+    def activate_child(self, widget: Any) -> bool:
+        """
+        Activate the specified child widget.
+        Must be implemented by subclasses.
+        
+        Args:
+            widget: The child widget to activate
+            
+        Returns:
+            True if widget was successfully activated
+        """
+        raise NotImplementedError("Subclasses must implement activate_child")

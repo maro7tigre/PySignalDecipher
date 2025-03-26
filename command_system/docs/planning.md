@@ -1,278 +1,198 @@
-# PySignalDecipher Serialization System Design Approach
+# PySignalDecipher Navigation and Container System Design
 
-## 1. Core Design Principles
+## 1. System Overview
 
-### 1.1. Separation of Concerns
-- **Project Data** serialization should be independent from **Layout** serialization
-- Each component should handle its own serialization/deserialization logic
-- Clear interfaces between subsystems to allow easy replacement
+The goal of this redesign is to create a clean, extensible system that allows commands to "remember" where they were created, enabling automatic navigation during undo/redo operations. This will significantly improve user experience by focusing attention on the UI elements that are changing.
 
-### 1.2. Extensibility
-- Registry-based system for custom types and factories
-- Plugin architecture to allow extension without modifying core code
-- Support for multiple serialization formats (JSON, Binary, XML, YAML)
+## 2. Core Components
 
-### 1.3. Command Integration
-- Leverage the existing command system for state management
-- Avoid duplicating logic that's already in the command system
-- Create clear separation between transient UI state and persistent model data
-
-## 2. System Architecture
-
+### 2.1. Widget Context Registry
 ```mermaid
 graph TD
-    subgraph Core
-        PS[ProjectSerializer] --> SM[SerializationManager]
-        SM --> RE[RegistryEngine]
-    end
+    WCR[Widget Context Registry] --- WM{Manages}
+    WM --> RC[Register Container]
+    WM --> RW[Register Widget]
+    WM --> LW[Lookup Widget]
     
-    subgraph Adapters
-        JSON[JSONAdapter]
-        BIN[BinaryAdapter]
-        XML[XMLAdapter]
-        YAML[YAMLAdapter]
-    end
-    
-    subgraph Components
-        OBS[ObservableSerializer]
-        DOC[DockSerializer]
-        LAY[LayoutSerializer]
-        WID[WidgetSerializer]
-    end
-    
-    SM --> JSON & BIN & XML & YAML
-    SM --> OBS & DOC & LAY & WID
-    
-    subgraph External
-        PM[ProjectManager] --> PS
-        LM[LayoutManager] --> LAY
-        DM[DockManager] --> DOC
-    end
+    CW[Command Widget] -- "Lookup during\ncommand creation" --> WCR
+    CM[Command Manager] -- "Lookup during\nundo/redo" --> WCR
 ```
 
-## 3. Key Components
+- **Purpose**: Track which container holds each widget
+- **Key Functions**:
+  - Register widget-container relationships
+  - Look up container for a given widget
+  - Handle widget lifecycle and cleanup
 
-### 3.1. SerializationManager
-The central hub for serialization/deserialization operations. Provides:
-- Type registration and discovery
-- Format selection and adapter management
-- Serialization context tracking for resolving references
-
-### 3.2. RegistryEngine
-Maintains registries of:
-- Type mappings (string identifiers to class types)
-- Factory functions for recreating objects
-- Custom serializers for specific objects/types
-
-### 3.3. Format Adapters
-Adapters for each supported serialization format:
-- JSON (default, human-readable)
-- Binary (efficient storage)
-- XML (legacy/interchange)
-- YAML (human-friendly configuration)
-
-### 3.4. Component Serializers
-Specialized serializers for different component types:
-- **ObservableSerializer**: Handles Observable objects and their properties
-- **DockSerializer**: Serializes dock widget states and relationships
-- **LayoutSerializer**: Handles layout structure and geometry
-- **WidgetSerializer**: Generic widget state serialization
-
-## 4. Object Identity and Reference System
-
-```mermaid
-graph LR
-    subgraph Objects
-        Obj1[Object 1<br>ID: abc-123]
-        Obj2[Object 2<br>ID: def-456]
-        Obj3[Object 3<br>ID: ghi-789]
-    end
-    
-    subgraph References
-        Ref1["Reference<br>{id: abc-123}"]
-        Ref2["Reference<br>{id: def-456}"]
-    end
-    
-    Obj1 --> Ref2
-    Obj2 --> Ref1
-    Obj3 --> Ref1
-```
-
-### 4.1. Object Identity
-- Every serializable object has a unique ID (using UUID)
-- IDs are preserved across serialization/deserialization
-- Objects can be recreated with their original IDs
-
-### 4.2. Reference Resolution
-- References are serialized as identifiers, not object copies
-- Two-pass deserialization to handle circular dependencies:
-  1. Create all objects with their IDs
-  2. Resolve references between objects
-
-## 5. Layout Serialization
-
+### 2.2. Container Widget Interface
 ```mermaid
 graph TD
-    subgraph LayoutState
-        MW[MainWindow]
-        D1[Dock1]
-        D2[Dock2]
-        D3[Dock3]
-        SP[Splitter]
-        TB[TabWidget]
-    end
+    CWI[Container Widget Interface] --- Req{Requires}
+    Req --> ID["get_container_id()"]
+    Req --> AC["activate_child()"]
     
-    MW --> D1
-    MW --> D2
-    D2 --> SP
-    SP --> D3
-    SP --> TB
-    
-    subgraph Serialized
-        MS[MainWindowState]
-        DS[DockStates]
-        RS[RelationshipTree]
-        GS[GeometryData]
-    end
+    CWI --- Impl{Implementations}
+    Impl --> TW["Tab Widget"]
+    Impl --> DW["Dock Widget"]
+    Impl --> FW["Future Containers..."]
 ```
 
-### 5.1. Component Approach
-- Each UI component serializes its own state
-- Layout manager orchestrates the process and maintains relationships
-- Component factories registered for recreation
+- **Purpose**: Define common interface for containers
+- **Key Methods**:
+  - `activate_child()`: Focus/display specific child
+  - `get_container_id()`: Unique identifier
+  - `register_child()`: Track container-child relationship
 
-### 5.2. Layout Hierarchy
-- Preserve parent-child relationships
-- Track tabified docks, splitter arrangements
-- Handle floating windows and nested layouts
+### 2.3. Command Context Enhancement
+```mermaid
+graph TD
+    CMD[Command Object] -- "Stores" --> CTX[Execution Context]
+    CTX -- "Contains" --> CID[Container ID]
+    CTX -- "Contains" --> WID[Widget Reference]
+    
+    CW[Command Widget] -- "Sets" --> CTX
+    CM[Command Manager] -- "Uses" --> CTX
+```
 
-### 5.3. Layout-Project Integration
-- Optional layout saving with projects
-- Separate layout preset system for independent layouts
-- Clear boundaries between layout and project data
+- **Purpose**: Store origin information with commands
+- **Implementation**:
+  - Add context field to base Command class
+  - Record widget and container during command creation
+  - Use context during undo/redo for navigation
 
-## 6. Widget State Management
-
-### 6.1. Observable Properties
-- Leverage existing Observable mechanism for property tracking
-- Observable properties are the primary serialization targets
-- Command system handles property changes
-
-### 6.2. Widget Type Registry
-- Register widget types with factories for recreation
-- Type identification system for class mapping
-- Support for custom widget types
-
-### 6.3. State vs. Layout
-- Distinguish between:
-  - **State**: The internal data (properties, values)
-  - **Layout**: The UI arrangement (position, size, visibility)
-
-## 7. Integration with Command System
+## 3. Navigation Flow
 
 ```mermaid
-graph LR
-    subgraph CommandSystem
-        CM[CommandManager]
-        CH[CommandHistory]
-        PC[PropertyCommand]
-    end
+sequenceDiagram
+    participant User
+    participant CommandManager as Command Manager
+    participant Command
+    participant WidgetContext as Widget Context Registry
+    participant Container
     
-    subgraph SerializationSystem
-        SM[SerializationManager]
-        PS[ProjectSerializer]
-    end
+    User->>CommandManager: undo() or redo()
+    CommandManager->>Command: get context
+    Command->>CommandManager: return context
+    CommandManager->>WidgetContext: look up container
+    WidgetContext->>CommandManager: return container
+    CommandManager->>Container: activate_child(widget)
+    Container->>User: focus shifts to relevant UI
+    CommandManager->>Command: undo()/redo()
+```
+
+## 4. Implementation Plan
+
+### 4.1. Core Framework Updates
+
+1. **Add Widget Context Registry**
+   - Create `widget_context.py` in core directory
+   - Implement context registry with singleton pattern
+   - Add methods for registration and lookup
+
+2. **Extend Command Class**
+   - Add context field to store origin information
+   - Add getter/setter methods for context
+
+3. **Update Command Manager**
+   - Add navigation method for context lookup
+   - Call navigation before command execution/undo/redo
+
+### 4.2. Container Framework
+
+1. **Create Base Container Interface**
+   - Define abstract base class in `containers/base_container.py`
+   - Specify required methods
+
+2. **Implement Container Types**
+   - Create `containers/tab_widget.py` implementation
+   - Create `containers/dock_widget.py` implementation
+
+3. **Update CommandWidgetBase**
+   - Modify to capture context during command creation
+   - Support binding and registration with containers
+
+## 5. Example Usage
+
+### 5.1. Creating a Container
+```python
+# Create a tab container
+tabs = CommandTabWidget(parent, "main_tabs")
+
+# Add widgets to tabs
+tab1 = QWidget()
+edit1 = CommandLineEdit()
+edit1.bind_to_model(model, "name")
+tab1_layout = QVBoxLayout(tab1)
+tab1_layout.addWidget(edit1)
+
+# Add to container (auto-registers edit1 with the tab container)
+tabs.addTab(tab1, "Properties")
+```
+
+### 5.2. Command Creation with Context
+```python
+# Inside CommandWidgetBase._create_property_command
+def _create_property_command(self, new_value):
+    command = PropertyCommand(self._model, self._property, new_value)
     
-    subgraph Components
-        OBS[Observable]
-        PROP[Properties]
-        CWB[CommandWidgetBase]
-    end
+    # Get container context and attach to command
+    context = get_widget_context_registry().get_widget_container(self)
+    if context:
+        command.set_execution_context(context)
     
-    CM --> CH
-    CM --> PC
-    PC --> PROP
-    PROP --> OBS
-    CWB --> CM
-    CWB --> OBS
-    PS --> SM
-    SM --> OBS
+    return command
 ```
 
-### 7.1. Model-First Approach
-- Models (Observable objects) are the primary serialization targets
-- UI state derived from models where possible
-- Commands modify models, not directly serialized
-
-### 7.2. Command History Management
-- Clear command history after successful load
-- Consider serializing command history for advanced use cases
-- Use command-like mechanism for layout changes
-
-## 8. Implementation Strategy
-
-### 8.1. Phase 1: Core Framework
-- Implement SerializationManager and RegistryEngine
-- Develop JSON adapter as primary format
-- Create ObservableSerializer for model objects
-
-### 8.2. Phase 2: Layout Integration
-- Implement LayoutSerializer
-- Develop DockSerializer and component factories
-- Create layout serialization endpoints
-
-### 8.3. Phase 3: Project Integration
-- Integrate with ProjectManager
-- Support alternate serialization formats
-- Implement reference resolution system
-
-### 8.4. Phase 4: Optimization and Testing
-- Performance optimization
-- Comprehensive testing system
-- Documentation and examples
-
-## 9. API Design Principles
-
-### 9.1. Simple Core API
-```
-# Project operations
-save_project(model, filename, format=FORMAT_JSON, save_layout=True)
-load_project(filename, format=None)
-
-# Layout operations
-save_layout(filename, name=None)
-load_layout(filename, name=None)
-
-# Registration
-register_type(type_name, class_type, factory)
-register_serializer(type_name, serializer, deserializer)
+### 5.3. Navigation During Undo/Redo
+```python
+# Inside CommandManager.undo
+def undo(self):
+    command = self._history.undo()
+    if command:
+        # Navigate to command context before executing
+        self._navigate_to_command_context(command)
+        command.undo()
+    
+def _navigate_to_command_context(self, command):
+    context = command.get_execution_context()
+    if context and 'container' in context:
+        container = context['container']
+        widget = context['widget']
+        container.activate_child(widget)
 ```
 
-### 9.2. Widget Integration API
-```
-# Command widget approach
-widget = CommandAwareWidget()
-widget.bind_to_model(model, "property_name")
-```
+## 6. Benefits and Advantages
 
-### 9.3. Clean Integration Points
-- Clear hooks for extending serialization
-- Plugin architecture for custom components
-- Event notifications for serialization lifecycle
+1. **Improved User Experience**
+   - Automatic focus on relevant UI elements during undo/redo
+   - No need to manually locate which widget changed
 
-## 10. Error Handling and Robustness
+2. **Extensible Architecture**
+   - New container types can be easily added
+   - Consistent interface for all containers
 
-### 10.1. Versioning
-- Include schema version in serialized data
-- Migration path for older formats
-- Compatibility layer for backward compatibility
+3. **Minimal Core Changes**
+   - Most existing code remains unchanged
+   - Only adds capabilities without breaking existing functionality
 
-### 10.2. Validation
-- Schema validation for serialized data
-- Type checking during deserialization
-- Error reporting and recovery mechanisms
+4. **Clear Separation of Concerns**
+   - Navigation logic separate from command execution
+   - Container interface separate from implementation details
 
-### 10.3. Partial Recovery
-- Ability to load partial data on corruption
-- Fallback mechanisms for missing components
-- Clear error reporting to users
+## 7. Future Enhancements
+
+1. **Multi-Window Support**
+   - Track window ownership for cross-window navigation
+   - Support for floating containers
+
+2. **Compound Navigation**
+   - Handle compound commands with multiple widget origins
+   - Potentially navigate to primary/most relevant widget
+
+3. **Visual Highlighting**
+   - Briefly highlight the widget after navigation
+   - Provide visual cue for what changed
+
+4. **Nested Container Support**
+   - Handle containers within containers (e.g., tabs in docks)
+   - Recursive activation of parent containers

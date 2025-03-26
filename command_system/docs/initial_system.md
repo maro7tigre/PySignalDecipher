@@ -23,9 +23,12 @@ classDiagram
 
     class Command {
         <<abstract>>
+        -_execution_context: Dict
         +execute()* 
         +undo()*
         +redo()
+        +set_execution_context()
+        +get_execution_context()
     }
     
     class CompoundCommand {
@@ -73,6 +76,35 @@ classDiagram
         +clear()
         +can_undo()
         +can_redo()
+        -_navigate_to_command_context()
+    }
+    
+    class WidgetContextRegistry {
+        -_widget_contexts: Dict
+        +register_widget_container()
+        +unregister_widget()
+        +get_widget_container()
+    }
+    
+    class ContainerWidget {
+        <<interface>>
+        +activate_child()*
+        +get_container_id()*
+        +register_child()
+    }
+    
+    class CommandTabWidget {
+        -_container_id: str
+        +get_container_id()
+        +activate_child()
+        +addTab()
+    }
+    
+    class CommandDockWidget {
+        -dock_id: str
+        +get_container_id()
+        +activate_child()
+        +setWidget()
     }
     
     class LayoutManager {
@@ -104,26 +136,22 @@ classDiagram
         +unbind_from_model()
         +_update_widget_from_model()
         +_on_widget_value_changed()
+        +_create_property_command()
     }
-    
-    class DockManager {
-        -_dock_states: Dict
-        -_main_window: QMainWindow
-        +set_main_window()
-        +register_dock()
-        +save_dock_state()
-        +restore_dock_state()
-    }
-    
+
     Observable --> ObservableProperty : uses
     Command <|-- CompoundCommand : extends
     Command <|-- PropertyCommand : extends
     CompoundCommand <|-- MacroCommand : extends
     CommandManager --> CommandHistory : uses
     CommandManager --> Command : executes
+    CommandManager --> WidgetContextRegistry : uses for navigation
+    ContainerWidget <|-- CommandTabWidget : implements
+    ContainerWidget <|-- CommandDockWidget : implements
     CommandWidgetBase --> Observable : binds
     CommandWidgetBase --> CommandManager : uses
+    CommandWidgetBase --> WidgetContextRegistry : registers with
     ProjectManager --> CommandManager : uses
     ProjectManager --> Observable : serializes
-    LayoutManager --> DockManager : uses
+    LayoutManager --> ContainerWidget : manages
     ```

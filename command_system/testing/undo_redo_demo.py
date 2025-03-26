@@ -15,7 +15,7 @@ if project_root not in sys.path:
 from command_system.core.observable import Observable, ObservableProperty
 from command_system.core.command_manager import get_command_manager
 from command_system.widgets.line_edit import CommandLineEdit
-from command_system.widgets.base import CommandExecutionMode
+from command_system.widgets.base_widget import CommandExecutionMode
 
 
 class Person(Observable):

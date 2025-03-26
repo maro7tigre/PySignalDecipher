@@ -278,15 +278,19 @@ class CommandManager:
         if not command:
             return
             
-        context = command.get_execution_context()
-        if not context or not context.get('container'):
+        # Check if command has execution context
+        if not hasattr(command, "_execution_context") or not command._execution_context:
             return
             
-        container = context.get('container')
-        widget = context.get('widget')
+        context = command._execution_context
+        if not context or "container" not in context:
+            return
+            
+        container = context.get("container")
+        widget = context.get("widget")
         
-        # Check if container has the activate_child method
-        if hasattr(container, 'activate_child') and callable(container.activate_child):
+        # Check if container can activate child
+        if container and widget and hasattr(container, "activate_child"):
             try:
                 container.activate_child(widget)
             except Exception as e:
