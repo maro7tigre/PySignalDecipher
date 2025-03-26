@@ -20,7 +20,7 @@ class Command(ABC):
     
     def __init__(self):
         """Initialize the command."""
-        pass
+        self.trigger_widget = None
         
     @abstractmethod
     def execute(self) -> None:
@@ -52,6 +52,7 @@ class CompoundCommand(Command):
         """
         self.name = name
         self.commands: List[Command] = []
+        
         
     def add_command(self, command: Command) -> None:
         """

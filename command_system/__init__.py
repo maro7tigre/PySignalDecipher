@@ -11,7 +11,6 @@ from .core.command import Command, CompoundCommand, PropertyCommand, MacroComman
 from .core.command_manager import CommandManager, get_command_manager
 from .project.project_manager import ProjectManager, get_project_manager
 from .widgets.containers.base_container import ContainerWidgetMixin
-from .core.widget_context import get_widget_context_registry
 
 # Initialize system components - this will auto-initialize layout integration
 from . import _auto_init

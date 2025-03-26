@@ -9,7 +9,6 @@ command_system/
 │   ├── observable.py             # Observable pattern
 │   ├── command.py                # Command pattern
 │   ├── command_manager.py        # Command tracking
-│   └── widget_context.py         # Widget context registry for navigation
 ├── serialization/                # Serialization system
 │   ├── __init__.py               # Exports serialization API
 │   ├── manager.py                # SerializationManager

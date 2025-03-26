@@ -16,7 +16,7 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
     A tab widget that supports command-based navigation.
     """
     
-    def __init__(self, parent=None, container_id=None):
+    def __init__(self, parent=None, tabs_id=None):
         """
         Initialize the command tab widget.
         
@@ -25,7 +25,8 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
             container_id: Optional unique ID for this container
         """
         QTabWidget.__init__(self, parent)
-        ContainerWidgetMixin.__init__(self, container_id)
+        ContainerWidgetMixin.__init__(self)
+        #TODO: impoliment tabs_id
         
     def activate_child(self, widget: Any) -> bool:
         """
@@ -51,7 +52,6 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
             if self._is_descendant(tab_widget, widget):
                 self.setCurrentIndex(i)
                 widget.setFocus()
-                print(f"Activating tab {i} for widget {widget}")
                 return True
                 
         return False
@@ -84,3 +84,19 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
         index = super().addTab(tab, label)
         self.register_contents(tab)
         return index
+
+    def navigate_to_container(self, widget=None, info=None):
+        """Navigate to the appropriate tab."""
+        # First ensure parent containers are visible
+        if hasattr(self, "container") and self.container:
+            self.container.navigate_to_container()
+        
+        # Switch to specific tab if info contains tab index
+        if info and "tab_index" in info:
+            self.setCurrentIndex(info["tab_index"])
+        
+        # Activate specific widget if provided
+        if widget:
+            return self.activate_child(widget)
+        
+        return True

@@ -26,7 +26,7 @@ class CommandDockWidget(QDockWidget, ContainerWidgetMixin):
             parent: Parent widget (typically the main window)
         """
         QDockWidget.__init__(self, title, parent)
-        ContainerWidgetMixin.__init__(self, dock_id)
+        ContainerWidgetMixin.__init__(self)
         
         # Set objectName to match dock_id for Qt
         self.setObjectName(dock_id)
@@ -64,3 +64,20 @@ class CommandDockWidget(QDockWidget, ContainerWidgetMixin):
         """
         super().setWidget(widget)
         
+        self.register_contents(widget)
+        
+    def navigate_to_container(self, widget=None, info=None):
+        """Navigate to this dock widget."""
+        # First ensure parent containers are visible
+        if hasattr(self, "container") and self.container:
+            self.container.navigate_to_container()
+        
+        # Make dock visible and raise it
+        self.setVisible(True)
+        self.raise_()
+        
+        # Activate specific widget if provided
+        if widget:
+            return self.activate_child(widget)
+        
+        return True

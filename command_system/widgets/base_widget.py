@@ -40,6 +40,7 @@ class CommandWidgetBase(Generic[T]):
         self._old_value = None
         self._custom_command_factory = None
         self.container = None
+        self.container_info = None
         
         # Command execution mode
         self._command_execution_mode = CommandExecutionMode.ON_EDIT_END
@@ -247,7 +248,9 @@ class CommandWidgetBase(Generic[T]):
                 self._observable_property,
                 new_value
             )
-            
+        
+            # Set the trigger widget to this widget
+        command.trigger_widget = self
         return command
             
     def set_command_factory(self, factory: Callable[[Observable, str, Any, Any], Command]):

@@ -278,8 +278,17 @@ class CommandManager:
         if not command:
             return
             
-        # Check if command's widget has a container
-        pass
+        # Check if command had a trigger widget
+        if command.trigger_widget is None:
+            return
+        
+        trigger_widget = command.trigger_widget
+        # Check if the trigger widget has a container
+        if trigger_widget.container is None:
+            return
+        
+        # Navigate to the command context
+        trigger_widget.container.navigate_to_container(trigger_widget, trigger_widget.container_info)
 
     def is_updating(self) -> bool:
         """
