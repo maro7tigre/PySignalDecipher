@@ -16,7 +16,6 @@ flowchart TD
     RegisterTypes --> Container[Container API]
     InstantiateContent --> Container
     
-    Container --> Serialization
     Container --> CommandSystem
 ```
 
@@ -25,14 +24,14 @@ flowchart TD
 ```mermaid
 graph TD
     A[Simplicity] --> User["Simple user API<br>Minimal changes to existing code"]
-    B[Persistence] --> Layout["Container layout serialization<br>Content state preservation"]
-    C[Dynamic Creation] --> Factory["Factory-based container creation<br>Auto-generated stable IDs"]
-    D[Command Integration] --> Track["Track container operations<br>Enable undo/redo"]
+    B[Dynamic Creation] --> Factory["Factory-based container creation<br>Auto-generated stable IDs"]
+    C[Command Integration] --> Track["Track container operations<br>Enable undo/redo"]
+    D[Nested Containers] --> Hierarchy["Support nested container hierarchies"]
     
     User --> Goal["User-friendly<br>container management"]
-    Layout --> Goal
     Factory --> Goal
     Track --> Goal
+    Hierarchy --> Goal
 ```
 
 Our approach integrates directly into the container widgets (CommandTabWidget, CommandDockWidget), so the management system is abstracted away from users. Each container widget handles its own registration and creation of content.
@@ -59,40 +58,87 @@ Once registered, containers can be created:
 
 ```python
 # Create an instance of a registered tab
-tab_instance = tab_widget.add(personal_tab_id)
+tab_instance = tab_widget.add_tab(personal_tab_id, person_data=person)
 ```
 
-### 3. Container Layout and State
+## How It Works Internally
 
-The system automatically handles layout persistence:
+### ContainerWidgetMixin
 
-```python
-# Save entire application container layout
-layout_data = save_container_layout()
+The `ContainerWidgetMixin` serves as the foundation for all dynamic containers:
 
-# Restore layout from saved data
-load_container_layout(layout_data)
-```
+1. **Registration System**:
+   - Each container maintains a dictionary `_content_types` mapping type IDs to factory functions and options
+   - Registration methods store factory functions and metadata about each content type
+   - Types can be marked as dynamic (multiple instances) or static (single instance)
+
+2. **Instance Management**:
+   - Created instances are tracked in `_content_instances` dictionary
+   - Each instance has a unique ID, either provided or auto-generated
+   - Instance IDs enable direct reference to specific content instances
+
+3. **Container Hierarchy**:
+   - Containers store references to their parent container (if any)
+   - The `register_contents` method sets container references in all child widgets
+   - This enables precise navigation during command operations
+
+4. **Command Integration**:
+   - Widgets within containers store their container reference
+   - Commands store the widget that triggered them
+   - During undo/redo, the system navigates to the appropriate container
+
+### Tab Widget Implementation
+
+The `CommandTabWidget` builds on the base mixin with tab-specific functionality:
+
+1. **Tab Management**:
+   - Maintains a map between tab indices and instance IDs (`_tab_instance_map`)
+   - Handles tab navigation and focus
+   - Manages tab closure and index updates
+
+2. **Tab Factory Pattern**:
+   - `register_tab` registers a factory function for creating tab content
+   - `add_tab` uses the factory to create tab content with parameters
+   - Tab creation parameters are stored for future recreation
+
+### Dock Widget Implementation
+
+The `CommandDockWidget` implements dock-specific container behavior:
+
+1. **Dock Content Management**:
+   - Tracks active content instance with `_active_instance_id`
+   - Handles content replacement when a new instance is added
+   - Manages visibility and features based on content options
+
+2. **Dock Navigation**:
+   - Makes dock visible and raises it during navigation
+   - Focus specific child widgets when needed
+   - Ensures parent containers are visible (for nested docks)
 
 ## Container Types
 
 ```mermaid
 classDiagram
     class ContainerWidgetMixin {
+        +_container_id: str
+        +_content_types: Dict
+        +_content_instances: Dict
         +register_content_type()
         +add()
         +close()
-        +get_container_state()
-        +set_container_state()
+        +navigate_to_container()
     }
     
     class CommandTabWidget {
+        +_tab_instance_map: Dict
         +register_tab()
         +add_tab()
         +close_tab()
+        +_on_tab_close_requested()
     }
     
     class CommandDockWidget {
+        +_active_instance_id: str
         +register_dock()
         +add_dock()
         +close_dock()
@@ -118,18 +164,26 @@ sequenceDiagram
     App->>Tab: register_tab(create_contact_tab, "Contact", dynamic=true)
     App->>Dock: register_dock(create_property_panel, "Properties", dynamic=false)
     
-    App->>Tab: add("personal", person_data)
+    App->>Tab: add_tab("personal", person_data=person)
     Tab->>Tab: Factory creates tab content
     Tab->>Tab: addTab(content, "Personal")
-    Tab->>Cmd: Register with command system
+    Tab->>Tab: register_contents(content)
     
-    App->>Tab: add("contact", contact_data)
+    App->>Tab: add_tab("contact", contact_data=contact)
     Tab->>Tab: Factory creates tab content
     Tab->>Tab: addTab(content, "Contact") 
-    Tab->>Cmd: Register with command system
+    Tab->>Tab: register_contents(content)
     
-    App->>Tab: saveState()
-    App->>Dock: saveState()
+    Note over App,Dock: Command triggered from tab
+    Tab->>Cmd: Command stores widget reference
+    Cmd->>Cmd: Execute command
+    
+    Note over App,Dock: Later undo operation
+    App->>Cmd: undo()
+    Cmd->>Tab: navigate_to_container(widget)
+    Tab->>Tab: setCurrentIndex(tab_index)
+    Tab->>Tab: widget.setFocus()
+    Cmd->>Cmd: Apply undo
 ```
 
 ## Implementation Philosophy
@@ -138,6 +192,7 @@ sequenceDiagram
 2. **Factory Pattern**: Container content is created by factory functions
 3. **Consistent IDs**: Container instances use stable IDs for persistence
 4. **Command Integration**: Container operations can be part of the command history
+5. **Nested Support**: Containers can be nested within other containers
 
 ## Simplified User Experience
 
@@ -160,41 +215,36 @@ From the user's perspective, the workflow is straightforward:
 
 3. **Create content as needed**
    ```python
-   self.tab_widget.add(personal_tab_id, person=self.person)
+   self.tab_widget.add_tab(personal_tab_id, person=self.person)
    ```
 
 4. **Define factory functions**
    ```python
-   def create_personal_tab(self, params=None):
+   def create_personal_tab(self, person=None):
        tab = QWidget()
        layout = QFormLayout(tab)
        
        first_name_edit = CommandLineEdit()
-       if params and 'person' in params:
-           first_name_edit.bind_to_model(params['person'], "first_name")
+       if person and 'person' in params:
+           first_name_edit.bind_to_model(person, "first_name")
        
        layout.addRow("First Name:", first_name_edit)
        return tab
    ```
 
-## Serialization Strategy
+## Future Enhancements
 
-```mermaid
-flowchart TD
-    Save[Save Project] --> GetContainers[Get All Container Widgets]
-    GetContainers --> SerializeTypes[Serialize Container Types]
-    GetContainers --> SerializeInstances[Serialize Container Instances]
-    GetContainers --> SerializeLayout[Serialize Layout Info]
-    
-    SerializeTypes --> CombinedData[Combined Serialization Data]
-    SerializeInstances --> CombinedData
-    SerializeLayout --> CombinedData
-    
-    CombinedData --> ProjectFile[Project File]
-```
+1. **Serialization Integration**
+   - Container layout persistence
+   - Content state preservation
+   - Content recreation from saved state
 
-The serialization system captures:
-1. Container type definitions
-2. Instance state for dynamic containers
-3. Layout information (position, size, visibility)
-4. Parent-child relationships
+2. **Layout Management**
+   - Container layout presets
+   - Layout state serialization
+   - Multi-window support
+
+3. **Command History Integration**
+   - Container creation/closure commands
+   - Layout change commands
+   - State change tracking
