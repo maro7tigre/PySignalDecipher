@@ -7,8 +7,8 @@ for navigation during undo/redo operations and supports dynamic content creation
 from typing import Any, Dict, Callable, Optional
 import uuid
 
-from PySide6.QtWidgets import QTabWidget, QWidget
-from PySide6.QtCore import Signal, Slot
+from PySide6.QtWidgets import QTabWidget, QWidget, QTabBar
+from PySide6.QtCore import Signal, Slot, Qt
 
 from .base_container import ContainerWidgetMixin
 
@@ -90,7 +90,7 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
         Override to register the widget with this container.
         
         Args:
-            widget: Tab widget to add
+            tab: Tab widget to add
             label: Tab label
             
         Returns:
@@ -99,6 +99,29 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
         index = super().addTab(tab, label)
         self.register_contents(tab, {"tab_index": index})
         return index
+    
+    def set_tab_closable(self, index: int, closable: bool) -> None:
+        """
+        Set whether a specific tab should be closable.
+        
+        Args:
+            index: Tab index
+            closable: Whether the tab should be closable
+        """
+        try:
+            if not closable:
+                # Create an empty widget (invisible)
+                empty_widget = QWidget()
+                empty_widget.setFixedSize(0, 0)
+                # Replace the close button with the empty widget
+                button_position = QTabBar.ButtonPosition.RightSide
+                self.tabBar().setTabButton(index, button_position, empty_widget)
+            else:
+                # Restore the close button (set to None to use default)
+                button_position = QTabBar.ButtonPosition.RightSide
+                self.tabBar().setTabButton(index, button_position, None)
+        except Exception as e:
+            print(f"Error setting tab closability: {e}")
     
     # ===== Dynamic Content Methods =====
     
@@ -152,10 +175,10 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
         display_name = content_type['display_name']
         index = self.addTab(content_widget, display_name)
         
-        # Enable tab close buttons globally if needed
-        if hasattr(self, 'setTabsClosable'):
-            self.setTabsClosable(True)
-            
+        # Set tab closability
+        closable = content_type.get('closable', False)
+        self.set_tab_closable(index, closable)
+        
         # Store the instance ID for this tab index
         self._tab_instance_map[index] = instance_id
         
@@ -176,7 +199,7 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
         Returns:
             True if tab was successfully closed
         """
-        return self._close_content(self._content_instances.get(instance_id, {}).get('widget'), instance_id)
+        return self.close_content(instance_id)
     
     def _close_content(self, content_widget: QWidget, instance_id: str) -> bool:
         """
@@ -191,7 +214,7 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
         """
         # Find the tab index for this instance ID
         index = None
-        for idx, tab_id in self._tab_instance_map.items():
+        for idx, tab_id in list(self._tab_instance_map.items()):
             if tab_id == instance_id:
                 index = idx
                 break
@@ -199,21 +222,30 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
         if index is None:
             return False
         
+        # Check if the index is still valid
+        if index >= self.count():
+            # Invalid index, clean up the map
+            if index in self._tab_instance_map:
+                del self._tab_instance_map[index]
+            return False
+        
         # Remove the tab
         self.removeTab(index)
         
         # Clean up the map
-        del self._tab_instance_map[index]
+        if index in self._tab_instance_map:
+            del self._tab_instance_map[index]
         
-        # Update indices for remaining tabs
+        # Update indices for remaining tabs - create a new map to avoid modification during iteration
         new_map = {}
         for i in range(self.count()):
             tab_widget = self.widget(i)
-            for old_idx, tab_id in self._tab_instance_map.items():
-                if self.widget(old_idx) == tab_widget:
+            for old_idx, tab_id in list(self._tab_instance_map.items()):
+                if old_idx < self.count() and self.widget(old_idx) == tab_widget:
                     new_map[i] = tab_id
                     break
         
+        # Replace the old map with the updated one
         self._tab_instance_map = new_map
         
         # Emit signal
@@ -231,10 +263,17 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
         """
         if index in self._tab_instance_map:
             instance_id = self._tab_instance_map[index]
-            self.close_tab(instance_id)
-    
-    # State persistence methods will be added in future implementations
-    # when the serialization system is integrated
+            
+            # Get the content type for this instance
+            instance_info = self._content_instances.get(instance_id, {})
+            type_id = instance_info.get('type_id')
+            content_type = self._content_types.get(type_id, {})
+            
+            # Only close if closable
+            if content_type.get('closable', False):
+                self.close_tab(instance_id)
+            else:
+                print(f"Tab '{content_type.get('display_name', 'Unknown')}' is not closable")
     
     def navigate_to_container(self, widget=None, info=None):
         """
@@ -253,7 +292,9 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
         
         # Switch to specific tab if info contains tab index
         if info and "tab_index" in info:
-            self.setCurrentIndex(info["tab_index"])
+            tab_index = info["tab_index"]
+            if 0 <= tab_index < self.count():
+                self.setCurrentIndex(tab_index)
         
         # Activate specific widget if provided
         if widget:

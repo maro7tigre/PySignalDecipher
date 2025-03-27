@@ -9,7 +9,6 @@ providing working undo/redo functionality, and integrating with Qt widgets.
 from .core.observable import Observable, ObservableProperty
 from .core.command import Command, CompoundCommand, PropertyCommand, MacroCommand
 from .core.command_manager import CommandManager, get_command_manager
-from .project.project_manager import ProjectManager, get_project_manager
 from .widgets.containers.base_container import ContainerWidgetMixin
 
 # Initialize system components - this will auto-initialize layout integration

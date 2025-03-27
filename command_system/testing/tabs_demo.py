@@ -1,14 +1,11 @@
 """
-Simple demo of the PySignalDecipher dynamic container system.
-
-This demo shows how to register tab types, create tabs dynamically,
-and integrate with the command system for undo/redo navigation.
+Simple demo for selective tab closability.
 """
 import sys
 import os
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, 
-    QHBoxLayout, QPushButton, QLabel, QFormLayout
+    QHBoxLayout, QPushButton, QLabel
 )
 
 # Add project root to path
@@ -20,7 +17,6 @@ if project_root not in sys.path:
 from command_system.core.observable import Observable, ObservableProperty
 from command_system.core.command_manager import get_command_manager
 from command_system.widgets.line_edit import CommandLineEdit
-from command_system.widgets.base_widget import CommandExecutionMode
 from command_system.widgets.containers.tab_widget import CommandTabWidget
 
 
@@ -48,56 +44,49 @@ class SimpleTabsDemo(QMainWindow):
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
         
-        # Create buttons
-        btn_layout = QHBoxLayout()
-        layout.addLayout(btn_layout)
-        
-        add_info_btn = QPushButton("Add Info Tab")
-        add_info_btn.clicked.connect(self.add_info_tab)
-        
-        add_contact_btn = QPushButton("Add Contact Tab")
-        add_contact_btn.clicked.connect(self.add_contact_tab)
-        
-        add_address_btn = QPushButton("Add Address Tab")
-        add_address_btn.clicked.connect(self.add_address_tab)
-        
-        btn_layout.addWidget(add_info_btn)
-        btn_layout.addWidget(add_contact_btn)
-        btn_layout.addWidget(add_address_btn)
-        
         # Create tab widget
-        self.tab_widget = CommandTabWidget(self, "main_tabs")
-        self.tab_widget.setTabsClosable(True)
+        self.tab_widget = CommandTabWidget(self)
+        # Enable tab close buttons for all tabs
         layout.addWidget(self.tab_widget)
         
-        # Register tab types with different closable settings
-        self.info_tab_type = self.tab_widget.register_tab(
-            self.create_info_tab,
-            tab_name="Info",
+        # Register tab types with different closability
+        self.closable_tab_type = self.tab_widget.register_tab(
+            self.create_closable_tab,
+            tab_name="Closable Tab",
             dynamic=True,
-            closable=False  # Not closable
+            closable=True
         )
         
-        self.contact_tab_type = self.tab_widget.register_tab(
-            self.create_contact_tab,
-            tab_name="Contact",
+        self.non_closable_tab_type = self.tab_widget.register_tab(
+            self.create_non_closable_tab,
+            tab_name="Non-Closable Tab",
             dynamic=True,
-            closable=True  # Closable
+            closable=False
         )
         
-        self.address_tab_type = self.tab_widget.register_tab(
-            self.create_address_tab,
-            tab_name="Address",
+        self.welcome_tab = self.tab_widget.register_tab(
+            self.add_welcome_tab,
+            tab_name="Welcome",
             dynamic=True,
-            closable=True  # Closable
+            closable=False
         )
         
-        # Connect tab close signal
-        self.tab_widget.tabCloseRequested.connect(self.handle_tab_close)
+        # Create buttons for adding tabs
+        tab_btn_layout = QHBoxLayout()
+        layout.addLayout(tab_btn_layout)
         
-        # Create command buttons
-        cmd_layout = QHBoxLayout()
-        layout.addLayout(cmd_layout)
+        add_closable_btn = QPushButton("Add Closable Tab")
+        add_closable_btn.clicked.connect(self.add_closable_tab)
+        
+        add_non_closable_btn = QPushButton("Add Non-Closable Tab")
+        add_non_closable_btn.clicked.connect(self.add_non_closable_tab)
+        
+        tab_btn_layout.addWidget(add_closable_btn)
+        tab_btn_layout.addWidget(add_non_closable_btn)
+        
+        # Create undo/redo buttons
+        cmd_btn_layout = QHBoxLayout()
+        layout.addLayout(cmd_btn_layout)
         
         undo_btn = QPushButton("Undo")
         undo_btn.clicked.connect(self.cmd_manager.undo)
@@ -105,148 +94,77 @@ class SimpleTabsDemo(QMainWindow):
         redo_btn = QPushButton("Redo")
         redo_btn.clicked.connect(self.cmd_manager.redo)
         
-        cmd_layout.addWidget(undo_btn)
-        cmd_layout.addWidget(redo_btn)
+        cmd_btn_layout.addWidget(undo_btn)
+        cmd_btn_layout.addWidget(redo_btn)
         
-        # Add welcome tab
-        self.create_welcome_tab()
-        
-        # Store tab IDs
-        self.tab_ids = {
-            "info": None,
-            "contact": None,
-            "address": None
-        }
-        
-        # Reverse mapping from tab_id to tab_type
-        self.tab_id_to_type = {}
+        # Add initial welcome tab
+        self.tab_widget.add_tab(self.welcome_tab)
     
-    def create_welcome_tab(self):
-        """Create a welcome tab."""
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
+    def create_closable_tab(self):
+        """Create content for a closable tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        # Label explaining tab type
+        label = QLabel("This is a closable tab.\nYou can close this tab with the X button.")
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        
+        # Add an editable field to test undo/redo
+        name_label = QLabel("Edit this field and use undo/redo:")
+        layout.addWidget(name_label)
+        
+        name_edit = CommandLineEdit()
+        name_edit.bind_to_model(self.person, "name")
+        layout.addWidget(name_edit)
+        
+        return widget
+    
+    def create_non_closable_tab(self):
+        """Create content for a non-closable tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        # Label explaining tab type
+        label = QLabel("This is a non-closable tab.\nThe X button is disabled for this tab.")
+        label.setWordWrap(True)
+        layout.addWidget(label)
+        
+        # Add an editable field to test undo/redo
+        email_label = QLabel("Edit this field and use undo/redo:")
+        layout.addWidget(email_label)
+        
+        email_edit = CommandLineEdit()
+        email_edit.bind_to_model(self.person, "email")
+        layout.addWidget(email_edit)
+        
+        return widget
+    
+    def add_welcome_tab(self):
+        """Add a welcome tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
         
         label = QLabel(
-            "Welcome to the Simple Dynamic Tabs Demo!\n\n"
-            "Use the buttons above to add different types of tabs.\n"
-            "Edit the fields and use Undo/Redo to see automatic navigation."
+            "Welcome to the Tab Closability Demo\n\n"
+            "This demo shows how to create tabs with different closability settings.\n"
+            "- Closable tabs allow you to click the X button\n"
+            "- Non-closable tabs ignore clicks on the X button\n\n"
+            "Use the buttons below to add different types of tabs."
         )
         label.setWordWrap(True)
-        
         layout.addWidget(label)
-        layout.addStretch()
         
-        self.tab_widget.addTab(tab, "Welcome")
+        # Add the tab directly (not using the dynamic system)
+        return widget
     
-    def create_info_tab(self):
-        """Factory function to create an info tab."""
-        tab = QWidget()
-        layout = QFormLayout(tab)
-        
-        name_edit = CommandLineEdit(execution_mode=CommandExecutionMode.ON_EDIT_END)
-        name_edit.bind_to_model(self.person, "name")
-        layout.addRow("Name:", name_edit)
-        
-        return tab
+    def add_closable_tab(self):
+        """Add a closable tab."""
+        self.tab_widget.add_tab(self.closable_tab_type)
     
-    def create_contact_tab(self):
-        """Factory function to create a contact tab."""
-        tab = QWidget()
-        layout = QFormLayout(tab)
-        
-        email_edit = CommandLineEdit(execution_mode=CommandExecutionMode.DELAYED)
-        email_edit.bind_to_model(self.person, "email")
-        layout.addRow("Email:", email_edit)
-        
-        return tab
-    
-    def create_address_tab(self):
-        """Factory function to create an address tab."""
-        tab = QWidget()
-        layout = QFormLayout(tab)
-        
-        address_edit = CommandLineEdit(execution_mode=CommandExecutionMode.ON_CHANGE)
-        address_edit.bind_to_model(self.person, "address")
-        layout.addRow("Address:", address_edit)
-        
-        return tab
-    
-    def add_info_tab(self):
-        """Add an info tab if it doesn't exist."""
-        if self.tab_ids["info"] is None:
-            tab_id = self.tab_widget.add_tab(self.info_tab_type)
-            self.tab_ids["info"] = tab_id
-            self.tab_id_to_type[tab_id] = "info"
-    
-    def add_contact_tab(self):
-        """Add a contact tab if it doesn't exist."""
-        if self.tab_ids["contact"] is None:
-            tab_id = self.tab_widget.add_tab(self.contact_tab_type)
-            self.tab_ids["contact"] = tab_id
-            self.tab_id_to_type[tab_id] = "contact"
-    
-    def add_address_tab(self):
-        """Add an address tab if it doesn't exist."""
-        if self.tab_ids["address"] is None:
-            tab_id = self.tab_widget.add_tab(self.address_tab_type)
-            self.tab_ids["address"] = tab_id
-            self.tab_id_to_type[tab_id] = "address"
-    
-    def handle_tab_close(self, index):
-        """Handle tab closing and update tracking."""
-        # Skip welcome tab (index 0)
-        if index == 0:
-            return
-        
-        # Find which tab type this is
-        widget = self.tab_widget.widget(index)
-        tab_id_to_remove = None
-        
-        # Find the tab ID that corresponds to this widget
-        for tab_id, instances in self.tab_widget._content_instances.items():
-            if instances.get('widget') == widget:
-                tab_id_to_remove = tab_id
-                break
-        
-        if tab_id_to_remove:
-            # Check if this tab type is closable
-            tab_type = self.tab_id_to_type.get(tab_id_to_remove)
-            
-            if tab_type:
-                # Get tab type info
-                content_type_id = self.tab_widget._content_instances[tab_id_to_remove].get('type_id')
-                content_type = self.tab_widget._content_types.get(content_type_id, {})
-                
-                # Only allow closing if the tab is closable
-                if content_type.get('closable', True):
-                    self.tab_ids[tab_type] = None
-                    del self.tab_id_to_type[tab_id_to_remove]
-                    
-                    # Let the tab widget close it properly
-                    self.tab_widget.close_content(tab_id_to_remove)
-                else:
-                    # This tab is not closable - don't close it
-                    print(f"Tab '{content_type.get('display_name', 'Unknown')}' is not closable")
-        else:
-            # Fallback to direct removal for non-tracked tabs
-            self.tab_widget.removeTab(index)# Find the tab ID that corresponds to this widget
-        for tab_id, instances in self.tab_widget._content_instances.items():
-            if instances.get('widget') == widget:
-                tab_id_to_remove = tab_id
-                break
-        
-        if tab_id_to_remove:
-            # Update our tracking
-            tab_type = self.tab_id_to_type.get(tab_id_to_remove)
-            if tab_type:
-                self.tab_ids[tab_type] = None
-                del self.tab_id_to_type[tab_id_to_remove]
-            
-            # Let the tab widget close it properly
-            self.tab_widget.close_content(tab_id_to_remove)
-        else:
-            # Fallback to direct removal
-            self.tab_widget.removeTab(index)
+    def add_non_closable_tab(self):
+        """Add a non-closable tab."""
+        self.tab_widget.add_tab(self.non_closable_tab_type)
 
 
 if __name__ == "__main__":
