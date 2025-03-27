@@ -109,17 +109,19 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
             closable: Whether the tab should be closable
         """
         try:
-            if not closable:
-                # Create an empty widget (invisible)
-                empty_widget = QWidget()
-                empty_widget.setFixedSize(0, 0)
-                # Replace the close button with the empty widget
-                button_position = QTabBar.ButtonPosition.RightSide
-                self.tabBar().setTabButton(index, button_position, empty_widget)
-            else:
-                # Restore the close button (set to None to use default)
-                button_position = QTabBar.ButtonPosition.RightSide
-                self.tabBar().setTabButton(index, button_position, None)
+            # Keep all tabs closable at Qt level
+            self.setTabsClosable(True)
+            
+            # Store closable state in tab data
+            self.tabBar().setTabData(index, {"closable": closable})
+            
+            # Get the close button for this tab
+            button_position = QTabBar.RightSide
+            close_button = self.tabBar().tabButton(index, button_position)
+            
+            # If we have a button, control its visibility
+            if close_button:
+                close_button.setVisible(closable)
         except Exception as e:
             print(f"Error setting tab closability: {e}")
     
@@ -261,19 +263,16 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
         Args:
             index: Index of the tab to close
         """
+        # Check if tab is closable from stored data
+        tab_data = self.tabBar().tabData(index)
+        if tab_data and not tab_data.get("closable", True):
+            print(f"Tab '{self.tabText(index)}' is not closable")
+            return
+            
+        # Continue with original close logic
         if index in self._tab_instance_map:
             instance_id = self._tab_instance_map[index]
-            
-            # Get the content type for this instance
-            instance_info = self._content_instances.get(instance_id, {})
-            type_id = instance_info.get('type_id')
-            content_type = self._content_types.get(type_id, {})
-            
-            # Only close if closable
-            if content_type.get('closable', False):
-                self.close_tab(instance_id)
-            else:
-                print(f"Tab '{content_type.get('display_name', 'Unknown')}' is not closable")
+            self.close_tab(instance_id)
     
     def navigate_to_container(self, widget=None, info=None):
         """
