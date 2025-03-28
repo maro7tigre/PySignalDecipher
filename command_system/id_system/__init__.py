@@ -14,8 +14,14 @@ from .utils import (
     extract_container_unique_id,
     extract_location,
     extract_widget_unique_id,
+    extract_property_name,
+    extract_observable_id_from_property_id,
+    extract_widget_id_from_property_id,
     is_observable_id,
-    is_widget_id
+    is_widget_id,
+    is_property_id,
+    get_full_id,
+    get_unique_id
 )
 
 # Type code constants for standard widgets, containers, and observables
@@ -58,6 +64,12 @@ __all__ = [
     'extract_container_unique_id',
     'extract_location',
     'extract_widget_unique_id',
+    'extract_property_name',
+    'extract_observable_id_from_property_id',
+    'extract_widget_id_from_property_id',
     'is_observable_id',
-    'is_widget_id'
+    'is_widget_id',
+    'is_property_id',
+    'get_full_id',
+    'get_unique_id'
 ]
