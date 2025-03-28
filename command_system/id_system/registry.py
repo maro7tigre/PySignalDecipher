@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional, Set, TypeVar
 import weakref
 
 from .generator import IDGenerator
-from .utils import extract_unique_id, extract_container_unique_id
+from .utils import extract_unique_id, extract_container_unique_id, extract_location
 
 # Type variable for widgets
 T = TypeVar('T')
@@ -44,7 +44,8 @@ class IDRegistry:
     
     def register(self, widget: Any, type_code: str, 
                 observable_id: Optional[str] = None, 
-                container_id: Optional[str] = None) -> str:
+                container_id: Optional[str] = None,
+                location: Optional[str] = None) -> str:
         """
         Register a widget with the ID system.
         
@@ -53,6 +54,7 @@ class IDRegistry:
             type_code: Short code indicating widget type
             observable_id: Optional existing ID to use/update
             container_id: Optional container ID
+            location: Optional location in container
             
         Returns:
             Generated or updated widget ID
@@ -64,18 +66,16 @@ class IDRegistry:
             if len(parts) != 4:
                 # Invalid format, generate new ID
                 container_unique_id = extract_unique_id(container_id) if container_id else "0"
-                widget_id = self._id_generator.generate_id(type_code, container_unique_id)
+                widget_id = self._id_generator.generate_id(type_code, container_unique_id, location or "0")
             else:
                 # Update with new container if provided
-                if container_id:
-                    container_unique_id = extract_unique_id(container_id)
-                    widget_id = self._id_generator.update_id(observable_id, container_unique_id)
-                else:
-                    widget_id = observable_id
+                container_unique_id = container_id and extract_unique_id(container_id) or None
+                new_location = location or None
+                widget_id = self._id_generator.update_id(observable_id, container_unique_id, new_location)
         else:
             # Generate new ID
             container_unique_id = extract_unique_id(container_id) if container_id else "0"
-            widget_id = self._id_generator.generate_id(type_code, container_unique_id)
+            widget_id = self._id_generator.generate_id(type_code, container_unique_id, location or "0")
         
         # Store mappings
         self._widget_to_id_map[widget] = widget_id
@@ -186,6 +186,58 @@ class IDRegistry:
             if extract_container_unique_id(widget_id) == container_unique_id:
                 result.append(widget_id)
         return result
+        
+    def get_widgets_by_container_id(self, container_unique_id: str) -> List[Any]:
+        """
+        Get all widgets that have this container ID.
+        
+        Args:
+            container_unique_id: Container's unique ID
+            
+        Returns:
+            List of widget objects
+        """
+        result = []
+        for widget, widget_id in self._widget_to_id_map.items():
+            if extract_container_unique_id(widget_id) == container_unique_id:
+                result.append(widget)
+        return result
+        
+    def get_widget_ids_by_container_id_and_location(self, container_unique_id: str, location: str) -> List[str]:
+        """
+        Get all widget IDs that have this container ID and location.
+        
+        Args:
+            container_unique_id: Container's unique ID
+            location: Location in container
+            
+        Returns:
+            List of widget ID strings
+        """
+        result = []
+        for widget, widget_id in self._widget_to_id_map.items():
+            if (extract_container_unique_id(widget_id) == container_unique_id and 
+                extract_location(widget_id) == location):
+                result.append(widget_id)
+        return result
+        
+    def get_widgets_by_container_id_and_location(self, container_unique_id: str, location: str) -> List[Any]:
+        """
+        Get all widgets that have this container ID and location.
+        
+        Args:
+            container_unique_id: Container's unique ID
+            location: Location in container
+            
+        Returns:
+            List of widget objects
+        """
+        result = []
+        for widget, widget_id in self._widget_to_id_map.items():
+            if (extract_container_unique_id(widget_id) == container_unique_id and 
+                extract_location(widget_id) == location):
+                result.append(widget)
+        return result
     
     def update_container_id(self, widget: Any, new_container_id: Optional[str] = None) -> bool:
         """
@@ -209,6 +261,32 @@ class IDRegistry:
             
         # Update ID
         new_id = self._id_generator.update_id(old_id, container_unique_id)
+        
+        # Update mappings
+        del self._id_to_widget_map[old_id]
+        self._widget_to_id_map[widget] = new_id
+        self._id_to_widget_map[new_id] = widget
+        
+        return True
+        
+    def update_location(self, widget: Any, new_location: str) -> bool:
+        """
+        Update the location of a widget.
+        
+        Args:
+            widget: Widget to update
+            new_location: New location value
+            
+        Returns:
+            True if successfully updated
+        """
+        if widget not in self._widget_to_id_map:
+            return False
+            
+        old_id = self._widget_to_id_map[widget]
+            
+        # Update ID
+        new_id = self._id_generator.update_id(old_id, None, new_location)
         
         # Update mappings
         del self._id_to_widget_map[old_id]

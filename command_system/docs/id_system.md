@@ -75,7 +75,7 @@ def widget_register(self, observable_id, container_id):
 ```mermaid
 classDiagram
     class IDRegistry {
-        +register(widget, type_code, observable_id, container_id)
+        +register(widget, type_code, observable_id, container_id, location)
         +get_widget(widget_id)
         +get_id(widget)
         +get_container_from_id(widget_id)
@@ -83,7 +83,11 @@ classDiagram
         +get_unique_id_from_id(id_string)
         +get_full_id_from_unique_id(unique_id)
         +get_widget_ids_by_container_id(container_unique_id)
+        +get_widgets_by_container_id(container_unique_id)
+        +get_widget_ids_by_container_id_and_location(container_unique_id, location)
+        +get_widgets_by_container_id_and_location(container_unique_id, location)
         +update_container_id(widget, new_container_id)
+        +update_location(widget, new_location)
         +remove_container_reference(widget_id)
         +unregister(widget_or_id)
     }
@@ -100,6 +104,9 @@ widget_id = registry.register(widget, "le")
 
 # Register with existing ID or container reference
 widget_id = registry.register(widget, "pb", observable_id, container_id)
+
+# Register with location
+widget_id = registry.register(widget, "pb", observable_id, container_id, "3")
 
 # Get widget by ID
 widget = registry.get_widget("pb:3a:2J:3")
@@ -119,11 +126,21 @@ unique_id = registry.get_unique_id_from_id("pb:3a:2J:3")  # Returns "3a"
 # Get full ID from unique ID
 full_id = registry.get_full_id_from_unique_id("3a")  # Returns "pb:3a:2J:3"
 
-# Get all widgets in a container
+# Get all widget IDs in a container
 widget_ids = registry.get_widget_ids_by_container_id("2J")
+
+# Get all widget objects in a container
+widgets = registry.get_widgets_by_container_id("2J")
+
+# Get widgets at a specific location in a container
+widget_ids = registry.get_widget_ids_by_container_id_and_location("2J", "3")
+widgets = registry.get_widgets_by_container_id_and_location("2J", "3")
 
 # Update a widget's container
 registry.update_container_id(widget, new_container_id)
+
+# Update a widget's location
+registry.update_location(widget, "4")
 
 # Remove container reference
 updated_id = registry.remove_container_reference(widget_id)  # TODO: Reconsider approach
