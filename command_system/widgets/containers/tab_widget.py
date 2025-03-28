@@ -119,7 +119,7 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
             button_position = QTabBar.RightSide
             close_button = self.tabBar().tabButton(index, button_position)
             
-            # If we have a button, control its visibility
+            # If we have a button, control its visibility #TODO: remove  instead of making invisible
             if close_button:
                 close_button.setVisible(closable)
         except Exception as e:
@@ -230,7 +230,12 @@ class CommandTabWidget(QTabWidget, ContainerWidgetMixin):
             if index in self._tab_instance_map:
                 del self._tab_instance_map[index]
             return False
-        
+
+        # Clean up all command widgets in the tab
+        for widget in content_widget.findChildren(QWidget):
+            if hasattr(widget, 'unbind_from_model') and callable(widget.unbind_from_model):
+                widget.unbind_from_model()
+
         # Remove the tab
         self.removeTab(index)
         

@@ -249,3 +249,11 @@ class ContainerWidgetMixin:
             List of instance IDs
         """
         return list(self._content_instances.keys())
+
+    def _unbind_all_command_widgets(self, parent_widget: QWidget):
+        """
+        Recursively unbind all command widgets within a parent widget.
+        """
+        for widget in parent_widget.findChildren(QWidget):
+            if hasattr(widget, 'unbind_from_model') and callable(widget.unbind_from_model):
+                widget.unbind_from_model()
