@@ -53,21 +53,21 @@ To use the ID system in your widgets, modify your base widget class as follows:
 
 ```python
 class CommandWidgetBase(Generic[T]):
-    def __init__(self, observable_id=None, container_id=None):
+    def __init__(self, widget_id=None, container_id=None):
         self.registry = get_id_registry()
-        self.widget_register(observable_id, container_id)
+        self.widget_register(widget_id, container_id)
         ...
         
-    def widget_register(self, observable_id, container_id):
+    def widget_register(self, widget_id, container_id):
         raise NotImplementedError("Subclasses must implement widget_register")
 ```
 
 Then implement the registration in your subclasses:
 
 ```python
-def widget_register(self, observable_id, container_id):
+def widget_register(self, widget_id, container_id):
     widget_code = "ZZ"  # Use appropriate type code from TypeCodes class
-    self.observable_id = self.registry.register(self, widget_code, observable_id, container_id)
+    self.widget_id = self.registry.register(self, widget_code, widget_id, container_id)
 ```
 
 ### Core Registry Methods
@@ -75,7 +75,7 @@ def widget_register(self, observable_id, container_id):
 ```mermaid
 classDiagram
     class IDRegistry {
-        +register(widget, type_code, observable_id, container_id, location)
+        +register(widget, type_code, widget_id, container_id, location)
         +get_widget(widget_id)
         +get_id(widget)
         +get_container_from_id(widget_id)
@@ -103,10 +103,10 @@ registry = get_id_registry()
 widget_id = registry.register(widget, "le")
 
 # Register with existing ID or container reference
-widget_id = registry.register(widget, "pb", observable_id, container_id)
+widget_id = registry.register(widget, "pb", widget_id, container_id)
 
 # Register with location
-widget_id = registry.register(widget, "pb", observable_id, container_id, "3")
+widget_id = registry.register(widget, "pb", widget_id, container_id, "3")
 
 # Get widget by ID
 widget = registry.get_widget("pb:3a:2J:3")

@@ -43,7 +43,7 @@ class IDRegistry:
         self._id_generator = IDGenerator()
     
     def register(self, widget: Any, type_code: str, 
-                observable_id: Optional[str] = None, 
+                widget_id: Optional[str] = None, 
                 container_id: Optional[str] = None,
                 location: Optional[str] = None) -> str:
         """
@@ -52,17 +52,17 @@ class IDRegistry:
         Args:
             widget: Widget to register
             type_code: Short code indicating widget type
-            observable_id: Optional existing ID to use/update
+            widget_id: Optional existing ID to use/update
             container_id: Optional container ID
             location: Optional location in container
             
         Returns:
             Generated or updated widget ID
         """
-        # If observable_id is provided, update it
-        if observable_id:
+        # If widget_id is provided, update it
+        if widget_id:
             # Extract parts
-            parts = observable_id.split(':')
+            parts = widget_id.split(':')
             if len(parts) != 4:
                 # Invalid format, generate new ID
                 container_unique_id = extract_unique_id(container_id) if container_id else "0"
@@ -71,7 +71,7 @@ class IDRegistry:
                 # Update with new container if provided
                 container_unique_id = container_id and extract_unique_id(container_id) or None
                 new_location = location or None
-                widget_id = self._id_generator.update_id(observable_id, container_unique_id, new_location)
+                widget_id = self._id_generator.update_id(widget_id, container_unique_id, new_location)
         else:
             # Generate new ID
             container_unique_id = extract_unique_id(container_id) if container_id else "0"
