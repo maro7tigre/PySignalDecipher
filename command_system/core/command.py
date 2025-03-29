@@ -6,7 +6,7 @@ for action encapsulation and history tracking using the ID system.
 """
 from abc import ABC, abstractmethod
 from typing import List, Any, Optional, TypeVar, Dict, Union
-from ..id_system import get_id_registry, TypeCodes, extract_unique_id
+from ..id_system import get_id_registry, TypeCodes, extract_property_name
 
 # Type for command targets
 T = TypeVar('T')
@@ -130,41 +130,65 @@ class CompoundCommand(Command):
 class PropertyCommand(Command):
     """
     Command for changing a property on an observable object.
-    Uses IDs instead of direct object references.
+    Uses property IDs from the ID system directly.
     """
     
-    def __init__(self, target_id: str, property_name: str, new_value: Any):
+    def __init__(self, property_id: str, new_value: Any):
         """
         Initialize a property change command.
         
         Args:
-            target_id: ID of target observable object
-            property_name: Name of property to change
+            property_id: ID of the observable property to change
             new_value: New property value
         """
         super().__init__()
-        self.target_id = target_id
-        self.property_name = property_name
+        self.property_id = property_id
         self.new_value = new_value
         
-        # Get the target object to store the old value
-        target = get_id_registry().get_observable(target_id)
-        if target:
-            self.old_value = getattr(target, property_name)
+        # Get the target object and property name to store the old value
+        id_registry = get_id_registry()
+        target_id = id_registry.get_observable_id_from_property_id(property_id)
+        property_name = extract_property_name(property_id)
+        
+        self.target_id = target_id
+        self.property_name = property_name
+        
+        if target_id:
+            target = id_registry.get_observable(target_id)
+            if target:
+                self.old_value = getattr(target, property_name)
+            else:
+                self.old_value = None
         else:
             self.old_value = None
         
     def execute(self) -> None:
         """Execute the command by setting the new property value."""
-        target = get_id_registry().get_observable(self.target_id)
-        if target:
-            setattr(target, self.property_name, self.new_value)
+        id_registry = get_id_registry()
+        target_id = self.target_id
+        
+        if not target_id:
+            # Try to get it again in case relationships changed
+            target_id = id_registry.get_observable_id_from_property_id(self.property_id)
+            
+        if target_id:
+            target = id_registry.get_observable(target_id)
+            if target:
+                setattr(target, self.property_name, self.new_value)
         
     def undo(self) -> None:
         """Undo the command by restoring the old property value."""
-        target = get_id_registry().get_observable(self.target_id)
-        if target:
-            setattr(target, self.property_name, self.old_value)
+        id_registry = get_id_registry()
+        target_id = self.target_id
+        
+        if not target_id:
+            # Try to get it again in case relationships changed
+            target_id = id_registry.get_observable_id_from_property_id(self.property_id)
+            
+        if target_id:
+            target = id_registry.get_observable(target_id)
+            if target:
+                setattr(target, self.property_name, self.old_value)
 
 # MARK: - MacroCommand
 class MacroCommand(CompoundCommand):

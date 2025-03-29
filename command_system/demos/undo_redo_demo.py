@@ -1,5 +1,5 @@
 """
-Minimal demo of the PySignalDecipher command system with different command execution modes.
+Minimal demo of the PySignalDecipher command system with different command trigger modes.
 """
 import sys
 import os
@@ -11,22 +11,25 @@ from PySide6.QtWidgets import (
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-# Import command system components
-from command_system.core.observable import Observable, ObservableProperty
-from command_system.core.command_manager import get_command_manager
-from command_system.widgets.line_edit import CommandLineEdit
-from command_system.widgets.base_widget import CommandExecutionMode
 
+# Import command system components
+from command_system.core import Observable, ObservableProperty, get_command_manager
+from command_system.pyside6_widgets import CommandLineEdit, CommandTriggerMode
 
 class Person(Observable):
     """Simple model with observable properties."""
-    name = ObservableProperty[str]("John Doe")
-    email = ObservableProperty[str]("john@example.com")
-    phone = ObservableProperty[str]("123-456-7890")
-
+    name = ObservableProperty("")
+    email = ObservableProperty("")
+    phone = ObservableProperty("")
+    
+    def __init__(self):
+        super().__init__()
+        self.name = "John Doe"
+        self.email = "john@example.com"
+        self.phone = "123-456-7890"
 
 class SimpleModeDemo(QMainWindow):
-    """Minimal demo of command execution modes."""
+    """Minimal demo of command trigger modes."""
     
     def __init__(self):
         super().__init__()
@@ -35,6 +38,7 @@ class SimpleModeDemo(QMainWindow):
         
         # Create model and get command manager
         self.person = Person()
+        self.person_id = self.person.get_id()  # Get ID directly
         self.cmd_manager = get_command_manager()
         
         # Setup UI
@@ -47,17 +51,20 @@ class SimpleModeDemo(QMainWindow):
         layout.addLayout(form)
         
         # Three line edits with different modes
-        self.edit1 = CommandLineEdit(execution_mode=CommandExecutionMode.ON_CHANGE)
-        self.edit1.bind_to_model(self.person, "name")
-        form.addRow("On Change:", self.edit1)
+        self.edit1 = CommandLineEdit()
+        self.edit1.set_command_trigger_mode(CommandTriggerMode.IMMEDIATE)
+        self.edit1.bind_to_text_property(self.person_id, "name")
+        form.addRow("Immediate:", self.edit1)
         
-        self.edit2 = CommandLineEdit(execution_mode=CommandExecutionMode.DELAYED)
-        self.edit2.bind_to_model(self.person, "email")
+        self.edit2 = CommandLineEdit()
+        self.edit2.set_command_trigger_mode(CommandTriggerMode.DELAYED)
+        self.edit2.bind_to_text_property(self.person_id, "email")
         form.addRow("Delayed:", self.edit2)
         
-        self.edit3 = CommandLineEdit(execution_mode=CommandExecutionMode.ON_EDIT_END)
-        self.edit3.bind_to_model(self.person, "phone")
-        form.addRow("On Edit End:", self.edit3)
+        self.edit3 = CommandLineEdit()
+        self.edit3.set_command_trigger_mode(CommandTriggerMode.ON_EDIT_FINISHED)
+        self.edit3.bind_to_text_property(self.person_id, "phone")
+        form.addRow("On Edit Finished:", self.edit3)
         
         # Command count
         self.count_label = QLabel("Commands: 0")
@@ -82,10 +89,8 @@ class SimpleModeDemo(QMainWindow):
         
     def update_count(self, *args):
         """Update command count display."""
-        if hasattr(self.cmd_manager, "_history") and hasattr(self.cmd_manager._history, "_executed_commands"):
-            count = len(self.cmd_manager._history._executed_commands)
-            self.count_label.setText(f"Commands: {count}")
-
+        count = len(self.cmd_manager._history.get_executed_commands())
+        self.count_label.setText(f"Commands: {count}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
