@@ -1,8 +1,13 @@
 """
-Simple demo for selective tab closability.
+Improved demo for the simplified command system container architecture.
+
+This demo showcases the registration and instantiation pattern with
+full undo/redo support for tab operations, using both existing observables
+and dynamic observable creation.
 """
 import sys
 import os
+from typing import Type, Union, List
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, 
     QHBoxLayout, QPushButton, QLabel
@@ -16,29 +21,39 @@ if project_root not in sys.path:
 # Import command system components
 from command_system.core.observable import Observable, ObservableProperty
 from command_system.core.command_manager import get_command_manager
-from command_system.widgets.line_edit import CommandLineEdit
-from command_system.widgets.containers.tab_widget import CommandTabWidget
+from command_system.pyside6_widgets.line_edit import CommandLineEdit
+from command_system.pyside6_widgets.containers.tab_widget import CommandTabWidget
 
 
 class Person(Observable):
     """Simple person model with observable properties."""
-    name = ObservableProperty[str]("John Doe")
-    email = ObservableProperty[str]("john@example.com")
-    address = ObservableProperty[str]("123 Main St")
+    name = ObservableProperty("John Doe")
+    email = ObservableProperty("john@example.com")
 
 
-class SimpleTabsDemo(QMainWindow):
-    """Demo of dynamic tabs with command system integration."""
+class ImprovedTabsDemo(QMainWindow):
+    """Demo of the improved container system with registration pattern."""
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Simple Dynamic Tabs Demo")
-        self.resize(500, 300)
+        self.setWindowTitle("Improved Tabs Demo")
+        self.resize(600, 400)
         
-        # Create model and command manager
+        # Create shared model
         self.person = Person()
         self.cmd_manager = get_command_manager()
         
+        # Set up UI
+        self.setup_ui()
+        
+        # Register tab types
+        self.register_tab_types()
+        
+        # Add initial welcome tab
+        self.tab_widget.add_tab(self.welcome_tab_id)
+    
+    def setup_ui(self):
+        """Set up the user interface."""
         # Central widget and layout
         central = QWidget()
         self.setCentralWidget(central)
@@ -46,129 +61,153 @@ class SimpleTabsDemo(QMainWindow):
         
         # Create tab widget
         self.tab_widget = CommandTabWidget(self)
-        # Enable tab close buttons for all tabs
         layout.addWidget(self.tab_widget)
         
-        # Register tab types with different closability
-        self.closable_tab_type = self.tab_widget.register_tab(
-            self.create_closable_tab,
-            tab_name="Closable Tab",
-            dynamic=True,
-            closable=True
-        )
-        
-        self.non_closable_tab_type = self.tab_widget.register_tab(
-            self.create_non_closable_tab,
-            tab_name="Non-Closable Tab",
-            dynamic=True,
-            closable=False
-        )
-        
-        self.welcome_tab = self.tab_widget.register_tab(
-            self.add_welcome_tab,
-            tab_name="Welcome",
-            dynamic=True,
-            closable=False
-        )
-        
         # Create buttons for adding tabs
-        tab_btn_layout = QHBoxLayout()
-        layout.addLayout(tab_btn_layout)
+        button_layout = QHBoxLayout()
+        layout.addLayout(button_layout)
         
-        add_closable_btn = QPushButton("Add Closable Tab")
-        add_closable_btn.clicked.connect(self.add_closable_tab)
+        # Add buttons
+        shared_btn = QPushButton("Add Tab with Shared Model")
+        shared_btn.clicked.connect(self.add_shared_model_tab)
+        button_layout.addWidget(shared_btn)
         
-        add_non_closable_btn = QPushButton("Add Non-Closable Tab")
-        add_non_closable_btn.clicked.connect(self.add_non_closable_tab)
+        new_btn = QPushButton("Add Tab with New Model")
+        new_btn.clicked.connect(self.add_new_model_tab)
+        button_layout.addWidget(new_btn)
         
-        tab_btn_layout.addWidget(add_closable_btn)
-        tab_btn_layout.addWidget(add_non_closable_btn)
+        non_closable_btn = QPushButton("Add Non-Closable Tab")
+        non_closable_btn.clicked.connect(self.add_non_closable_tab)
+        button_layout.addWidget(non_closable_btn)
         
         # Create undo/redo buttons
-        cmd_btn_layout = QHBoxLayout()
-        layout.addLayout(cmd_btn_layout)
+        undo_redo_layout = QHBoxLayout()
+        layout.addLayout(undo_redo_layout)
         
         undo_btn = QPushButton("Undo")
         undo_btn.clicked.connect(self.cmd_manager.undo)
+        undo_redo_layout.addWidget(undo_btn)
         
         redo_btn = QPushButton("Redo")
         redo_btn.clicked.connect(self.cmd_manager.redo)
-        
-        cmd_btn_layout.addWidget(undo_btn)
-        cmd_btn_layout.addWidget(redo_btn)
-        
-        # Add initial welcome tab
-        self.tab_widget.add_tab(self.welcome_tab)
+        undo_redo_layout.addWidget(redo_btn)
     
-    def create_closable_tab(self):
-        """Create content for a closable tab."""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
+    def register_tab_types(self):
+        """Register all tab types."""
+        # Register welcome tab (no observables needed)
+        self.welcome_tab_id = self.tab_widget.register_tab(
+            self.create_welcome_tab,
+            tab_name="Welcome",
+            observables=[],
+            closable=False
+        )
         
-        # Label explaining tab type
-        label = QLabel("This is a closable tab.\nYou can close this tab with the X button.")
-        label.setWordWrap(True)
-        layout.addWidget(label)
+        # Register tab that uses an existing observable (shared model)
+        self.shared_model_tab_id = self.tab_widget.register_tab(
+            self.create_model_tab,
+            tab_name="Shared Model Tab",
+            observables=[self.person.get_id()],  # Pass the ID of existing observable
+            closable=True
+        )
         
-        # Add an editable field to test undo/redo
-        name_label = QLabel("Edit this field and use undo/redo:")
-        layout.addWidget(name_label)
+        # Register tab that creates a new observable instance each time
+        self.new_model_tab_id = self.tab_widget.register_tab(
+            self.create_model_tab,
+            tab_name="New Model Tab",
+            observables=[Person],  # Pass the Person class to create new instances
+            closable=True
+        )
         
-        name_edit = CommandLineEdit()
-        name_edit.bind_to_model(self.person, "name")
-        layout.addWidget(name_edit)
-        
-        return widget
+        # Register non-closable tab with shared model
+        self.non_closable_tab_id = self.tab_widget.register_tab(
+            self.create_model_tab,
+            tab_name="Non-Closable Tab",
+            observables=[self.person.get_id()],
+            closable=False
+        )
     
-    def create_non_closable_tab(self):
-        """Create content for a non-closable tab."""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        # Label explaining tab type
-        label = QLabel("This is a non-closable tab.\nThe X button is disabled for this tab.")
-        label.setWordWrap(True)
-        layout.addWidget(label)
-        
-        # Add an editable field to test undo/redo
-        email_label = QLabel("Edit this field and use undo/redo:")
-        layout.addWidget(email_label)
-        
-        email_edit = CommandLineEdit()
-        email_edit.bind_to_model(self.person, "email")
-        layout.addWidget(email_edit)
-        
-        return widget
-    
-    def add_welcome_tab(self):
-        """Add a welcome tab."""
+    def create_welcome_tab(self):
+        """Create welcome tab content."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
         
         label = QLabel(
-            "Welcome to the Tab Closability Demo\n\n"
-            "This demo shows how to create tabs with different closability settings.\n"
-            "- Closable tabs allow you to click the X button\n"
-            "- Non-closable tabs ignore clicks on the X button\n\n"
-            "Use the buttons below to add different types of tabs."
+            "Welcome to the Improved Container System Demo\n\n"
+            "This demo showcases our improved container architecture with:\n"
+            "• Observable registration and instantiation\n"
+            "• Both shared and per-tab observable instances\n"
+            "• Full undo/redo support for all operations\n"
+            "• Selective tab closability\n\n"
+            "Try out the buttons below to add different types of tabs."
         )
         label.setWordWrap(True)
         layout.addWidget(label)
         
-        # Add the tab directly (not using the dynamic system)
+        info_label = QLabel(
+            "About the tabs:\n"
+            "- Shared Model Tab: Uses a single shared observable across all tabs\n"
+            "- New Model Tab: Creates a new observable instance for each tab\n"
+            "- Non-Closable Tab: Cannot be closed with the close button"
+        )
+        info_label.setWordWrap(True)
+        layout.addWidget(info_label)
+        
         return widget
     
-    def add_closable_tab(self):
-        """Add a closable tab."""
-        self.tab_widget.add_tab(self.closable_tab_type)
+    def create_model_tab(self, model):
+        """
+        Create content for a tab with a model.
+        
+        Args:
+            model: Observable instance (either shared or newly created)
+        """
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        
+        # Show model ID to demonstrate shared vs new instances
+        id_label = QLabel(f"Model ID: {model.get_id()}")
+        layout.addWidget(id_label)
+        
+        # Add editable fields bound to the model
+        name_label = QLabel("Name:")
+        layout.addWidget(name_label)
+        
+        name_edit = CommandLineEdit()
+        name_edit.bind_property("text", model.get_id(), "name")
+        layout.addWidget(name_edit)
+        
+        email_label = QLabel("Email:")
+        layout.addWidget(email_label)
+        
+        email_edit = CommandLineEdit()
+        email_edit.bind_property("text", model.get_id(), "email")
+        layout.addWidget(email_edit)
+        
+        # Info about this tab
+        if model.get_id() == self.person.get_id():
+            info = QLabel("This tab uses the shared model. Changes here affect all shared model tabs.")
+        else:
+            info = QLabel("This tab uses its own model instance. Changes here only affect this tab.")
+        info.setWordWrap(True)
+        layout.addWidget(info)
+        
+        return widget
+    
+    def add_shared_model_tab(self):
+        """Add a tab that uses the shared model."""
+        self.tab_widget.add_tab(self.shared_model_tab_id)
+    
+    def add_new_model_tab(self):
+        """Add a tab with a new model instance."""
+        self.tab_widget.add_tab(self.new_model_tab_id)
     
     def add_non_closable_tab(self):
-        """Add a non-closable tab."""
-        self.tab_widget.add_tab(self.non_closable_tab_type)
+        """Add a non-closable tab with the shared model."""
+        self.tab_widget.add_tab(self.non_closable_tab_id)
 
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    demo = SimpleTabsDemo()
+    demo = ImprovedTabsDemo()
     demo.show()
     sys.exit(app.exec())
