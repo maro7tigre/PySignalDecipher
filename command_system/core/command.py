@@ -2,11 +2,11 @@
 Command pattern implementation for undo/redo functionality.
 
 This module provides a clean implementation of the command pattern
-for action encapsulation and history tracking.
+for action encapsulation and history tracking using the ID system.
 """
 from abc import ABC, abstractmethod
-from typing import List, Any, Optional, TypeVar, Dict
-
+from typing import List, Any, Optional, TypeVar, Dict, Union
+from ..id_system import get_id_registry, TypeCodes, extract_unique_id
 
 # Type for command targets
 T = TypeVar('T')
@@ -20,7 +20,8 @@ class Command(ABC):
     
     def __init__(self):
         """Initialize the command."""
-        self.trigger_widget = None
+        self.trigger_widget_id = None
+        self.context_info = {}
         
     @abstractmethod
     def execute(self) -> None:
@@ -35,6 +36,49 @@ class Command(ABC):
     def redo(self) -> None:
         """Redo the command. Default implementation is to call execute again."""
         self.execute()
+        
+    def set_trigger_widget(self, widget_id: str) -> None:
+        """
+        Set the widget that triggered this command.
+        
+        Args:
+            widget_id: ID of widget that triggered the command
+        """
+        self.trigger_widget_id = widget_id
+        
+    def get_trigger_widget(self) -> Optional[Any]:
+        """
+        Get the widget that triggered this command.
+        
+        Returns:
+            Widget object or None if not set/found
+        """
+        if not self.trigger_widget_id:
+            return None
+        return get_id_registry().get_widget(self.trigger_widget_id)
+    
+    def set_context_info(self, key: str, value: Any) -> None:
+        """
+        Store context information with the command.
+        
+        Args:
+            key: Context information key
+            value: Context information value
+        """
+        self.context_info[key] = value
+        
+    def get_context_info(self, key: str, default: Any = None) -> Any:
+        """
+        Get stored context information.
+        
+        Args:
+            key: Context information key
+            default: Default value if key not found
+            
+        Returns:
+            Stored value or default
+        """
+        return self.context_info.get(key, default)
 
 # MARK: - Concrete Commands
 class CompoundCommand(Command):
@@ -50,9 +94,9 @@ class CompoundCommand(Command):
         Args:
             name: Human-readable name for the command
         """
+        super().__init__()
         self.name = name
         self.commands: List[Command] = []
-        
         
     def add_command(self, command: Command) -> None:
         """
@@ -84,36 +128,49 @@ class CompoundCommand(Command):
 
 # MARK: - Property Commands
 class PropertyCommand(Command):
-    """Command for changing a property on an observable object."""
+    """
+    Command for changing a property on an observable object.
+    Uses IDs instead of direct object references.
+    """
     
-    def __init__(self, target: Any, property_name: str, new_value: Any):
+    def __init__(self, target_id: str, property_name: str, new_value: Any):
         """
         Initialize a property change command.
         
         Args:
-            target: Target observable object
+            target_id: ID of target observable object
             property_name: Name of property to change
             new_value: New property value
         """
-        super().__init__()  # Add this to initialize _execution_context
-        self.target = target
+        super().__init__()
+        self.target_id = target_id
         self.property_name = property_name
         self.new_value = new_value
-        self.old_value = getattr(target, property_name)
+        
+        # Get the target object to store the old value
+        target = get_id_registry().get_observable(target_id)
+        if target:
+            self.old_value = getattr(target, property_name)
+        else:
+            self.old_value = None
         
     def execute(self) -> None:
         """Execute the command by setting the new property value."""
-        setattr(self.target, self.property_name, self.new_value)
+        target = get_id_registry().get_observable(self.target_id)
+        if target:
+            setattr(target, self.property_name, self.new_value)
         
     def undo(self) -> None:
         """Undo the command by restoring the old property value."""
-        setattr(self.target, self.property_name, self.old_value)
+        target = get_id_registry().get_observable(self.target_id)
+        if target:
+            setattr(target, self.property_name, self.old_value)
 
 # MARK: - MacroCommand
 class MacroCommand(CompoundCommand):
     """
     A specialized compound command that represents a user-level action.
-    Used for grouping related commands with a describtion of the action.
+    Used for grouping related commands with a description of the action.
     """
     
     def __init__(self, name: str):
@@ -143,3 +200,43 @@ class MacroCommand(CompoundCommand):
             Command description
         """
         return self.description
+        
+# MARK: - Widget Property Commands
+class WidgetPropertyCommand(Command):
+    """
+    Command for changing a property on a widget.
+    Uses widget IDs from the ID system.
+    """
+    
+    def __init__(self, widget_id: str, property_name: str, new_value: Any):
+        """
+        Initialize a widget property change command.
+        
+        Args:
+            widget_id: ID of target widget
+            property_name: Name of property to change
+            new_value: New property value
+        """
+        super().__init__()
+        self.widget_id = widget_id
+        self.property_name = property_name
+        self.new_value = new_value
+        
+        # Get the widget to store the old value
+        widget = get_id_registry().get_widget(widget_id)
+        if widget:
+            self.old_value = getattr(widget, property_name)
+        else:
+            self.old_value = None
+        
+    def execute(self) -> None:
+        """Execute the command by setting the new property value."""
+        widget = get_id_registry().get_widget(self.widget_id)
+        if widget:
+            setattr(widget, self.property_name, self.new_value)
+        
+    def undo(self) -> None:
+        """Undo the command by restoring the old property value."""
+        widget = get_id_registry().get_widget(self.widget_id)
+        if widget:
+            setattr(widget, self.property_name, self.old_value)

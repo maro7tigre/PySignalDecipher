@@ -3,11 +3,13 @@ Command manager for coordinating command execution and history.
 
 This module provides the command manager and history tracking system
 that serves as the central hub for command execution and undo/redo operations.
+Uses the ID system for tracking dependencies between commands and widgets.
 """
 from typing import List, Optional, Dict, Callable, Any
+import uuid
 
 from .command import Command
-
+from ..id_system import get_id_registry
 
 # MARK: - Command History
 class CommandHistory:
@@ -81,6 +83,24 @@ class CommandHistory:
             True if there are commands in the undone stack
         """
         return len(self._undone_commands) > 0
+        
+    def get_executed_commands(self) -> List[Command]:
+        """
+        Get list of executed commands (for debugging/inspection).
+        
+        Returns:
+            List of executed commands
+        """
+        return self._executed_commands.copy()
+        
+    def get_undone_commands(self) -> List[Command]:
+        """
+        Get list of undone commands (for debugging/inspection).
+        
+        Returns:
+            List of undone commands
+        """
+        return self._undone_commands.copy()
 
 # MARK: - Command Manager
 class CommandManager:
@@ -104,7 +124,7 @@ class CommandManager:
     def __init__(self):
         """Initialize the command manager."""
         if CommandManager._instance is not None:
-            raise RuntimeError("You can't have multiple instances of CommandManager, Import and Use get_command_manager() to get the singleton instance")
+            raise RuntimeError("Use get_command_manager() to get the singleton instance")
             
         CommandManager._instance = self
         self._history = CommandHistory()
@@ -117,19 +137,24 @@ class CommandManager:
         self._before_undo_callbacks: Dict[str, Callable[[Command], None]] = {}
         self._after_undo_callbacks: Dict[str, Callable[[Command, bool], None]] = {}
     
-    def execute(self, command: Command) -> bool:
+    def execute(self, command: Command, trigger_widget_id: Optional[str] = None) -> bool:
         """
         Execute a command and add it to the history.
         
         Args:
             command: Command to execute
+            trigger_widget_id: Optional ID of widget that triggered the command
             
         Returns:
             True if command executed successfully
         """
         
         if self._is_updating or command is None:
-            return True  # Skip if we're already processing a command ? TODO: indicate that the command was skipped ?
+            return True
+            
+        # Set trigger widget if provided
+        if trigger_widget_id:
+            command.set_trigger_widget(trigger_widget_id)
             
         try:
             self._is_updating = True
@@ -270,25 +295,35 @@ class CommandManager:
 
     def _navigate_to_command_context(self, command: Command) -> None:
         """
-        Navigate to the UI context where the command was created.
+        Navigate to the UI context where the command was created using ID system.
         
         Args:
             command: Command containing execution context
         """
-        if not command:
+        if not command or not command.trigger_widget_id:
             return
             
-        # Check if command had a trigger widget
-        if command.trigger_widget is None:
+        # Get the trigger widget
+        trigger_widget = get_id_registry().get_widget(command.trigger_widget_id)
+        if not trigger_widget:
             return
-        
-        trigger_widget = command.trigger_widget
-        # Check if the trigger widget has a container
-        if trigger_widget.container is None:
+            
+        # Check if the trigger widget has container info
+        container_info = command.get_context_info("container_info")
+        if not container_info:
             return
-        
+            
+        # Get the container 
+        container_id = get_id_registry().get_container_id_from_widget_id(command.trigger_widget_id)
+        if not container_id:
+            return
+            
+        container = get_id_registry().get_widget(container_id)
+        if not container or not hasattr(container, "navigate_to_container"):
+            return
+            
         # Navigate to the command context
-        trigger_widget.container.navigate_to_container(trigger_widget, trigger_widget.container_info)
+        container.navigate_to_container(trigger_widget, container_info)
 
     def is_updating(self) -> bool:
         """
@@ -373,12 +408,6 @@ class CommandManager:
             del self._before_undo_callbacks[callback_id]
         if callback_id in self._after_undo_callbacks:
             del self._after_undo_callbacks[callback_id]
-            
-    # TODO: Add serialization integration hooks
-    # 1. Add hooks for serialization events (save/load)
-    # 2. Support for command batching
-    # 3. Serialize/deserialize command history if needed
-
 
 def get_command_manager():
     """

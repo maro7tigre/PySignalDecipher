@@ -2,11 +2,17 @@
 Core components of the command system.
 
 This module exports the core classes and functions for the command
-pattern implementation and observable pattern.
+pattern implementation and observable pattern using the ID system.
 """
 
 from .observable import Observable, ObservableProperty
-from .command import Command, CompoundCommand, PropertyCommand, MacroCommand
+from .command import (
+    Command, 
+    CompoundCommand, 
+    PropertyCommand, 
+    MacroCommand,
+    WidgetPropertyCommand
+)
 from .command_manager import CommandManager, get_command_manager, CommandHistory
 
 __all__ = [
@@ -19,6 +25,7 @@ __all__ = [
     'CompoundCommand',
     'PropertyCommand',
     'MacroCommand',
+    'WidgetPropertyCommand',
     
     # Command management
     'CommandManager',

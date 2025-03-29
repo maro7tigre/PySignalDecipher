@@ -2,10 +2,10 @@
 Observable pattern implementation for property change tracking.
 
 This module provides a clean implementation of the observable pattern
-with property change notifications, independent of serialization concerns.
+with property change notifications that fully leverages the ID system.
 """
-import uuid
 from typing import Any, Dict, Callable, TypeVar, Generic, Optional, Set
+from ..id_system import get_id_registry, TypeCodes, is_widget_id
 
 # Type variable for generic property types
 T = TypeVar('T')
@@ -25,6 +25,7 @@ class ObservableProperty(Generic[T]):
         self.default = default
         self.name = None
         self.private_name = None
+        self.property_id = None
         
     def __set_name__(self, owner, name):
         """Called when descriptor is assigned to a class attribute."""
@@ -46,40 +47,90 @@ class ObservableProperty(Generic[T]):
         # Only notify if value actually changed
         if old_value != value:
             setattr(instance, self.private_name, value)
+            
+            # Ensure property is registered with ID system
+            instance._ensure_property_registered(self.name)
+            
+            # Notify observers
             instance._notify_property_changed(self.name, old_value, value)
 
 # MARK: -Observable
 class Observable:
     """
     Base class for objects that need to track property changes.
+    Uses the ID system for identification and relationship tracking.
     """
-    def __init__(self, parent: Optional['Observable'] = None):
+    def __init__(self, parent_id: Optional[str] = None):
         """
         Initialize an observable object.
         
         Args:
-            parent: Optional parent observable object
+            parent_id: Optional parent observable ID
         """
-        # Property change observers
+        # Register with ID system
+        id_registry = get_id_registry()
+        self._id = id_registry.register_observable(self, TypeCodes.OBSERVABLE)
+        
+        # Property change observers: {property_id -> {observer_id -> callback}}
         self._property_observers: Dict[str, Dict[str, Callable]] = {}
         
-        # Unique identity management
-        self._id = str(uuid.uuid4())
+        # Cache for property IDs by name
+        self._property_id_cache: Dict[str, str] = {}
         
         # Update status tracking
         self._is_updating = False
         
         # Relationship tracking
-        self._parent_id = parent.get_id() if parent else None
+        self._parent_id = parent_id
         
         # Hierarchy tracking
-        if parent and hasattr(parent, 'get_generation'):
-            self._generation = parent.get_generation() + 1
+        if parent_id:
+            parent = id_registry.get_observable(parent_id)
+            if parent and hasattr(parent, 'get_generation'):
+                self._generation = parent.get_generation() + 1
+            else:
+                self._generation = 0
         else:
             self._generation = 0
         
+    def _ensure_property_registered(self, property_name: str) -> str:
+        """
+        Ensure a property is registered with the ID system.
+        
+        Args:
+            property_name: Name of the property
+            
+        Returns:
+            Property ID
+        """
+        # Check if we've already registered this property
+        if property_name in self._property_id_cache:
+            return self._property_id_cache[property_name]
+            
+        id_registry = get_id_registry()
+        observable_id = self.get_id()
+        
+        # Check if this property is already registered
+        property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
+            observable_id, property_name)
+        
+        if property_ids:
+            # Property already registered
+            property_id = property_ids[0]
+        else:
+            # Register the property
+            property_id = id_registry.register_observable_property(
+                self, TypeCodes.OBSERVABLE_PROPERTY,
+                None, property_name, observable_id
+            )
+            
+        # Cache the ID
+        self._property_id_cache[property_name] = property_id
+        return property_id
+        
     def add_property_observer(self, property_name: str, 
-                             callback: Callable[[str, Any, Any], None]) -> str:
+                             callback: Callable[[str, Any, Any], None],
+                             observer_obj: Any = None) -> str:
         """
         Add observer for property changes.
         
@@ -87,15 +138,39 @@ class Observable:
             property_name: Name of the property to observe
             callback: Function to call when property changes,
                      should accept (property_name, old_value, new_value)
+            observer_obj: Object that owns the callback (for ID tracking)
+                         If None, a new ID will be generated
         
         Returns:
             Observer ID that can be used to remove the observer
         """
-        if property_name not in self._property_observers:
-            self._property_observers[property_name] = {}
+        # Ensure property is registered
+        property_id = self._ensure_property_registered(property_name)
+        
+        # Initialize observers dictionary for this property if needed
+        if property_id not in self._property_observers:
+            self._property_observers[property_id] = {}
             
-        observer_id = str(uuid.uuid4())
-        self._property_observers[property_name][observer_id] = callback
+        # Get or register the observer
+        id_registry = get_id_registry()
+        
+        if observer_obj is not None:
+            # If we have an object, get or register its ID
+            observer_id = id_registry.get_id(observer_obj)
+            if not observer_id:
+                # Register as widget if not already registered
+                observer_id = id_registry.register(
+                    observer_obj, TypeCodes.CUSTOM_WIDGET
+                )
+        else:
+            # Create a proxy object to hold the callback
+            observer_obj = {"callback": callback}
+            observer_id = id_registry.register(
+                observer_obj, TypeCodes.CUSTOM_WIDGET
+            )
+            
+        # Store the callback
+        self._property_observers[property_id][observer_id] = callback
         return observer_id
         
     def remove_property_observer(self, property_name: str, observer_id: str) -> bool:
@@ -109,9 +184,14 @@ class Observable:
         Returns:
             True if observer was removed, False otherwise
         """
-        if (property_name in self._property_observers and 
-            observer_id in self._property_observers[property_name]):
-            del self._property_observers[property_name][observer_id]
+        # Get property ID
+        property_id = self._property_id_cache.get(property_name)
+        if not property_id:
+            return False
+            
+        if (property_id in self._property_observers and 
+            observer_id in self._property_observers[property_id]):
+            del self._property_observers[property_id][observer_id]
             return True
         return False
         
@@ -127,41 +207,28 @@ class Observable:
         if self._is_updating:
             return  # Skip notification if we're already processing an update
             
-        if property_name in self._property_observers:
+        # Get property ID
+        property_id = self._property_id_cache.get(property_name)
+        if not property_id:
+            return
+            
+        if property_id in self._property_observers:
             try:
                 self._is_updating = True
-                for callback in self._property_observers[property_name].values():
+                for callback in self._property_observers[property_id].values():
                     callback(property_name, old_value, new_value)
             finally:
                 self._is_updating = False
                 
     def get_id(self) -> str:
         """
-        Get unique identifier.
+        Get unique identifier from ID registry.
         
         Returns:
-            String UUID for this object
+            String ID for this object
         """
         return self._id
         
-    def set_id(self, id_value: str) -> None:
-        """
-        Set unique identifier.
-        
-        Args:
-            id_value: New ID value (for deserialization)
-        """
-        self._id = id_value
-        
-    def is_updating(self) -> bool:
-        """
-        Check if object is currently processing a property update.
-        
-        Returns:
-            True if the object is updating, False otherwise
-        """
-        return self._is_updating
-
     def get_parent_id(self) -> Optional[str]:
         """
         Get parent identifier.
@@ -197,11 +264,19 @@ class Observable:
             generation: New generation value
         """
         self._generation = generation
-
-    # MARK: - Serialization Support
-    # TODO: Add serialization support hooks
-    # These methods will provide integration points for the serialization system
-    # without directly implementing serialization logic in this class
-    # 1. Support for property metadata and serialization hints
-    # 2. Support for relationship tracking during serialization
-    # 3. Hooks for pre/post serialization processing
+        
+    def is_updating(self) -> bool:
+        """
+        Check if object is currently processing a property update.
+        
+        Returns:
+            True if the object is updating, False otherwise
+        """
+        return self._is_updating
+        
+    def __del__(self):
+        """Clean up by unregistering from ID registry."""
+        try:
+            get_id_registry().unregister(self._id)
+        except:
+            pass  # Ignore errors during cleanup
