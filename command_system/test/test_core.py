@@ -237,9 +237,20 @@ class TestCommandPattern:
     
     def test_property_command(self):
         """Test property change command."""
-        # Create command
+        # Get or generate property ID
+        id_registry = get_id_registry()
         person_id = self.person.get_id()
-        cmd = PropertyCommand(person_id, "name", "Alice")
+        
+        # Ensure the property is registered
+        self.person._ensure_property_registered("name")
+        
+        # Get the property ID for the name property
+        property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
+            person_id, "name")
+        property_id = property_ids[0]
+        
+        # Create command with property_id directly
+        cmd = PropertyCommand(property_id, "Alice")
         
         # Execute
         self.manager.execute(cmd)
@@ -282,10 +293,26 @@ class TestCommandPattern:
         # Create compound command
         compound = CompoundCommand("Update Person")
         
-        # Add subcommands
+        # Get property IDs
+        id_registry = get_id_registry()
         person_id = self.person.get_id()
-        compound.add_command(PropertyCommand(person_id, "name", "Alice"))
-        compound.add_command(PropertyCommand(person_id, "age", 30))
+        
+        # Ensure properties are registered
+        self.person._ensure_property_registered("name")
+        self.person._ensure_property_registered("age")
+        
+        # Get property IDs
+        name_property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
+            person_id, "name")
+        age_property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
+            person_id, "age")
+            
+        name_property_id = name_property_ids[0]
+        age_property_id = age_property_ids[0]
+        
+        # Add subcommands with property IDs
+        compound.add_command(PropertyCommand(name_property_id, "Alice"))
+        compound.add_command(PropertyCommand(age_property_id, 30))
         
         # Execute compound
         self.manager.execute(compound)
@@ -307,10 +334,26 @@ class TestCommandPattern:
         macro = MacroCommand("Create Person")
         macro.set_description("Create a new person named Alice")
         
-        # Add subcommands
+        # Get property IDs
+        id_registry = get_id_registry()
         person_id = self.person.get_id()
-        macro.add_command(PropertyCommand(person_id, "name", "Alice"))
-        macro.add_command(PropertyCommand(person_id, "age", 30))
+        
+        # Ensure properties are registered
+        self.person._ensure_property_registered("name")
+        self.person._ensure_property_registered("age")
+        
+        # Get property IDs
+        name_property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
+            person_id, "name")
+        age_property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
+            person_id, "age")
+            
+        name_property_id = name_property_ids[0]
+        age_property_id = age_property_ids[0]
+        
+        # Add subcommands with property IDs
+        macro.add_command(PropertyCommand(name_property_id, "Alice"))
+        macro.add_command(PropertyCommand(age_property_id, 30))
         
         # Execute macro
         self.manager.execute(macro)

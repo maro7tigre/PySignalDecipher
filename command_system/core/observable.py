@@ -93,6 +93,16 @@ class Observable:
         else:
             self._generation = 0
         
+        self._auto_register_properties()
+
+    def _auto_register_properties(self):
+        """Auto-register all ObservableProperty attributes on instance creation."""
+        # Get all class attributes that are ObservableProperties
+        for attr_name, attr_value in self.__class__.__dict__.items():
+            if isinstance(attr_value, ObservableProperty):
+                # Force property registration by accessing it once
+                self._ensure_property_registered(attr_name)
+        
     def _ensure_property_registered(self, property_name: str) -> str:
         """
         Ensure a property is registered with the ID system.
