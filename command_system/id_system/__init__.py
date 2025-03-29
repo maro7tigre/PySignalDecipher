@@ -1,8 +1,8 @@
 """
 PySignalDecipher ID System
 
-A memory-efficient ID system for tracking widgets and containers without
-maintaining direct references, enabling advanced serialization and navigation.
+A memory-efficient ID system for tracking widgets, containers, observables, and observable properties
+without maintaining direct references, enabling advanced serialization and navigation.
 """
 
 # Public API
@@ -12,12 +12,18 @@ from .utils import (
     extract_type_code,
     extract_unique_id, 
     extract_container_unique_id,
-    extract_location
+    extract_location,
+    extract_observable_unique_id,
+    extract_property_name,
+    extract_controller_unique_id,
+    is_widget_id,
+    is_observable_id,
+    is_observable_property_id
 )
 
-# Type code constants for standard widgets and containers
+# Type code constants
 class TypeCodes:
-    """Type code constants for widgets and containers."""
+    """Type code constants for components."""
     
     # Containers
     TAB_CONTAINER = "t"
@@ -38,6 +44,10 @@ class TypeCodes:
     TREE_WIDGET = "tw"
     TABLE_WIDGET = "tb"
     CUSTOM_WIDGET = "cw"
+    
+    # Observables
+    OBSERVABLE = "o"
+    OBSERVABLE_PROPERTY = "op"
 
 __all__ = [
     # Classes
@@ -50,5 +60,11 @@ __all__ = [
     'extract_type_code',
     'extract_unique_id',
     'extract_container_unique_id',
-    'extract_location'
+    'extract_location',
+    'extract_observable_unique_id',
+    'extract_property_name',
+    'extract_controller_unique_id',
+    'is_widget_id',
+    'is_observable_id',
+    'is_observable_property_id'
 ]

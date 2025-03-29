@@ -1,174 +1,111 @@
 # Widget ID System Documentation
 
-This document provides a concise overview of the ID system for tracking and referencing widgets in the PySignalDecipher application. The system provides memory-efficient unique identifiers for widgets and containers, allowing for serialization, navigation, and reference management without maintaining direct object references.
+This document provides a concise overview of the ID system for tracking and referencing widgets, containers, observables, and observable properties in the PySignalDecipher application.
 
 ## Overview
 
-The ID system creates and manages unique identifiers for widgets that encode their type, hierarchy, and position in the UI.
+The ID system creates and manages unique identifiers that encode type, hierarchy, and relationships between different components using string-based IDs.
 
-```mermaid
-flowchart TD
-    subgraph "ID System Core"
-        IDRegistry["IDRegistry\n(Singleton)"]
-        IDGenerator["IDGenerator"]
-        IDUtils["ID Utilities"]
-    end
-    
-    subgraph "ID Format"
-        Format["type_code:unique_id:container_unique_id:location"]
-    end
-    
-    IDRegistry --> IDGenerator
-    IDRegistry --> IDUtils
-    
-    style IDRegistry stroke:#9370db,stroke-width:2px
-    style IDGenerator stroke:#228b22,stroke-width:1px
-    style IDUtils stroke:#228b22,stroke-width:1px
-    style Format stroke:#4682b4,stroke-width:2px
-```
+## ID Formats
 
-## ID Format
-
-Each widget ID follows this format:
+### Widget/Container Format
 ```
 [type_code]:[unique_id]:[container_unique_id]:[location]
 ```
-
-Where:
-- `type_code`: Short code indicating widget type (e.g., 'le', 't')
-- `unique_id`: Base62-encoded unique identifier
-- `container_unique_id`: The unique_id of the parent container (or "0" if none)
-- `location`: Container-specific location identifier (or "0" if not applicable)
 
 Examples:
 - `le:1Z:0:0` - A line edit widget with no container
 - `t:2J:0:1` - A tab container (in slot 1) with no parent
 - `pb:3a:2J:2` - A push button widget in a container with unique_id 2J, at location 2
 
-## Core API
-
-### Integration with Widgets
-
-To use the ID system in your widgets, modify your base widget class as follows:
-
-```python
-class CommandWidgetBase(Generic[T]):
-    def __init__(self, widget_id=None, container_id=None):
-        self.registry = get_id_registry()
-        self.widget_register(widget_id, container_id)
-        ...
-        
-    def widget_register(self, widget_id, container_id):
-        raise NotImplementedError("Subclasses must implement widget_register")
+### Observable Format
+```
+[type_code]:[unique_id]
 ```
 
-Then implement the registration in your subclasses:
+Example:
+- `o:4C` - An observable with unique ID "4C"
 
-```python
-def widget_register(self, widget_id, container_id):
-    widget_code = "ZZ"  # Use appropriate type code from TypeCodes class
-    self.widget_id = self.registry.register(self, widget_code, widget_id, container_id)
+### Observable Property Format
+```
+[type_code]:[unique_id]:[observable_unique_id]:[property_name]:[controller_id]
 ```
 
-### Core Registry Methods
+Examples:
+- `op:5D:0:name:0` - A standalone property with name "name"
+- `op:6E:4C:count:0` - A property "count" belonging to observable with unique_id "4C"
+- `op:7F:4C:value:3a` - A property "value" belonging to observable with unique_id "4C", controlled by widget with unique_id "3a"
 
-```mermaid
-classDiagram
-    class IDRegistry {
-        +register(widget, type_code, widget_id, container_id, location)
-        +get_widget(widget_id)
-        +get_id(widget)
-        +get_container_from_id(widget_id)
-        +get_container_id_from_widget_id(widget_id)
-        +get_unique_id_from_id(id_string)
-        +get_full_id_from_unique_id(unique_id)
-        +get_widget_ids_by_container_id(container_unique_id)
-        +get_widgets_by_container_id(container_unique_id)
-        +get_widget_ids_by_container_id_and_location(container_unique_id, location)
-        +get_widgets_by_container_id_and_location(container_unique_id, location)
-        +update_container_id(widget, new_container_id)
-        +update_location(widget, new_location)
-        +remove_container_reference(widget_id)
-        +unregister(widget_or_id)
-    }
-```
+## Registry Methods
 
-### Usage Examples
+### Registration Methods
+- `register(widget, type_code, widget_id, container_id, location)`
+- `register_observable(observable, type_code, observable_id)`
+- `register_observable_property(property, type_code, property_id, property_name, observable_id, controller_id)`
 
-```python
-# Get the registry
-registry = get_id_registry()
+### ID Retrieval
+- `get_widget(widget_id)`
+- `get_observable(observable_id)`
+- `get_observable_property(property_id)`
+- `get_id(component)`
+- `get_unique_id_from_id(id_string)`
+- `get_full_id_from_unique_id(unique_id)`
 
-# Register a widget (generate new ID)
-widget_id = registry.register(widget, "le")
+### ID-Based Relationship Queries
+- `get_container_id_from_widget_id(widget_id)`
+- `get_widget_ids_by_container_id(container_unique_id)`
+- `get_widget_ids_by_container_id_and_location(container_unique_id, location)`
+- `get_observable_id_from_property_id(property_id)`
+- `get_property_ids_by_observable_id(observable_unique_id)`
+- `get_property_ids_by_observable_id_and_property_name(observable_unique_id, property_name)`
+- `get_controller_id_from_property_id(property_id)`
+- `get_property_ids_by_controller_id(controller_unique_id)`
 
-# Register with existing ID or container reference
-widget_id = registry.register(widget, "pb", widget_id, container_id)
+### ID Updates
+- `update_container_id(widget_id, new_container_id)`
+- `update_location(widget_id, new_location)`
+- `update_observable_id(property_id, new_observable_id)`
+- `update_property_name(property_id, new_property_name)`
+- `update_controller_id(property_id, new_controller_id)`
+- `remove_container_reference(widget_id)`
+- `remove_observable_reference(property_id)`
+- `remove_controller_reference(property_id)`
 
-# Register with location
-widget_id = registry.register(widget, "pb", widget_id, container_id, "3")
-
-# Get widget by ID
-widget = registry.get_widget("pb:3a:2J:3")
-
-# Get ID for a widget
-widget_id = registry.get_id(widget)
-
-# Get container from widget ID
-container = registry.get_container_from_id("pb:3a:2J:3")
-
-# Get container's ID from widget ID
-container_id = registry.get_container_id_from_widget_id("pb:3a:2J:3")
-
-# Get unique ID portion from full ID
-unique_id = registry.get_unique_id_from_id("pb:3a:2J:3")  # Returns "3a"
-
-# Get full ID from unique ID
-full_id = registry.get_full_id_from_unique_id("3a")  # Returns "pb:3a:2J:3"
-
-# Get all widget IDs in a container
-widget_ids = registry.get_widget_ids_by_container_id("2J")
-
-# Get all widget objects in a container
-widgets = registry.get_widgets_by_container_id("2J")
-
-# Get widgets at a specific location in a container
-widget_ids = registry.get_widget_ids_by_container_id_and_location("2J", "3")
-widgets = registry.get_widgets_by_container_id_and_location("2J", "3")
-
-# Update a widget's container
-registry.update_container_id(widget, new_container_id)
-
-# Update a widget's location
-registry.update_location(widget, "4")
-
-# Remove container reference
-updated_id = registry.remove_container_reference(widget_id)  # TODO: Reconsider approach
-
-# Unregister a widget
-registry.unregister(widget)  # or registry.unregister(widget_id)
-```
+### Unregistration
+- `unregister(component_id, replacement_id=None)`
+- `set_on_widget_unregister(callback)`
+- `set_on_observable_unregister(callback)`
+- `set_on_property_unregister(callback)`
 
 ### Utility Functions
 
 ```python
 from command_system.id_system.utils import (
     extract_type_code, extract_unique_id, 
-    extract_container_unique_id, extract_location
+    extract_container_unique_id, extract_location,
+    extract_observable_unique_id, extract_property_name,
+    extract_controller_unique_id, is_widget_id,
+    is_observable_id, is_observable_property_id
 )
 
-# Extract parts from an ID
+# Extract parts from IDs
 type_code = extract_type_code("pb:3a:2J:3")  # -> "pb"
 unique_id = extract_unique_id("pb:3a:2J:3")  # -> "3a"
 container_id = extract_container_unique_id("pb:3a:2J:3")  # -> "2J"
 location = extract_location("pb:3a:2J:3")  # -> "3"
+observable_id = extract_observable_unique_id("op:7F:4C:value:3a")  # -> "4C"
+property_name = extract_property_name("op:7F:4C:value:3a")  # -> "value"
+controller_id = extract_controller_unique_id("op:7F:4C:value:3a")  # -> "3a"
+
+# Check ID types
+is_widget = is_widget_id("pb:3a:2J:3")  # -> True
+is_observable = is_observable_id("o:4C")  # -> True
+is_property = is_observable_property_id("op:7F:4C:value:3a")  # -> True
 ```
 
 ## Type Codes Reference
 
-The system uses short type codes to identify different widget types:
-
-| Widget Type | Code |
+| Component Type | Code |
 |-------------|------|
 | **Containers** |  |
 | Tab Container | t |
@@ -188,3 +125,6 @@ The system uses short type codes to identify different widget types:
 | Tree Widget | tw |
 | Table Widget | tb |
 | Custom Widget | cw |
+| **Observables** |  |
+| Observable | o |
+| Observable Property | op |

@@ -1,13 +1,15 @@
 """
-ID generator for unique, memory-efficient widget IDs.
+ID generator for unique, memory-efficient component IDs.
 
-This module implements a generator for unique widget IDs following the pattern:
-[type_code]:[unique_id]:[container_unique_id]:[location]
+This module implements a generator for unique IDs following these patterns:
+- Widget/Container: [type_code]:[unique_id]:[container_unique_id]:[location]
+- Observable: [type_code]:[unique_id]
+- ObservableProperty: [type_code]:[unique_id]:[observable_unique_id]:[property_name]:[controller_id]
 """
-from typing import Dict
+from typing import Dict, Optional
 
 class IDGenerator:
-    """Generates unique, memory-efficient widget IDs."""
+    """Generates unique, memory-efficient component IDs."""
     
     def __init__(self):
         """Initialize the ID generator with a global counter."""
@@ -15,17 +17,17 @@ class IDGenerator:
         
     def generate_id(self, type_code: str, container_unique_id: str = "0", location: str = "0") -> str:
         """
-        Generate a unique ID with the specified parameters.
+        Generate a unique widget/container ID with the specified parameters.
         
         Args:
-            type_code: Short code indicating widget type (e.g., 'c', 't')
+            type_code: Short code indicating widget type (e.g., 'le', 't')
             container_unique_id: ID of parent container (or "0" if none)
             location: Container-specific location identifier (or "0" if not applicable)
             
         Returns:
             A unique ID string in the format: type_code:unique_id:container_unique_id:location
         """
-        # Increment the global counter for all types
+        # Increment the global counter
         self._counter += 1
         
         # Generate unique ID component using base62 encoding
@@ -34,9 +36,52 @@ class IDGenerator:
         # Create full ID
         return f"{type_code}:{unique_id}:{container_unique_id}:{location}"
     
-    def update_id(self, id_string: str, new_container_id: str = None, new_location: str = None) -> str:
+    def generate_observable_id(self, type_code: str) -> str:
         """
-        Update parts of an existing ID string.
+        Generate a unique observable ID.
+        
+        Args:
+            type_code: Short code indicating observable type (e.g., 'o')
+            
+        Returns:
+            A unique ID string in the format: type_code:unique_id
+        """
+        # Increment the global counter
+        self._counter += 1
+        
+        # Generate unique ID component using base62 encoding
+        unique_id = self._encode_to_base62(self._counter)
+        
+        # Create full ID
+        return f"{type_code}:{unique_id}"
+    
+    def generate_observable_property_id(self, type_code: str, observable_unique_id: str = "0", 
+                                        property_name: str = "0", controller_unique_id: str = "0") -> str:
+        """
+        Generate a unique observable property ID.
+        
+        Args:
+            type_code: Short code indicating property type (e.g., 'op')
+            observable_unique_id: ID of parent observable (or "0" if standalone)
+            property_name: Name identifier for the property
+            controller_unique_id: ID of controlling widget (or "0" if none)
+            
+        Returns:
+            A unique ID string in the format: type_code:unique_id:observable_unique_id:property_name:controller_unique_id
+        """
+        # Increment the global counter
+        self._counter += 1
+        
+        # Generate unique ID component using base62 encoding
+        unique_id = self._encode_to_base62(self._counter)
+        
+        # Create full ID
+        return f"{type_code}:{unique_id}:{observable_unique_id}:{property_name}:{controller_unique_id}"
+    
+    def update_id(self, id_string: str, new_container_id: Optional[str] = None, 
+                  new_location: Optional[str] = None) -> str:
+        """
+        Update parts of an existing widget/container ID string.
         
         Args:
             id_string: Existing ID to update
@@ -48,7 +93,7 @@ class IDGenerator:
         """
         parts = id_string.split(':')
         if len(parts) != 4:
-            raise ValueError(f"Invalid ID format: {id_string}")
+            raise ValueError(f"Invalid widget/container ID format: {id_string}")
             
         type_code = parts[0]
         unique_id = parts[1]
@@ -56,6 +101,33 @@ class IDGenerator:
         location = new_location if new_location is not None else parts[3]
         
         return f"{type_code}:{unique_id}:{container_id}:{location}"
+    
+    def update_observable_property_id(self, id_string: str, new_observable_id: Optional[str] = None,
+                                     new_property_name: Optional[str] = None, 
+                                     new_controller_id: Optional[str] = None) -> str:
+        """
+        Update parts of an existing observable property ID string.
+        
+        Args:
+            id_string: Existing ID to update
+            new_observable_id: New observable unique ID (or None to keep existing)
+            new_property_name: New property name (or None to keep existing)
+            new_controller_id: New controller unique ID (or None to keep existing)
+            
+        Returns:
+            Updated ID string
+        """
+        parts = id_string.split(':')
+        if len(parts) != 5:
+            raise ValueError(f"Invalid observable property ID format: {id_string}")
+            
+        type_code = parts[0]
+        unique_id = parts[1]
+        observable_id = new_observable_id if new_observable_id is not None else parts[2]
+        property_name = new_property_name if new_property_name is not None else parts[3]
+        controller_id = new_controller_id if new_controller_id is not None else parts[4]
+        
+        return f"{type_code}:{unique_id}:{observable_id}:{property_name}:{controller_id}"
     
     def _encode_to_base62(self, number: int) -> str:
         """
