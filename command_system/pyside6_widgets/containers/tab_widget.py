@@ -112,7 +112,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         options = {"tab_name": tab_name, "closable": closable}
         return self.register_widget_type(factory_func, observables, None, **options)
     
-    def add_tab(self, type_id: str) -> str:
+    def add_tab(self, type_id: str) -> str: # TODO: rewrite later with proper optional deserialization and serialization when undo
         """
         Add a new tab of the registered type.
         
@@ -193,7 +193,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         if close_button:
             close_button.setVisible(closable)
     
-    @Slot(int)
+    @Slot(int) #TODO: rewrite liter with proper serialization/deserialization
     def _on_tab_close_requested(self, index: int) -> None:
         """Handle tab close request from UI."""
         # Check if tab is closable from stored data
@@ -240,7 +240,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         cmd.set_trigger_widget(self.widget_id)
         get_command_manager().execute(cmd)
     
-    @Slot(int)
+    @Slot(int) #TODO: make it work
     def _on_current_changed(self, index: int) -> None:
         """Handle tab selection change."""
         # Skip if we're executing a command
