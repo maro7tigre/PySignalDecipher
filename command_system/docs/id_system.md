@@ -103,6 +103,35 @@ is_observable = is_observable_id("o:4C")  # -> True
 is_property = is_observable_property_id("op:7F:4C:value:3a")  # -> True
 ```
 
+
+## Simple ID Registry
+
+The SimpleIDRegistry provides a way to create and track consistent IDs for widget types and other components.
+
+```python
+from command_system.id_system import get_simple_id_registry
+
+# Get the registry
+registry = get_simple_id_registry()
+
+# Register a name with a type code
+widget_id = registry.register("welcome_tab", "wt")   # "wt:1"
+form_id = registry.register("main_form", "fm")       # "fm:1"
+
+# Register with a custom ID
+custom_id = registry.register("custom_widget", "wt", "wt:custom")
+
+# Look up IDs and names
+id_str = registry.get_id("welcome_tab")      # "wt:1"
+name = registry.get_name("wt:1")             # "welcome_tab"
+
+# Check registration and unregister
+is_reg = registry.is_registered("welcome_tab")   # True
+registry.unregister("welcome_tab")               # True
+```
+
+The SimpleIDRegistry integrates with the main ID system's generator to produce consistent IDs in the format of `[type_code]:[unique_id]`, while providing a simple mapping between names and IDs. It is primarily used in the container system for widget type registration.
+
 ## Type Codes Reference
 
 | Component Type | Code |

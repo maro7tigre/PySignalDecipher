@@ -8,6 +8,7 @@ without maintaining direct references, enabling advanced serialization and navig
 # Public API
 from .generator import IDGenerator
 from .registry import IDRegistry, get_id_registry
+from .simple_id_registry import get_simple_id_registry
 from .utils import (
     extract_type_code,
     extract_unique_id, 
@@ -57,6 +58,7 @@ __all__ = [
     
     # Functions
     'get_id_registry',
+    'get_simple_id_registry',
     'extract_type_code',
     'extract_unique_id',
     'extract_container_unique_id',

@@ -286,27 +286,22 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             cmd.set_trigger_widget(self.widget_id)
             get_command_manager().execute(cmd)
     
-    def navigate_to_container(self, trigger_widget=None, container_info=None) -> bool:
-        """Navigate to the appropriate tab for undo/redo operations."""
-        # First navigate to parent container if exists
-        super().navigate_to_container(trigger_widget, container_info)
+    def navigate_to_location(self, location: str) -> bool:
+        """
+        Navigate to a specific tab by index.
         
-        # If we have a trigger widget, find and activate its tab
-        if trigger_widget:
-            for i in range(self.count()):
-                tab_widget = self.widget(i)
-                
-                # Check if widget is this tab or inside it
-                if tab_widget == trigger_widget or trigger_widget in tab_widget.findChildren(QWidget):
-                    self.setCurrentIndex(i)
-                    trigger_widget.setFocus()
-                    return True
-        
-        # If we have container_info with a tab index
-        if container_info and "tab_index" in container_info:
-            tab_index = container_info["tab_index"]
+        Args:
+            location: Tab index as string
+            
+        Returns:
+            True if navigation was successful
+        """
+        try:
+            tab_index = int(location)
             if 0 <= tab_index < self.count():
                 self.setCurrentIndex(tab_index)
                 return True
+        except ValueError:
+            pass
         
-        return True
+        return False

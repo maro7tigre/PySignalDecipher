@@ -303,27 +303,21 @@ class CommandManager:
         if not command or not command.trigger_widget_id:
             return
             
-        # Get the trigger widget
-        trigger_widget = get_id_registry().get_widget(command.trigger_widget_id)
-        if not trigger_widget:
-            return
-            
-        # Check if the trigger widget has container info
-        container_info = command.get_context_info("container_info")
-        if not container_info:
-            return
-            
+        # Get the trigger widget ID
+        trigger_widget_id = command.trigger_widget_id
+        print(f"Trigger widget ID: {trigger_widget_id}")
         # Get the container 
-        container_id = get_id_registry().get_container_id_from_widget_id(command.trigger_widget_id)
+        id_registry = get_id_registry()
+        container_id = id_registry.get_container_id_from_widget_id(trigger_widget_id)
         if not container_id:
             return
             
-        container = get_id_registry().get_widget(container_id)
-        if not container or not hasattr(container, "navigate_to_container"):
+        container = id_registry.get_widget(container_id)
+        if not container or not hasattr(container, "navigate_to_widget"):
             return
             
         # Navigate to the command context
-        container.navigate_to_container(trigger_widget, container_info)
+        container.navigate_to_widget(trigger_widget_id)
 
     def is_updating(self) -> bool:
         """

@@ -9,7 +9,7 @@ import uuid
 import inspect
 from PySide6.QtWidgets import QWidget
 
-from command_system.id_system import get_id_registry, TypeCodes, extract_location
+from command_system.id_system import get_id_registry, TypeCodes, extract_location, get_simple_id_registry
 from command_system.core import Observable
 from ..base_widget import BaseCommandWidget
 
@@ -51,8 +51,9 @@ class BaseCommandContainer(BaseCommandWidget):
         # Generate type_id if not provided
         if type_id is None:
             # Use function name as part of the ID for better debugging
-            func_name = factory_func.__name__
-            type_id = f"{func_name}_{str(uuid.uuid4())[:8]}"
+            function_name = factory_func.__name__
+            simple_id_registry = get_simple_id_registry()
+            type_id = simple_id_registry.register(function_name, self.type_code)
         
         # Store widget type info
         self._widget_types[type_id] = {
@@ -87,7 +88,7 @@ class BaseCommandContainer(BaseCommandWidget):
         factory_args = []
         created_observables = []
         
-        # Process observables
+        # Process observables #TODO: add support for properties
         for obs in registered_observables:
             if isinstance(obs, str):
                 # It's an ID - get the existing observable
@@ -112,57 +113,52 @@ class BaseCommandContainer(BaseCommandWidget):
                 return None
             
             # Register the widget with this container
-            widget_id = self.register_child(widget, location)
-            
-            # Remember the widget type and created observables for later recreation
-            id_registry = get_id_registry()
-            widget_obj = id_registry.get_widget(widget_id)
-            
-            # Store recreation info
-            recreation_info = {
-                "type_id": type_id,
-                "created_observables": [
-                    {"class": type(obs).__name__, "id": obs.get_id()}
-                    for obs in created_observables
-                ],
-                "observable_ids": [
-                    obs if isinstance(obs, str) else None
-                    for obs in registered_observables
-                ]
-            }
-            
-            if hasattr(widget_obj, "set_context_info"):
-                widget_obj.set_context_info("recreation_info", recreation_info)
+            widgets_ids = self.register_child(widget, location, type_info)
+
             
             # Add the widget to the container - must be implemented by subclasses
             self._add_widget_to_container(widget, location, type_info["options"])
             
-            return widget_id
+            return widgets_ids
         
         except Exception as e:
             print(f"Error creating widget of type {type_id}: {e}")
             return None
     
-    def register_child(self, widget: QWidget, location: str) -> str:
-        """Register a child widget with this container."""
+    def register_child(self, widget: QWidget, location: str, type_info: dict) -> None:
+        """Register a widget and all BaseCommandWidget children with this container."""
         id_registry = get_id_registry()
+        widgets_ids = []
         
-        if isinstance(widget, BaseCommandWidget):
-            # Already a command widget, just update container
-            widget.update_container(self.widget_id)
-            widget.update_location(location)
-            return widget.widget_id
-        else:
-            # Regular QWidget, register with ID system
-            return id_registry.register(
-                widget, 
-                TypeCodes.CUSTOM_WIDGET, 
-                None,
-                self.widget_id, 
-                location
-            )
+        widgets_to_process = [widget]
+        while widgets_to_process:
+            current_widget = widgets_to_process.pop(0)
+            
+            if isinstance(current_widget, BaseCommandWidget):
+                # It's a command widget - check if already registered
+                widget_id = id_registry.get_id(current_widget)
+                if widget_id:
+                    # Already registered, update container and location
+                    current_widget.update_container(self.widget_id)
+                    current_widget.update_location(location)
+                else:
+                    # Not registered, register it
+                    type_code = current_widget.type_code
+                    widget_id = id_registry.register(
+                        current_widget, type_code, None, self.widget_id, location
+                    )
+                widgets_ids.append(widget_id)
+                self._add_widget_to_container(widget, location, type_info["options"])
+                    
+            elif isinstance(current_widget, QWidget):
+                # Regular widget - add its children to process
+                child_widgets = current_widget.findChildren(QWidget)
+                widgets_to_process.extend(child_widgets)
+        
+        return widgets_ids
+        
     
-    def unregister_child(self, widget: Union[QWidget, str]) -> bool:
+    def unregister_child(self, widget: Union[QWidget, str]) -> bool: #TODO: unregister  children using a list of ids
         """Unregister a child widget from this container."""
         id_registry = get_id_registry()
         
@@ -210,18 +206,48 @@ class BaseCommandContainer(BaseCommandWidget):
             f"_add_widget_to_container not implemented in {self.__class__.__name__}"
         )
     
-    def navigate_to_container(self, trigger_widget=None, container_info=None) -> bool:
+    def navigate_to_widget(self, target_widget_id: str) -> bool:
         """
-        Navigate to this container's context.
-        Used by command manager for restoration during undo/redo.
+        Navigate to a specific widget by traversing the container hierarchy.
         
-        Should be implemented by container subclasses.
+        Args:
+            target_widget_id: ID of the widget to navigate to
+            
+        Returns:
+            True if navigation was successful
         """
-        # First navigate to parent container if exists
-        parent_container_id = get_id_registry().get_container_id_from_widget_id(self.widget_id)
+        # First check if this container is inside another container
+        id_registry = get_id_registry()
+        parent_container_id = id_registry.get_container_id_from_widget_id(self.widget_id)
+        
         if parent_container_id:
-            parent_container = get_id_registry().get_widget(parent_container_id)
-            if parent_container and hasattr(parent_container, 'navigate_to_container'):
-                parent_container.navigate_to_container()
+            # If we have a parent container, ask it to navigate to the target
+            parent_container = id_registry.get_widget(parent_container_id)
+            if parent_container and hasattr(parent_container, 'navigate_to_widget'):
+                # Navigate to this container first
+                parent_container.navigate_to_widget(self.widget_id)
+        
+        # Now navigate to the target's location within this container
+        target_location = extract_location(target_widget_id)
+        self.navigate_to_location(target_location)
+        
+        # Set focus on the target widget
+        target_widget = id_registry.get_widget(target_widget_id)
+        if target_widget:
+            target_widget.setFocus()
         
         return True
+
+    def navigate_to_location(self, location: str) -> bool:
+        """
+        Navigate to a specific location within this container.
+        Must be implemented by container subclasses.
+        
+        Args:
+            location: Location identifier
+            
+        Returns:
+            True if navigation was successful
+        """
+        # Base implementation does nothing
+        raise NotImplementedError("Subclasses must implement navigate_to_location")
