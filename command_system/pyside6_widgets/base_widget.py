@@ -44,7 +44,7 @@ class BaseCommandWidget:
             location: Optional location within the container
         """
         # Save the widget type code
-        self._widget_type_code = type_code
+        self.type_code = type_code
         
         # Register with ID system
         id_registry = get_id_registry()
@@ -298,9 +298,9 @@ class BaseCommandWidget:
         if widget_property in self._controlled_properties:
             self._create_and_execute_property_command(widget_property, new_value)
     
-    def __del__(self):
-        """Clean up by unregistering from ID registry."""
-        try:
-            get_id_registry().unregister(self.widget_id)
-        except:
-            pass  # Ignore errors during cleanup
+    def unregister_widget(self) -> None:
+        """Unregister this widget"""
+        id_registry = get_id_registry()
+        id_registry.unregister(self.widget_id)
+        
+        # TODO: consider more cleanup

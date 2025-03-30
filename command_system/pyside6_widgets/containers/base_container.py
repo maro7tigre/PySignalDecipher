@@ -54,7 +54,6 @@ class BaseCommandContainer(BaseCommandWidget):
             function_name = factory_func.__name__
             simple_id_registry = get_simple_id_registry()
             type_id = simple_id_registry.register(function_name, self.type_code)
-        
         # Store widget type info
         self._widget_types[type_id] = {
             "factory": factory_func,
@@ -78,7 +77,7 @@ class BaseCommandContainer(BaseCommandWidget):
         # Check if the type exists
         if type_id not in self._widget_types:
             return None
-        
+        print(f"adding container {type_id}")
         # Get type info
         type_info = self._widget_types[type_id]
         factory = type_info["factory"]
@@ -125,7 +124,7 @@ class BaseCommandContainer(BaseCommandWidget):
             print(f"Error creating widget of type {type_id}: {e}")
             return None
     
-    def register_child(self, widget: QWidget, location: str, type_info: dict) -> None:
+    def register_child(self, widget: QWidget, location: str, type_info: Dict) -> None:
         """Register a widget and all BaseCommandWidget children with this container."""
         id_registry = get_id_registry()
         widgets_ids = []
@@ -154,26 +153,37 @@ class BaseCommandContainer(BaseCommandWidget):
                 # Regular widget - add its children to process
                 child_widgets = current_widget.findChildren(QWidget)
                 widgets_to_process.extend(child_widgets)
-        
         return widgets_ids
         
     
-    def unregister_child(self, widget: Union[QWidget, str]) -> bool: #TODO: unregister  children using a list of ids
-        """Unregister a child widget from this container."""
-        id_registry = get_id_registry()
-        
-        # Get widget ID
-        widget_id = widget if isinstance(widget, str) else id_registry.get_id(widget)
-        if not widget_id:
-            return False
-        
-        # If it's a BaseCommandWidget, just update its container reference
-        if isinstance(widget, BaseCommandWidget):
-            widget.update_container(None)
-            return True
-        else:
-            # Otherwise remove the container reference in the ID system
-            return id_registry.remove_container_reference(widget_id) != ""
+    def unregister_childs(self, location = None) -> bool:
+            """
+            Unregister a child widget and all its children from this container.
+            
+            Args:
+                widget: Widget object or ID to unregister
+                
+            Returns:
+                True if successful, False otherwise
+            """
+            id_registry = get_id_registry()
+            
+                
+            # Get all child widgets if this is itself a container
+            if location is None:
+                child_ids = id_registry.get_widget_ids_by_container_id(self.widget_id)
+            else :
+                child_ids = id_registry.get_widget_ids_by_container_id_and_location(self.widget_id, location)
+                
+                
+            # Unregister all children first
+            for child_id in child_ids:
+                child_widget = id_registry.get_widget(child_id)
+                if child_widget:
+                    if hasattr(child_widget, 'unregister_widget'):
+                        child_widget.unregister_widget()
+                    else:
+                        id_registry.unregister(child_id)
     
     def get_child_widgets(self) -> List[QWidget]:
         """Get all child widgets of this container."""
@@ -251,3 +261,13 @@ class BaseCommandContainer(BaseCommandWidget):
         """
         # Base implementation does nothing
         raise NotImplementedError("Subclasses must implement navigate_to_location")
+    
+    def unregister_widget(self) -> None:
+        """Unregister this widget and its children."""
+        id_registry = get_id_registry()
+        id_registry.unregister(self.widget_id)
+        
+        # Unregister all child widgets
+        self.unregister_childs()
+        
+        # TODO: consider more cleanup

@@ -101,6 +101,7 @@ class ImprovedTabsDemo(QMainWindow):
             observables=[],
             closable=False
         )
+        print(f"Registered welcome tab with ID: {self.welcome_tab_id}")
         
         # Register tab that uses an existing observable (shared model)
         self.shared_model_tab_id = self.tab_widget.register_tab(
@@ -109,6 +110,7 @@ class ImprovedTabsDemo(QMainWindow):
             observables=[self.person.get_id()],  # Pass the ID of existing observable
             closable=True
         )
+        print(f"Registered shared model tab with ID: {self.shared_model_tab_id}")
         
         # Register tab that creates a new observable instance each time
         self.new_model_tab_id = self.tab_widget.register_tab(
@@ -117,6 +119,7 @@ class ImprovedTabsDemo(QMainWindow):
             observables=[Person],  # Pass the Person class to create new instances
             closable=True
         )
+        print(f"Registered new model tab with ID: {self.new_model_tab_id}")
         
         # Register non-closable tab with shared model
         self.non_closable_tab_id = self.tab_widget.register_tab(
@@ -125,6 +128,7 @@ class ImprovedTabsDemo(QMainWindow):
             observables=[self.person.get_id()],
             closable=False
         )
+        print(f"Registered non-closable tab with ID: {self.non_closable_tab_id}")
     
     def create_welcome_tab(self):
         """Create welcome tab content."""

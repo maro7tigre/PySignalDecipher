@@ -42,9 +42,6 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         # Add the tab using the parent implementation
         index = super().addTab(widget, label)
         
-        # Register with container using index as location
-        self.register_child(widget, str(index))
-        
         # Emit our signal
         widget_id = get_id_registry().get_id(widget)
         if widget_id:
@@ -59,9 +56,6 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         """Override to register the widget and update locations."""
         # Insert the tab using the parent implementation
         index = super().insertTab(index, widget, label)
-        
-        # Register with container using index as location
-        self.register_child(widget, str(index))
         
         # Emit our signal
         widget_id = get_id_registry().get_id(widget)
@@ -83,10 +77,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             # Remove the tab using the parent implementation
             super().removeTab(index)
             
-            # Unregister from our container
-            if widget_id:
-                self.unregister_child(widget)
-                self.tabClosed.emit(widget_id)
+            self.unregister_childs(index)
             
             # Update locations of all tabs
             self._update_tab_locations()
@@ -119,7 +110,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             ID of the registered tab type
         """
         options = {"tab_name": tab_name, "closable": closable}
-        return self.register_widget_type(factory_func, observables, **options)
+        return self.register_widget_type(factory_func, observables, None, **options)
     
     def add_tab(self, type_id: str) -> str:
         """

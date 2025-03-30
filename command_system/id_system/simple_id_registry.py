@@ -44,14 +44,10 @@ class SimpleIDRegistry:
             
         Returns:
             The registered ID string
-        """
-        # If already registered, return existing ID
-        if name in self._registry:
-            return self._registry[name]
-            
+        """  
         # If ID is provided, use it
         if id_str:
-            self._registry[name] = id_str
+            self._registry[id_str] = name
             return id_str
             
         # Generate a new ID
@@ -69,21 +65,9 @@ class SimpleIDRegistry:
         new_id = f"{type_code}:{unique_id}"
         
         # Register the ID
-        self._registry[name] = new_id
+        self._registry[new_id] = name
         
         return new_id
-    
-    def get_id(self, name: str) -> Optional[str]:
-        """
-        Get the ID for a registered name.
-        
-        Args:
-            name: Name to look up
-            
-        Returns:
-            ID string or None if not registered
-        """
-        return self._registry.get(name)
     
     def get_name(self, id_str: str) -> Optional[str]:
         """
@@ -112,7 +96,7 @@ class SimpleIDRegistry:
         """
         return name in self._registry
     
-    def unregister(self, name: str) -> bool:
+    def unregister(self, id_str: str) -> bool:
         """
         Unregister a name.
         
@@ -122,10 +106,10 @@ class SimpleIDRegistry:
         Returns:
             True if successfully unregistered, False if not found
         """
-        if name not in self._registry:
+        if id_str not in self._registry:
             return False
             
-        del self._registry[name]
+        del self._registry[id_str]
         return True
     
     def reset(self):
