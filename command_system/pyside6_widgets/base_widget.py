@@ -269,6 +269,11 @@ class BaseCommandWidget:
         """
         if widget_property not in self._controlled_properties:
             return
+        
+        # Skip if no change from last value
+        last_value = self._last_values.get(widget_property)
+        if last_value == new_value:
+            return
             
         # Get the property ID
         property_id = self._controlled_properties[widget_property]

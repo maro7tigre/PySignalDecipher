@@ -202,7 +202,6 @@ class CommandManager:
                 
                 # Navigate to command context if available
                 self._navigate_to_command_context(command)
-                
                 # Call before undo callbacks
                 for callback in self._before_undo_callbacks.values():
                     callback(command)
@@ -245,7 +244,6 @@ class CommandManager:
                 
                 # Navigate to command context if available
                 self._navigate_to_command_context(command)
-                
                 # Call before execute callbacks (same as execute)
                 for callback in self._before_execute_callbacks.values():
                     callback(command)
@@ -301,23 +299,25 @@ class CommandManager:
             command: Command containing execution context
         """
         if not command or not command.trigger_widget_id:
-            return
+            return False
             
         # Get the trigger widget ID
         trigger_widget_id = command.trigger_widget_id
-        print(f"Trigger widget ID: {trigger_widget_id}")
         # Get the container 
         id_registry = get_id_registry()
         container_id = id_registry.get_container_id_from_widget_id(trigger_widget_id)
         if not container_id:
-            return
+            trigger_widget = id_registry.get_widget(trigger_widget_id)
+            trigger_widget.setFocus()
+            return True
             
         container = id_registry.get_widget(container_id)
         if not container or not hasattr(container, "navigate_to_widget"):
-            return
+            return False
             
         # Navigate to the command context
         container.navigate_to_widget(trigger_widget_id)
+        return True
 
     def is_updating(self) -> bool:
         """

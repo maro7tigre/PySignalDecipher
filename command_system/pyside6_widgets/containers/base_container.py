@@ -77,7 +77,6 @@ class BaseCommandContainer(BaseCommandWidget):
         # Check if the type exists
         if type_id not in self._widget_types:
             return None
-        print(f"adding container {type_id}")
         # Get type info
         type_info = self._widget_types[type_id]
         factory = type_info["factory"]
