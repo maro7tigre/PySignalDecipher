@@ -112,7 +112,6 @@ class BaseCommandContainer(BaseCommandWidget):
             
             # Register the widget with this container
             widgets_ids = self.register_child(widget, location, type_info)
-
             
             # Add the widget to the container - must be implemented by subclasses
             self._add_widget_to_container(widget, location, type_info["options"])
@@ -126,7 +125,6 @@ class BaseCommandContainer(BaseCommandWidget):
     def register_child(self, widget: QWidget, location: str, type_info: Dict) -> None:
         """Register a widget and all BaseCommandWidget children with this container."""
         id_registry = get_id_registry()
-        widgets_ids = []
         
         widgets_to_process = [widget]
         while widgets_to_process:
@@ -137,22 +135,21 @@ class BaseCommandContainer(BaseCommandWidget):
                 widget_id = id_registry.get_id(current_widget)
                 if widget_id:
                     # Already registered, update container and location
-                    current_widget.update_container(self.widget_id)
-                    current_widget.update_location(location)
+                    widget_id = current_widget.update_container(self.widget_id)
+                    widget_id = current_widget.update_location(location)
                 else:
                     # Not registered, register it
                     type_code = current_widget.type_code
                     widget_id = id_registry.register(
-                        current_widget, type_code, None, self.widget_id, location
+                        widget = current_widget, type_code = type_code, widget_id=None, container_id=self.widget_id, location = location
                     )
-                widgets_ids.append(widget_id)
                 self._add_widget_to_container(widget, location, type_info["options"])
                     
             elif isinstance(current_widget, QWidget):
                 # Regular widget - add its children to process
                 child_widgets = current_widget.findChildren(QWidget)
                 widgets_to_process.extend(child_widgets)
-        return widgets_ids
+        return location
         
     
     def unregister_childs(self, location = None) -> bool:

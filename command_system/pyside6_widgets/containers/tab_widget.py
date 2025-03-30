@@ -132,31 +132,21 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
                 super().__init__()
                 self.tab_widget = tab_widget
                 self.type_id = type_id
-                self.widget_id = None
+                self.location = None
                 
             def execute(self):
-                self.widget_id = self.tab_widget.add_widget(
+                self.location = int(self.tab_widget.add_widget(
                     self.type_id, str(self.tab_widget.count())
-                )
+                ))
                 
             def undo(self):
-                if self.widget_id:
-                    # Find the widget
-                    id_registry = get_id_registry()
-                    widget = id_registry.get_widget(self.widget_id)
-                    if widget:
-                        # Find its tab index
-                        for i in range(self.tab_widget.count()):
-                            if self.tab_widget.widget(i) == widget:
-                                self.tab_widget.removeTab(i)
-                                break
+                if self.location:
+                    self.tab_widget.removeTab(self.location)
         
         # Create and execute the command
         cmd = AddTabCommand(self, type_id)
         cmd.set_trigger_widget(self.widget_id)
         get_command_manager().execute(cmd)
-        
-        return cmd.widget_id
     
     def _add_widget_to_container(self, widget: QWidget, location: str, options: Dict) -> None:
         """
@@ -243,6 +233,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
                     new_index = self.tab_widget.insertTab(self.index, self.widget, self.label)
                     # Restore closability state
                     self.tab_widget.set_tab_closable(new_index, self.closable)
+                    self.tab_widget.navigate_to_location(new_index)
         
         # Create and execute the command
         cmd = RemoveTabCommand(self, index)

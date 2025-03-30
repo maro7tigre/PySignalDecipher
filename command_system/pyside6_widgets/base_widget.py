@@ -96,6 +96,7 @@ class BaseCommandWidget:
         if id_registry.update_container_id(self.widget_id, new_container_id):
             # Update our stored widget ID
             self.widget_id = id_registry.get_id(self)
+        return self.widget_id
     
     def update_location(self, new_location: str):
         """
@@ -108,6 +109,7 @@ class BaseCommandWidget:
         if id_registry.update_location(self.widget_id, new_location):
             # Update our stored widget ID
             self.widget_id = id_registry.get_id(self)
+        return self.widget_id
     
     def bind_property(self, widget_property: str, observable_id: str, 
                      property_name: str):
