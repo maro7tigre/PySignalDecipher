@@ -293,3 +293,37 @@ class Observable:
         
     # -MARK: Serialization
     #TODO: Implement serialization of Observers
+    def get_serialization(self):
+        """
+        Get serialized representation of this observable.
+        
+        Returns:
+            Dict containing serialized observable state
+        """
+        properties = {}
+        
+        # Collect all properties 
+        for attr_name, attr_value in self.__class__.__dict__.items():
+            if isinstance(attr_value, ObservableProperty):
+                property_value = getattr(self, attr_name)
+                properties[attr_name] = property_value
+        
+        return {
+            'id': self.get_id(),
+            'type_code': 'o',
+            'properties': properties
+        }
+
+    @staticmethod
+    def deserialize(data):
+        """
+        Create an observable from serialized data.
+        
+        Args:
+            data: Serialized observable data dictionary
+            
+        Returns:
+            Newly created observable instance
+        """
+        # TODO: Implement observable deserialization
+        pass

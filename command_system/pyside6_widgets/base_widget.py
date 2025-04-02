@@ -314,3 +314,90 @@ class BaseCommandWidget:
     
     # -MARK: Serialization
     #TODO: Implement serialization of Observers
+    def get_serialization(self):
+        """
+        Get serialized representation of this widget.
+        
+        For containers, this will recursively serialize all children.
+        
+        Returns:
+            Dict containing serialized widget state
+        """
+        # Get basic properties
+        result = self.get_serialization_properties()
+        
+        # For containers, add children
+        if hasattr(self, 'get_child_widgets'):
+            children = []
+            for child in self.get_child_widgets():
+                if hasattr(child, 'get_serialization'):
+                    children.append(child.get_serialization())
+            
+            if children:
+                result['children'] = children
+        
+        return result
+
+    def get_serialization_properties(self):
+        """
+        Get serializable properties for this widget.
+        Override in subclasses to add widget-specific properties.
+        
+        Returns:
+            Dict containing basic widget properties
+        """
+        return {
+            'id': self.widget_id,
+            'type_code': self.type_code,
+            # Add layout info if available
+            'layout': self._get_layout_info() if hasattr(self, '_get_layout_info') else {}
+        }
+
+    @staticmethod
+    def deserialize(data, parent=None):
+        """
+        Create a widget from serialized data.
+        
+        Args:
+            data: Serialized widget data dictionary
+            parent: Optional parent widget
+            
+        Returns:
+            Newly created widget instance
+        """
+        # TODO: Implement basic deserialization
+        # This will need to create the appropriate widget type based on type_code
+        pass
+
+    def restore_widget(self, id, type_id, layout, children=None):
+        """
+        Restore this widget's state from serialized data.
+        Override in subclasses to handle widget-specific restoration.
+        
+        Args:
+            id: Widget ID
+            type_id: Widget type ID
+            layout: Layout information
+            children: List of child widget data (for containers)
+            
+        Returns:
+            True if successful
+        """
+        # TODO: Implement basic widget restoration
+        return True
+
+    def _get_layout_info(self):
+        """
+        Get layout information for serialization.
+        
+        Returns:
+            Dictionary with layout properties
+        """
+        # Basic implementation for QWidget
+        return {
+            'x': self.x(),
+            'y': self.y(),
+            'width': self.width(),
+            'height': self.height(),
+            'visible': self.isVisible()
+        }
