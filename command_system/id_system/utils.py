@@ -207,8 +207,8 @@ def create_location_path(*path_segments: str) -> str:
     Returns:
         Location path string in format "segment1/segment2/.../segmentN"
     """
-    # Filter out empty segments or "0"
-    valid_segments = [seg for seg in path_segments if seg and seg != "0"]
+    # Filter out empty segments but keep explicit "0" values
+    valid_segments = [seg for seg in path_segments if seg != ""]
     
     if not valid_segments:
         return "0"

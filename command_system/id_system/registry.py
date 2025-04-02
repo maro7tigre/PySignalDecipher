@@ -85,33 +85,35 @@ class IDRegistry:
         Returns:
             Generated or updated widget ID
         """
-        # Process location - it can be a simple path segment or a hierarchical path
         final_location = location or "0"
         
-        # If container is provided and it's a subcontainer, we need to build a hierarchical path
+        # Process location - determine if we need to generate a widget_location_id
         if container_id and is_subcontainer_id(container_id):
-            # Start with the provided location or "0"
-            container_path = location or "0"
-            
-            # Get or create a generator for this subcontainer
-            sub_generator = self._get_subcontainer_generator(container_id)
-            
-            # Generate a widget location ID
-            widget_location_id = extract_unique_id(sub_generator.generate_observable_id("tmp"))
-            
-            # Create hierarchical location path
-            final_location = append_to_location_path(container_path, widget_location_id)
-            
-            # Update container locations map
-            parent_container_id = self.get_container_id_from_widget_id(container_id)
-            
-            if parent_container_id:
-                # Get or initialize locations map for parent container
-                if parent_container_id not in self._container_locations_map:
-                    self._container_locations_map[parent_container_id] = {}
+            # Check if location already has a widget_location_id (contains a hyphen)
+            if not final_location or final_location == "0" or not ("-" in final_location):
+                # We need to generate a widget_location_id
+                # Get the subcontainer location part
+                subcontainer_location = final_location if final_location != "0" else "0"
                 
-                # Store subcontainer location
-                self._container_locations_map[parent_container_id][container_id] = container_path
+                # Get or create a generator for this subcontainer
+                sub_generator = self._get_subcontainer_generator(container_id)
+                
+                # Generate a widget location ID
+                widget_location_id = extract_unique_id(sub_generator.generate_observable_id("tmp"))
+                
+                # Create composite location
+                final_location = f"{subcontainer_location}-{widget_location_id}"
+                
+                # Update container locations map
+                parent_container_id = self.get_container_id_from_widget_id(container_id)
+                
+                if parent_container_id:
+                    # Get or initialize locations map for parent container
+                    if parent_container_id not in self._container_locations_map:
+                        self._container_locations_map[parent_container_id] = {}
+                    
+                    # Store subcontainer location
+                    self._container_locations_map[parent_container_id][container_id] = subcontainer_location
         
         # If widget_id is provided, update it
         if widget_id:
@@ -293,8 +295,8 @@ class IDRegistry:
         
         # Filter by subcontainer location
         for widget_id in container_widgets:
-            widget_subcontainer_path = extract_subcontainer_path(widget_id)
-            if widget_subcontainer_path == subcontainer_location:
+            widget_location = extract_location(widget_id)
+            if widget_location.startswith(subcontainer_location) or widget_location.split('-')[0] == subcontainer_location:
                 widget_ids.append(widget_id)
         
         return widget_ids
@@ -473,9 +475,11 @@ class IDRegistry:
         widget_ids = []
         for component_id in self._id_to_component_map.keys():
             if (is_widget_id(component_id) and 
-                extract_container_unique_id(component_id) == container_unique_id and
-                extract_location(component_id) == location):
-                widget_ids.append(component_id)
+                extract_container_unique_id(component_id) == container_unique_id):
+                # Check if location matches or starts with the specified location
+                widget_location = extract_location(component_id)
+                if widget_location == location or widget_location.startswith(f"{location}-"):
+                    widget_ids.append(component_id)
                 
         return widget_ids
     
@@ -625,9 +629,12 @@ class IDRegistry:
         if new_container_id:
             container_unique_id = extract_unique_id(new_container_id)
             
+        # Preserve the original location
+        current_location = extract_location(widget_id)
+            
         # Update ID
         updated_widget_id = self._id_generator.update_id(
-            widget_id, container_unique_id, None)
+            widget_id, container_unique_id, current_location)
             
         # Update mappings
         self._component_to_id_map[widget] = updated_widget_id
@@ -661,10 +668,23 @@ class IDRegistry:
         widget = self.get_widget(widget_id)
         if not widget:
             return False
+        
+        # Determine container ID
+        container_id = self.get_container_id_from_widget_id(widget_id)
+        
+        # Process location based on whether it has widget_location_id
+        final_location = new_location
+        
+        # If we have a container and the location doesn't include a separator
+        if container_id and is_subcontainer_id(container_id) and "-" not in new_location:
+            # Need to generate a widget location ID
+            sub_generator = self._get_subcontainer_generator(container_id)
+            widget_location_id = extract_unique_id(sub_generator.generate_observable_id("tmp"))
+            final_location = f"{new_location}-{widget_location_id}"
             
         # Update ID
         updated_widget_id = self._id_generator.update_id(
-            widget_id, None, new_location)
+            widget_id, None, final_location)
             
         # Update mappings
         self._component_to_id_map[widget] = updated_widget_id
@@ -857,16 +877,21 @@ class IDRegistry:
             if not component:
                 return False
                 
-            # Handle container replacement for widgets
-            if replacement_id and is_subcontainer_id(component_id):
+            # Handle container operations
+            if is_subcontainer_id(component_id):
                 # Get all child widgets
                 child_ids = self.get_widget_ids_by_container_id(component_id)
                 
-                # Update container for each child
-                for child_id in child_ids:
-                    self.update_container_id(child_id, replacement_id)
-                    
-                # Update any widget that was using this container's subcontainer generator
+                if replacement_id:
+                    # Update container for each child
+                    for child_id in child_ids:
+                        self.update_container_id(child_id, replacement_id)
+                else:
+                    # Unregister all children without replacement
+                    for child_id in child_ids:
+                        self.unregister(child_id)
+                        
+                # Clean up subcontainer generators
                 if component_id in self._subcontainer_generators:
                     del self._subcontainer_generators[component_id]
                     

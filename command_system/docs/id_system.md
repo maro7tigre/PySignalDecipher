@@ -10,16 +10,16 @@ The ID system creates and manages unique identifiers that encode type, hierarchy
 
 ### Widget/Container Format
 ```
-[type_code]:[unique_id]:[container_unique_id]:[location_path]
+[type_code]:[unique_id]:[container_unique_id]:[location]
 ```
 
-Where `location_path` uses a hierarchical format with forward slashes: `segment1/segment2/.../segmentN`
+Where `location` uses a composite format: `[subcontainer_location]-[widget_location_id]`
 
 Examples:
 - `le:1Z:0:0` - A line edit widget with no container
 - `t:2J:0:1` - A tab container (in slot 1) with no parent
-- `pb:3a:2J:2/4b` - A push button widget in a subcontainer at location 2, with widget location ID 4b
-- `cb:5c:3a:2/4b/7d` - A checkbox in a deeply nested container at path 2/4b with widget location ID 7d
+- `pb:3a:2J:2-4b` - A push button widget in a subcontainer at location 2, with widget location ID 4b
+- `cb:5c:3a:2/1-7d` - A checkbox in a deeply nested container at path 2/1 with widget location ID 7d
 
 ### Observable Format
 ```
@@ -46,16 +46,16 @@ Each subcontainer has its own ID generator for creating stable widget location I
 
 ```
 Container (t:1A:0:0)
-  ├── Subcontainer 1 (t:2B:1A:0)
-  │     ├── Widget 1-1 (pb:3C:2B:0/1)
-  │     ├── Widget 1-2 (le:4D:2B:0/2)
-  │     └── Nested Container (d:8H:2B:0/3)
-  │           ├── Nested Widget 1 (pb:9I:8H:0/3/1)
-  │           └── Nested Widget 2 (le:10J:8H:0/3/2)
+  ├── Subcontainer 1 (t:2B:1A:0-1)
+  │     ├── Widget 1-1 (pb:3C:2B:0-1)
+  │     ├── Widget 1-2 (le:4D:2B:0-2)
+  │     └── Nested Container (d:8H:2B:0/1-3)
+  │           ├── Nested Widget 1 (pb:9I:8H:0/1-1)
+  │           └── Nested Widget 2 (le:10J:8H:0/1-2)
   │
-  └── Subcontainer 2 (t:5E:1A:1)
-        ├── Widget 2-1 (pb:6F:5E:1/1)
-        └── Widget 2-2 (le:7G:5E:1/2)
+  └── Subcontainer 2 (t:5E:1A:1-1)
+        ├── Widget 2-1 (pb:6F:5E:1-1)
+        └── Widget 2-2 (le:7G:5E:1-2)
 ```
 
 This hierarchical approach supports arbitrarily deep nesting of containers, with each level maintaining its own location context.
@@ -114,11 +114,11 @@ This hierarchical approach supports arbitrarily deep nesting of containers, with
 from command_system.id_system.utils import (
     extract_type_code, extract_unique_id, 
     extract_container_unique_id, extract_location,
-    extract_location_parts, extract_subcontainer_location,
+    extract_location_parts, extract_subcontainer_path,
     extract_widget_location_id, extract_observable_unique_id, 
     extract_property_name, extract_controller_unique_id,
-    create_composite_location, is_widget_id,
-    is_observable_id, is_observable_property_id,
+    create_location_path, append_to_location_path,
+    is_widget_id, is_observable_id, is_observable_property_id,
     is_subcontainer_id
 )
 
@@ -129,12 +129,13 @@ container_id = extract_container_unique_id("pb:3a:2J:2-4b")  # -> "2J"
 location = extract_location("pb:3a:2J:2-4b")  # -> "2-4b"
 
 # Extract location parts
-subcontainer_loc, widget_loc_id = extract_location_parts("pb:3a:2J:2-4b")  # -> ("2", "4b")
-subcontainer_loc = extract_subcontainer_location("pb:3a:2J:2-4b")  # -> "2"
+location_parts = extract_location_parts("pb:3a:2J:2/1-4b")  # -> ["2", "1", "4b"]
+subcontainer_path = extract_subcontainer_path("pb:3a:2J:2/1-4b")  # -> "2/1"
 widget_loc_id = extract_widget_location_id("pb:3a:2J:2-4b")  # -> "4b"
 
 # Create composite location
-location = create_composite_location("2", "4b")  # -> "2-4b"
+location = create_location_path("2", "1")  # -> "2/1"
+full_location = append_to_location_path("2/1", "4b")  # -> "2/1/4b"
 
 # Extract observable-related parts
 observable_id = extract_observable_unique_id("op:7F:4C:value:3a")  # -> "4C"
@@ -191,62 +192,44 @@ tab_id = get_id_registry().register(tab, TypeCodes.CUSTOM_CONTAINER,
 # Create a widget in the subcontainer
 button = QPushButton("Click Me")
 button_id = get_id_registry().register(button, TypeCodes.PUSH_BUTTON,
-                                     None, tab_id, "0")  # Location will be composite
+                                     None, tab_id, "0")  # Location will be composite with ID
 ```
 
-### Serializing a Container
+### Working with Location IDs
 
 ```python
-def serialize_container(container):
-    container_id = get_id_registry().get_id(container)
-    if not container_id:
-        return None
-        
-    # Get container properties
-    result = {
-        "id": container_id,
-        "type_code": extract_type_code(container_id),
-        "locations_map": get_id_registry().get_locations_map(container_id)
-    }
-    
-    # Get all subcontainers
-    subcontainers = []
-    for subcontainer_id, location in result["locations_map"].items():
-        subcontainer = get_id_registry().get_widget(subcontainer_id)
-        if subcontainer and hasattr(subcontainer, "get_serialization"):
-            subcontainer_data = subcontainer.get_serialization()
-            subcontainers.append(subcontainer_data)
-    
-    result["subcontainers"] = subcontainers
-    return result
+# Generate a location ID for a widget in a subcontainer
+sub_generator = registry._get_subcontainer_generator(container_id)
+location = sub_generator.generate_location_id("0")  # "0-1"
+
+# Create a widget with this location
+button_id = registry.register(button, TypeCodes.PUSH_BUTTON, None, container_id, location)
+
+# Update a widget location
+registry.update_location(button_id, "1")  # Will generate new widget location ID
 ```
 
-### Deserializing a Container
+### Hierarchical Locations
+
+Locations use a composite format:
+- For subcontainers: `subcontainer_location` (e.g., "0", "1", "2/1")
+- For widgets: `subcontainer_location-widget_location_id` (e.g., "0-1", "2/1-3a")
+
+When registering:
+- If you provide a full location with widget_id part, it will be used as is
+- If you provide only a subcontainer path, a widget_id will be generated
+
+### Container Navigation
 
 ```python
-def deserialize_container(data, parent=None):
-    # Create container
-    container = CommandTabWidget(parent)
-    container_id = get_id_registry().register(container, data["type_code"], data["id"])
-    
-    # Restore locations map
-    get_id_registry().set_locations_map(container_id, data["locations_map"])
-    
-    # Track ID mappings for reference updates
-    id_map = {data["id"]: container_id}
-    
-    # Recreate subcontainers
-    for subcontainer_data in data["subcontainers"]:
-        # Create subcontainer
-        subcontainer = deserialize_component(subcontainer_data, container)
-        if subcontainer:
-            # Map old ID to new ID
-            id_map[subcontainer_data["id"]] = get_id_registry().get_id(subcontainer)
-    
-    # Update references using ID map
-    update_component_references(container, id_map)
-    
-    return container
+# Find widgets at a specific location
+widgets = registry.get_widgets_at_subcontainer_location(container_id, "1")
+
+# Get the subcontainer at a specific location
+subcontainer_id = registry.get_subcontainer_id_at_location(container_id, "2")
+
+# Navigate to a widget in a container
+container_widget.navigate_to_widget(widget_id)
 ```
 
 ## Type Codes Reference
