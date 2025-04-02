@@ -290,3 +290,6 @@ class Observable:
             get_id_registry().unregister(self._id)
         except:
             pass  # Ignore errors during cleanup
+        
+    # -MARK: Serialization
+    #TODO: Implement serialization of Observers

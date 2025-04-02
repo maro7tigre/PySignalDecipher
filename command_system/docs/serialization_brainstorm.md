@@ -169,13 +169,18 @@ flowchart TD
 sequenceDiagram
     participant Client
     participant SM as SerializationManager
-    participant IDReg as IDRegistry
     participant Component
+    participant CC as ChildComponent
     
-    Client->>SM: serialize_component(component)
-    SM->>IDReg: get_id(component)
-    IDReg-->>SM: component_id
+    Client->>SM: serialize_component(component_id)
     SM->>Component: get_serialization_data()
+    Component ->> SM: serialize_component(child_id)
+    SM ->> CC: get_serialization_data()
+    CC ->> CC: serialize children
+    CC-->>SM: component_data
+    SM->>SM: process_relationships()
+    SM-->>Component: serialized_state
+    Component->> Component: serialize more children
     Component-->>SM: component_data
     SM->>SM: process_relationships()
     SM-->>Client: serialized_state
@@ -212,29 +217,42 @@ Widgets and containers are serialized in a tree structure that preserves the hie
 ```json
 {
   "id": "t:1A:0:0",
-  "type_code": "t",
-  "type_id": "tab_container",
+  "type_id": "root_container",
   "layout": { "width": 800, "height": 600 },
   "children": [
     {
-      "id": "pb:2B:1A:0",
-      "type_code": "pb",
-      "type_id": "button_type_1",
-      "layout": { "x": 10, "y": 10, "width": 100, "height": 30 },
-      "children": []
-    },
-    {
-      "id": "x:3C:1A:1",
-      "type_code": "x",
-      "type_id": "panel_container",
-      "layout": { "x": 120, "y": 10, "width": 200, "height": 200 },
+      "id": "x:2B:1A:0",
+      "type_id": "container_1",
+      "layout": { "x": 10, "y": 10, "width": 300, "height": 200 },
       "children": [
         {
-          "id": "le:4D:3C:0",
-          "type_code": "le",
-          "type_id": "line_edit_type_1",
-          "layout": { "x": 10, "y": 10, "width": 180, "height": 30 },
-          "children": []
+          "id": "x:3C:2B:0",
+          "type_id": "container_3",
+          "layout": { "x": 10, "y": 10, "width": 100, "height": 100 },
+          "children": [
+            {
+              "id": "pb:5F:3C:0"
+            }
+          ]
+        },
+        {
+          "id": "pb:4D:2B:1"
+        },
+        {
+          "id": "le:4E:2B:2"
+        }
+      ]
+    },
+    {
+      "id": "x:2C:1A:1",
+      "type_id": "container_2",
+      "layout": { "x": 320, "y": 10, "width": 200, "height": 200 },
+      "children": [
+        {
+          "id": "cb:4F:2C:0"
+        },
+        {
+          "id": "rb:4G:2C:1"
         }
       ]
     }
@@ -243,9 +261,8 @@ Widgets and containers are serialized in a tree structure that preserves the hie
 ```
 
 Note that:
-- Containers have both a `type_code`, `type_id`, and `children` array
-- Leaf widgets have a `type_code`, `type_id`, and empty `children` array
-- All nodes have `id` and `layout` information
+- Containers have both a `id`, `type_id`, `layout`, and `children` array
+- Normal widgets (leaf widgets without children) only store their `id`
 
 ### 2. Observables and Properties
 

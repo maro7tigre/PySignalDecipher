@@ -264,3 +264,42 @@ class WidgetPropertyCommand(Command):
         widget = get_id_registry().get_widget(self.widget_id)
         if widget:
             setattr(widget, self.property_name, self.old_value)
+            
+# MARK:  serialization Command
+class SerializationCommand(Command):
+    """
+    Command that captures serialized state for undo/redo.
+    
+    This command uses the serialization system to capture component state
+    before and after operations, enabling undo/redo through state restoration.
+    """
+    
+    def __init__(self, component_id: str):
+        """
+        Initialize with component to track.
+        
+        Args:
+            component_id: Id of the Component to track
+        """
+        super().__init__()
+        self.widget_id = component_id
+        self.serialization = None
+    
+    def execute(self) -> None:
+        """
+        Execute the command and capture new state.
+        
+        This implementation must be overridden in subclasses to
+        perform the actual operation. The base implementation
+        just captures the new state.
+        """
+        # TODO: get serialization of component
+    
+    def undo(self) -> None:
+        """
+        Undo the command by restoring old state.
+        
+        This restores the component to its state before the command
+        was executed.
+        """
+        # TODO: deserialize and restore

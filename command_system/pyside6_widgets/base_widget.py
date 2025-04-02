@@ -311,3 +311,6 @@ class BaseCommandWidget:
         id_registry.unregister(self.widget_id)
         
         # TODO: consider more cleanup
+    
+    # -MARK: Serialization
+    #TODO: Implement serialization of Observers
