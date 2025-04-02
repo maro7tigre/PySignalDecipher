@@ -2,7 +2,7 @@
 ID generator for unique, memory-efficient component IDs.
 
 This module implements a generator for unique IDs following these patterns:
-- Widget/Container: [type_code]:[unique_id]:[container_unique_id]:[location]
+- Widget/Container: [type_code]:[unique_id]:[container_unique_id]:[subcontainer_location]-[widget_location_id]
 - Observable: [type_code]:[unique_id]
 - ObservableProperty: [type_code]:[unique_id]:[observable_unique_id]:[property_name]:[controller_id]
 """
@@ -15,17 +15,20 @@ class IDGenerator:
         """Initialize the ID generator with a global counter."""
         self._counter: int = 0
         
-    def generate_id(self, type_code: str, container_unique_id: str = "0", location: str = "0") -> str:
+    def generate_id(self, type_code: str, container_unique_id: str = "0", 
+                   location: str = "0") -> str:
         """
         Generate a unique widget/container ID with the specified parameters.
         
         Args:
             type_code: Short code indicating widget type (e.g., 'le', 't')
             container_unique_id: ID of parent container (or "0" if none)
-            location: Container-specific location identifier (or "0" if not applicable)
+            location: Container-specific location identifier with format:
+                     [subcontainer_location]-[widget_location_id]
+                     (or "0" if not applicable)
             
         Returns:
-            A unique ID string in the format: type_code:unique_id:container_unique_id:location
+            A unique ID string in format: type_code:unique_id:container_unique_id:location
         """
         # Increment the global counter
         self._counter += 1
@@ -67,7 +70,7 @@ class IDGenerator:
             controller_unique_id: ID of controlling widget (or "0" if none)
             
         Returns:
-            A unique ID string in the format: type_code:unique_id:observable_unique_id:property_name:controller_unique_id
+            A unique ID string in format: type_code:unique_id:observable_unique_id:property_name:controller_unique_id
         """
         # Increment the global counter
         self._counter += 1
@@ -77,6 +80,18 @@ class IDGenerator:
         
         # Create full ID
         return f"{type_code}:{unique_id}:{observable_unique_id}:{property_name}:{controller_unique_id}"
+    
+    def create_sub_generator(self) -> 'IDGenerator':
+        """
+        Create a new ID generator for a subcontainer.
+        Each subcontainer has its own generator to ensure stable widget location IDs.
+        
+        Returns:
+            A new IDGenerator instance with the same state
+        """
+        sub_generator = IDGenerator()
+        sub_generator._counter = 0  # Start fresh for this subcontainer
+        return sub_generator
     
     def update_id(self, id_string: str, new_container_id: Optional[str] = None, 
                   new_location: Optional[str] = None) -> str:
@@ -128,6 +143,25 @@ class IDGenerator:
         controller_id = new_controller_id if new_controller_id is not None else parts[4]
         
         return f"{type_code}:{unique_id}:{observable_id}:{property_name}:{controller_id}"
+    
+    def generate_location_id(self, subcontainer_location: str) -> str:
+        """
+        Generate a unique location ID for a widget within a subcontainer.
+        
+        Args:
+            subcontainer_location: Location of the subcontainer
+            
+        Returns:
+            Location string in format: [subcontainer_location]-[widget_location_id]
+        """
+        # Increment the counter for this subcontainer
+        self._counter += 1
+        
+        # Generate unique location ID using base62 encoding
+        widget_location_id = self._encode_to_base62(self._counter)
+        
+        # Create composite location
+        return f"{subcontainer_location}-{widget_location_id}"
     
     def _encode_to_base62(self, number: int) -> str:
         """

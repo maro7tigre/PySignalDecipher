@@ -14,12 +14,18 @@ from .utils import (
     extract_unique_id, 
     extract_container_unique_id,
     extract_location,
+    extract_location_parts,
+    extract_subcontainer_path,
+    extract_widget_location_id,
     extract_observable_unique_id,
     extract_property_name,
     extract_controller_unique_id,
+    create_location_path,
+    append_to_location_path,
     is_widget_id,
     is_observable_id,
-    is_observable_property_id
+    is_observable_property_id,
+    is_subcontainer_id
 )
 
 # Type code constants
@@ -63,10 +69,16 @@ __all__ = [
     'extract_unique_id',
     'extract_container_unique_id',
     'extract_location',
+    'extract_location_parts',
+    'extract_subcontainer_path',
+    'extract_widget_location_id',
     'extract_observable_unique_id',
     'extract_property_name',
     'extract_controller_unique_id',
+    'create_location_path',
+    'append_to_location_path',
     'is_widget_id',
     'is_observable_id',
-    'is_observable_property_id'
+    'is_observable_property_id',
+    'is_subcontainer_id'
 ]
