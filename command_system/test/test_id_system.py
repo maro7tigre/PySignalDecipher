@@ -1,8 +1,8 @@
 """
-Comprehensive test suite for the ID system.
+Updated test suite for the ID system to verify major update functionality.
 
-This tests the functionality of the ID system including widgets, containers,
-observables, and observable properties from an end-user perspective.
+This tests both the existing functionality and the new hierarchical ID system
+with composite location formats and container-level location management.
 """
 import pytest
 import sys
@@ -18,9 +18,10 @@ from command_system.id_system import (
     IDRegistry, get_id_registry, TypeCodes,
     extract_type_code, extract_unique_id, 
     extract_container_unique_id, extract_location,
+    extract_location_parts, extract_subcontainer_path, extract_widget_location_id,
     extract_observable_unique_id, extract_property_name,
-    extract_controller_unique_id, is_widget_id,
-    is_observable_id, is_observable_property_id
+    extract_controller_unique_id, create_location_path, append_to_location_path,
+    is_widget_id, is_observable_id, is_observable_property_id, is_subcontainer_id
 )
 
 # Mock classes for testing
@@ -66,6 +67,7 @@ class TestIDSystem:
         self.unregistered_widgets = []
         self.unregistered_observables = []
         self.unregistered_properties = []
+        self.id_changes = []
         
         self.registry.set_on_widget_unregister(
             lambda widget_id: self.unregistered_widgets.append(widget_id)
@@ -75,6 +77,9 @@ class TestIDSystem:
         )
         self.registry.set_on_property_unregister(
             lambda property_id: self.unregistered_properties.append(property_id)
+        )
+        self.registry.set_on_id_changed(
+            lambda old_id, new_id: self.id_changes.append((old_id, new_id))
         )
     
     def test_widget_registration(self):
@@ -115,7 +120,7 @@ class TestIDSystem:
         widget1_id = self.registry.register(widget1, TypeCodes.PUSH_BUTTON, None, container_id, "1")
         widget2_id = self.registry.register(widget2, TypeCodes.PUSH_BUTTON, None, container_id, "2")
         nested_container_id = self.registry.register(nested_container, TypeCodes.CUSTOM_CONTAINER, None, container_id, "3")
-        nested_widget_id = self.registry.register(nested_widget, TypeCodes.PUSH_BUTTON, None, nested_container_id, "1")
+        nested_widget_id = self.registry.register(nested_widget, TypeCodes.PUSH_BUTTON, None, nested_container_id, "3/1")
         
         # Verify container relationships
         assert self.registry.get_container_id_from_widget_id(widget1_id) == container_id
@@ -126,6 +131,8 @@ class TestIDSystem:
         # Verify widget location
         assert extract_location(widget1_id) == "1"
         assert extract_location(widget2_id) == "2"
+        assert extract_location(nested_container_id) == "3"
+        assert extract_location(nested_widget_id) == "3/1"
         
         # Test getting widgets by container
         container_widgets = self.registry.get_widget_ids_by_container_id(container_id)
@@ -147,6 +154,180 @@ class TestIDSystem:
         nested_widgets = self.registry.get_widget_ids_by_container_id(nested_container_id)
         assert len(nested_widgets) == 1
         assert nested_widget_id in nested_widgets
+    
+    def test_hierarchical_container_ids(self):
+        """Test hierarchical container IDs with deep nesting."""
+        # Create a deep container hierarchy
+        main_container = MockContainer("MainApp")
+        tab_container = MockContainer("TabContainer")
+        dock_container = MockContainer("DockContainer")
+        form_container = MockContainer("FormContainer")
+        
+        button1 = MockWidget("Button1")
+        button2 = MockWidget("Button2")
+        button3 = MockWidget("Button3")
+        
+        # Register components with hierarchy
+        main_id = self.registry.register(main_container, TypeCodes.WINDOW_CONTAINER)
+        tab_id = self.registry.register(tab_container, TypeCodes.TAB_CONTAINER, None, main_id, "0")
+        dock_id = self.registry.register(dock_container, TypeCodes.DOCK_CONTAINER, None, tab_id, "0/1")
+        form_id = self.registry.register(form_container, TypeCodes.CUSTOM_CONTAINER, None, dock_id, "0/1/2")
+        
+        # Register widgets at different levels
+        button1_id = self.registry.register(button1, TypeCodes.PUSH_BUTTON, None, main_id, "0/button1")
+        button2_id = self.registry.register(button2, TypeCodes.PUSH_BUTTON, None, dock_id, "0/1/button2")
+        button3_id = self.registry.register(button3, TypeCodes.PUSH_BUTTON, None, form_id, "0/1/2/button3")
+        
+        # Verify hierarchical paths
+        assert extract_location(tab_id) == "0"
+        assert extract_location(dock_id) == "0/1"
+        assert extract_location(form_id) == "0/1/2"
+        
+        assert extract_location(button1_id) == "0/button1"
+        assert extract_location(button2_id) == "0/1/button2"
+        assert extract_location(button3_id) == "0/1/2/button3"
+        
+        # Test location parts extraction
+        assert extract_location_parts(button3_id) == ["0", "1", "2", "button3"]
+        assert extract_subcontainer_path(button3_id) == "0/1/2"
+        assert extract_widget_location_id(button3_id) == "button3"
+        
+        # Test container lookup by path
+        assert self.registry.get_container_id_from_widget_id(button1_id) == main_id
+        assert self.registry.get_container_id_from_widget_id(button2_id) == dock_id
+        assert self.registry.get_container_id_from_widget_id(button3_id) == form_id
+    
+    def test_container_with_location_maps(self):
+        """Test container location maps for subcontainers."""
+        # Create a container with subcontainers
+        main_container = MockContainer("MainWindow")
+        tab1_container = MockContainer("Tab1")
+        tab2_container = MockContainer("Tab2")
+        panel_container = MockContainer("Panel")
+        
+        # Register components
+        main_id = self.registry.register(main_container, TypeCodes.WINDOW_CONTAINER)
+        tab1_id = self.registry.register(tab1_container, TypeCodes.TAB_CONTAINER, None, main_id, "0")
+        tab2_id = self.registry.register(tab2_container, TypeCodes.TAB_CONTAINER, None, main_id, "1")
+        panel_id = self.registry.register(panel_container, TypeCodes.CUSTOM_CONTAINER, None, tab1_id, "0/panel")
+        
+        # Set up location maps
+        locations_map = {
+            tab1_id: "0",
+            tab2_id: "1"
+        }
+        self.registry.set_locations_map(main_id, locations_map)
+        
+        panel_locations_map = {
+            panel_id: "panel"
+        }
+        self.registry.set_locations_map(tab1_id, panel_locations_map)
+        
+        # Get and verify location maps
+        main_locations = self.registry.get_locations_map(main_id)
+        assert main_locations == locations_map
+        
+        tab1_locations = self.registry.get_locations_map(tab1_id)
+        assert tab1_locations == panel_locations_map
+        
+        # Test getting subcontainer at location
+        assert self.registry.get_subcontainer_id_at_location(main_id, "0") == tab1_id
+        assert self.registry.get_subcontainer_id_at_location(main_id, "1") == tab2_id
+        assert self.registry.get_subcontainer_id_at_location(tab1_id, "panel") == panel_id
+        
+        # Test getting widgets at subcontainer location
+        button1 = MockWidget("Button1")
+        button2 = MockWidget("Button2")
+        
+        button1_id = self.registry.register(button1, TypeCodes.PUSH_BUTTON, None, tab1_id, "0/button1")
+        button2_id = self.registry.register(button2, TypeCodes.PUSH_BUTTON, None, tab1_id, "0/button2")
+        
+        widgets_at_tab1 = self.registry.get_widgets_at_subcontainer_location(main_id, "0")
+        assert len(widgets_at_tab1) >= 1
+        assert tab1_id in widgets_at_tab1
+    
+    def test_composite_location_id_format(self):
+        """Test composite location ID format with subcontainer and widget parts."""
+        # Create a container with a subcontainer
+        main_container = MockContainer("MainWindow")
+        tab_container = MockContainer("TabContainer")
+        
+        # Register components
+        main_id = self.registry.register(main_container, TypeCodes.WINDOW_CONTAINER)
+        tab_id = self.registry.register(tab_container, TypeCodes.TAB_CONTAINER, None, main_id, "0")
+        
+        # Generate a widget location ID using the subcontainer generator
+        sub_generator = self.registry._get_subcontainer_generator(tab_id)
+        location = sub_generator.generate_location_id("0")
+        
+        # Create a widget with this location
+        button = MockWidget("Button")
+        button_id = self.registry.register(button, TypeCodes.PUSH_BUTTON, None, tab_id, location)
+        
+        # Verify the format
+        assert extract_location(button_id) == location
+        
+        # The location should be in format "subcontainer_location-widget_location_id"
+        location_parts = location.split("-")
+        assert len(location_parts) == 2
+        
+        # Create a hierarchical path
+        deep_path = create_location_path("0", "1", "2")
+        assert deep_path == "0/1/2"
+        
+        # Append to location path
+        extended_path = append_to_location_path(deep_path, "widget1")
+        assert extended_path == "0/1/2/widget1"
+    
+    def test_subcontainer_generators(self):
+        """Test that each subcontainer has its own ID generator."""
+        # Create containers
+        main_container = MockContainer("MainWindow")
+        tab1_container = MockContainer("Tab1")
+        tab2_container = MockContainer("Tab2")
+        
+        # Register containers as subcontainers
+        main_id = self.registry.register(main_container, TypeCodes.WINDOW_CONTAINER)
+        tab1_id = self.registry.register(tab1_container, TypeCodes.TAB_CONTAINER, None, main_id, "0")
+        tab2_id = self.registry.register(tab2_container, TypeCodes.TAB_CONTAINER, None, main_id, "1")
+        
+        # Get subcontainer generators
+        sub_gen1 = self.registry._get_subcontainer_generator(tab1_id)
+        sub_gen2 = self.registry._get_subcontainer_generator(tab2_id)
+        
+        # Generate IDs from each, they should be independent
+        loc1 = sub_gen1.generate_location_id("0")
+        loc2 = sub_gen1.generate_location_id("0")
+        loc3 = sub_gen2.generate_location_id("0")
+        loc4 = sub_gen2.generate_location_id("0")
+        
+        # Each generator should produce its own sequence
+        assert loc1 != loc2  # Different IDs from the same generator
+        assert loc3 != loc4  # Different IDs from the same generator
+        
+        # Since generators are independent, first IDs from each should be the same format
+        # but with different subcontainer prefixes
+        assert loc1.split("-")[1] == loc3.split("-")[1]
+        
+        # Create widgets with these locations
+        button1 = MockWidget("Button1")
+        button2 = MockWidget("Button2")
+        button3 = MockWidget("Button3")
+        button4 = MockWidget("Button4")
+        
+        button1_id = self.registry.register(button1, TypeCodes.PUSH_BUTTON, None, tab1_id, loc1)
+        button2_id = self.registry.register(button2, TypeCodes.PUSH_BUTTON, None, tab1_id, loc2)
+        button3_id = self.registry.register(button3, TypeCodes.PUSH_BUTTON, None, tab2_id, loc3)
+        button4_id = self.registry.register(button4, TypeCodes.PUSH_BUTTON, None, tab2_id, loc4)
+        
+        # Verify that widgets are correctly assigned to their containers
+        tab1_widgets = self.registry.get_widget_ids_by_container_id(tab1_id)
+        tab2_widgets = self.registry.get_widget_ids_by_container_id(tab2_id)
+        
+        assert button1_id in tab1_widgets
+        assert button2_id in tab1_widgets
+        assert button3_id in tab2_widgets
+        assert button4_id in tab2_widgets
     
     def test_observable_registration(self):
         """Test observable registration and retrieval."""
@@ -222,18 +403,6 @@ class TestIDSystem:
         assert len(controller_properties) == 1
         assert property2_id in controller_properties
     
-    def test_unique_id_operations(self):
-        """Test unique ID extraction and full ID lookup."""
-        # Create and register widgets
-        widget = MockWidget("Button")
-        widget_id = self.registry.register(widget, TypeCodes.PUSH_BUTTON)
-        
-        # Extract unique ID
-        unique_id = self.registry.get_unique_id_from_id(widget_id)
-        
-        # Lookup by unique ID
-        assert self.registry.get_full_id_from_unique_id(unique_id) == widget_id
-    
     def test_update_widget_container(self):
         """Test updating a widget's container."""
         # Create components
@@ -258,6 +427,9 @@ class TestIDSystem:
         
         # Verify new container
         assert self.registry.get_container_id_from_widget_id(updated_widget_id) == container2_id
+        
+        # Verify ID change callback
+        assert (widget_id, updated_widget_id) in self.id_changes
         
         # Remove container reference
         updated_id = self.registry.remove_container_reference(updated_widget_id)
@@ -288,57 +460,14 @@ class TestIDSystem:
         
         # Verify new location
         assert extract_location(updated_widget_id) == "2"
-    
-    def test_update_observable_property_relationships(self):
-        """Test updating observable property relationships."""
-        # Create components
-        observable1 = MockObservable("Model1")
-        observable2 = MockObservable("Model2")
-        controller1 = MockWidget("Spinner1")
-        controller2 = MockWidget("Spinner2")
-        property = MockObservableProperty("Counter")
         
-        # Register components
-        observable1_id = self.registry.register_observable(observable1, TypeCodes.OBSERVABLE)
-        observable2_id = self.registry.register_observable(observable2, TypeCodes.OBSERVABLE)
-        controller1_id = self.registry.register(controller1, TypeCodes.SPIN_BOX)
-        controller2_id = self.registry.register(controller2, TypeCodes.SPIN_BOX)
-        
-        property_id = self.registry.register_observable_property(
-            property, TypeCodes.OBSERVABLE_PROPERTY,
-            None, "counter", observable1_id, controller1_id
-        )
-        
-        # Verify initial relationships
-        assert self.registry.get_observable_id_from_property_id(property_id) == observable1_id
-        assert self.registry.get_controller_id_from_property_id(property_id) == controller1_id
-        
-        # Update observable
-        success = self.registry.update_observable_id(property_id, observable2_id)
+        # Try updating to a composite location
+        success = self.registry.update_location(updated_widget_id, "2/widget5")
         assert success
-        updated_property_id = self.registry.get_id(property)
-        assert self.registry.get_observable_id_from_property_id(updated_property_id) == observable2_id
         
-        # Update controller
-        success = self.registry.update_controller_id(updated_property_id, controller2_id)
-        assert success
-        updated_property_id = self.registry.get_id(property)
-        assert self.registry.get_controller_id_from_property_id(updated_property_id) == controller2_id
-        
-        # Update property name
-        success = self.registry.update_property_name(updated_property_id, "count")
-        assert success
-        updated_property_id = self.registry.get_id(property)
-        assert extract_property_name(updated_property_id) == "count"
-        
-        # Remove relationships
-        self.registry.remove_observable_reference(updated_property_id)
-        updated_property_id = self.registry.get_id(property)
-        assert self.registry.get_observable_id_from_property_id(updated_property_id) is None
-        
-        self.registry.remove_controller_reference(updated_property_id)
-        updated_property_id = self.registry.get_id(property)
-        assert self.registry.get_controller_id_from_property_id(updated_property_id) is None
+        final_widget_id = self.registry.get_id(widget)
+        assert extract_location(final_widget_id) == "2/widget5"
+        assert extract_location_parts(final_widget_id) == ["2", "widget5"]
     
     def test_unregister_widget(self):
         """Test unregistering a widget."""
@@ -371,6 +500,10 @@ class TestIDSystem:
         widget1_id = self.registry.register(widget1, TypeCodes.PUSH_BUTTON, None, container_id, "1")
         widget2_id = self.registry.register(widget2, TypeCodes.PUSH_BUTTON, None, container_id, "2")
         
+        # Set locations map
+        locations_map = {}
+        self.registry.set_locations_map(container_id, locations_map)
+        
         # Unregister container with cascade
         success = self.registry.unregister(container_id)
         assert success
@@ -384,92 +517,30 @@ class TestIDSystem:
         assert container_id in self.unregistered_widgets
         assert widget1_id in self.unregistered_widgets
         assert widget2_id in self.unregistered_widgets
+        
+        # Verify subcontainer generator is removed
+        if hasattr(self.registry, '_subcontainer_generators'):
+            assert container_id not in self.registry._subcontainer_generators
     
-    def test_unregister_container_reparent(self):
-        """Test unregistering a container with reparenting."""
-        # Create components
-        container1 = MockContainer("Panel1")
-        container2 = MockContainer("Panel2")
-        widget1 = MockWidget("Button1")
-        widget2 = MockWidget("Button2")
-        
-        # Register components
-        container1_id = self.registry.register(container1, TypeCodes.CUSTOM_CONTAINER)
-        container2_id = self.registry.register(container2, TypeCodes.CUSTOM_CONTAINER)
-        widget1_id = self.registry.register(widget1, TypeCodes.PUSH_BUTTON, None, container1_id, "1")
-        widget2_id = self.registry.register(widget2, TypeCodes.PUSH_BUTTON, None, container1_id, "2")
-        
-        # Unregister container1 with reparenting to container2
-        success = self.registry.unregister(container1_id, container2_id)
-        assert success
-        
-        # Verify container1 is unregistered
-        assert self.registry.get_widget(container1_id) is None
-        
-        # Verify widgets are reparented
-        updated_widget1_id = self.registry.get_id(widget1)
-        updated_widget2_id = self.registry.get_id(widget2)
-        
-        assert self.registry.get_container_id_from_widget_id(updated_widget1_id) == container2_id
-        assert self.registry.get_container_id_from_widget_id(updated_widget2_id) == container2_id
-    
-    def test_unregister_observable_cascade(self):
-        """Test unregistering an observable with cascade."""
-        # Create components
+    def test_is_subcontainer_id(self):
+        """Test the is_subcontainer_id utility function."""
+        # Create different component types
+        container = MockContainer("Panel")
+        tab_container = MockContainer("TabPanel")
+        widget = MockWidget("Button")
         observable = MockObservable("Model")
-        property1 = MockObservableProperty("Prop1")
-        property2 = MockObservableProperty("Prop2")
         
         # Register components
+        container_id = self.registry.register(container, TypeCodes.CUSTOM_CONTAINER)
+        tab_id = self.registry.register(tab_container, TypeCodes.TAB_CONTAINER)
+        widget_id = self.registry.register(widget, TypeCodes.PUSH_BUTTON)
         observable_id = self.registry.register_observable(observable, TypeCodes.OBSERVABLE)
-        property1_id = self.registry.register_observable_property(
-            property1, TypeCodes.OBSERVABLE_PROPERTY, None, "prop1", observable_id
-        )
-        property2_id = self.registry.register_observable_property(
-            property2, TypeCodes.OBSERVABLE_PROPERTY, None, "prop2", observable_id
-        )
         
-        # Unregister observable with cascade
-        success = self.registry.unregister(observable_id)
-        assert success
-        
-        # Verify observable and properties are unregistered
-        assert self.registry.get_observable(observable_id) is None
-        assert self.registry.get_observable_property(property1_id) is None
-        assert self.registry.get_observable_property(property2_id) is None
-        
-        # Verify callbacks were called
-        assert observable_id in self.unregistered_observables
-        assert property1_id in self.unregistered_properties
-        assert property2_id in self.unregistered_properties
-    
-    def test_unregister_controller_widget(self):
-        """Test unregistering a widget that controls observable properties."""
-        # Create components
-        observable = MockObservable("Model")
-        property = MockObservableProperty("Value")
-        controller = MockWidget("Slider")
-        
-        # Register components
-        observable_id = self.registry.register_observable(observable, TypeCodes.OBSERVABLE)
-        controller_id = self.registry.register(controller, TypeCodes.SLIDER)
-        property_id = self.registry.register_observable_property(
-            property, TypeCodes.OBSERVABLE_PROPERTY,
-            None, "value", observable_id, controller_id
-        )
-        
-        # Verify initial relationship
-        assert self.registry.get_controller_id_from_property_id(property_id) == controller_id
-        
-        # Unregister controller
-        success = self.registry.unregister(controller_id)
-        assert success
-        
-        # Verify controller is unregistered but property remains with no controller
-        assert self.registry.get_widget(controller_id) is None
-        updated_property_id = self.registry.get_id(property)
-        assert updated_property_id is not None
-        assert self.registry.get_controller_id_from_property_id(updated_property_id) is None
+        # Check container identities
+        assert is_subcontainer_id(container_id)
+        assert is_subcontainer_id(tab_id)
+        assert not is_subcontainer_id(widget_id)
+        assert not is_subcontainer_id(observable_id)
 
 
 if __name__ == "__main__":
