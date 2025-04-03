@@ -11,7 +11,8 @@ from .command import (
     CompoundCommand, 
     PropertyCommand, 
     MacroCommand,
-    WidgetPropertyCommand
+    WidgetPropertyCommand,
+    SerializationCommand
 )
 from .command_manager import CommandManager, get_command_manager, CommandHistory
 
@@ -26,6 +27,7 @@ __all__ = [
     'PropertyCommand',
     'MacroCommand',
     'WidgetPropertyCommand',
+    'SerializationCommand',
     
     # Command management
     'CommandManager',

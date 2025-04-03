@@ -7,7 +7,7 @@ support for nested container hierarchies.
 """
 from typing import Any, Dict, List, Optional, Union, Callable, Tuple, Type
 import inspect
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QWidget, QVBoxLayout
 
 from command_system.id_system import get_id_registry, TypeCodes, extract_location, get_simple_id_registry
 from command_system.core import Observable
@@ -157,8 +157,13 @@ class BaseCommandContainer(BaseCommandWidget):
                 print(f"Factory {type_id} didn't return a QWidget")
                 return None
             
-            #TODO: confirm that all containers types can add widget this way
-            subcontainer.addWidget(content)
+            # Add content to the subcontainer using layout
+            if hasattr(subcontainer, 'layout'):
+                subcontainer.layout().addWidget(content)
+            else:
+                layout = QVBoxLayout()
+                layout.addWidget(content)
+                subcontainer.setLayout(layout)
             
             return subcontainer_id
         

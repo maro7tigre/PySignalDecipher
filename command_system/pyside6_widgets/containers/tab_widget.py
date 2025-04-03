@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QTabWidget, QWidget, QTabBar, QVBoxLayout
 from PySide6.QtCore import Signal, Slot
 
 from command_system.id_system import get_id_registry, TypeCodes
-from command_system.core import get_command_manager, Command, Observable
+from command_system.core import get_command_manager, Command, SerializationCommand, Observable
 from .base_container import BaseCommandContainer
 
 class CommandTabWidget(QTabWidget, BaseCommandContainer):
@@ -77,27 +77,6 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             return subcontainer_id
         
         # Create a command for adding a tab
-        class AddTabCommand(Command):
-            def __init__(self, tab_widget, type_id):
-                super().__init__()
-                self.tab_widget = tab_widget
-                self.type_id = type_id
-                self.subcontainer_id = None
-                
-            def execute(self):
-                self.subcontainer_id = self.tab_widget.add_subcontainer(
-                    self.type_id, str(self.tab_widget.count())
-                )
-                
-                if self.subcontainer_id:
-                    # Emit signal for the new tab
-                    self.tab_widget.tabAdded.emit(self.subcontainer_id)
-                
-            def undo(self):
-                if self.subcontainer_id:
-                    self.tab_widget.close_subcontainer(self.subcontainer_id)
-        
-        # Create and execute the command
         cmd = AddTabCommand(self, type_id)
         cmd.set_trigger_widget(self.widget_id)
         get_command_manager().execute(cmd)
@@ -156,9 +135,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         self._update_tab_locations()
         
         return tab_container
-    
-    # Remove the _add_content_to_subcontainer method as we're handling content directly in the base class now
-    
+        
     def _update_tab_locations(self) -> None:
         """Update location IDs for all tabs after changes."""
         # Iterate through all tabs and update their locations
@@ -241,43 +218,6 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         subcontainer_type = self.get_subcontainer_type(subcontainer_id)
         
         # Create a command to close the tab
-        class CloseTabCommand(Command):
-            def __init__(self, tab_widget, subcontainer_id, index, subcontainer_type):
-                super().__init__()
-                self.tab_widget = tab_widget
-                self.subcontainer_id = subcontainer_id
-                self.index = index
-                self.subcontainer_type = subcontainer_type
-                
-                # Save serialization for undo
-                self.serialized_state = tab_widget.serialize_subcontainer(subcontainer_id)
-                
-            def execute(self):
-                # Close the subcontainer
-                self.tab_widget.close_subcontainer(self.subcontainer_id)
-                
-                # Update tab locations
-                self.tab_widget._update_tab_locations()
-                
-            def undo(self):
-                # Check if we have serialized state
-                if not self.serialized_state:
-                    return
-                    
-                # Restore the tab using deserialization
-                type_id = self.subcontainer_type
-                location = str(self.index)  # Restore at the same index
-                
-                # Deserialize the subcontainer
-                self.tab_widget.deserialize_subcontainer(
-                    type_id, location, self.serialized_state
-                )
-                
-                # Update tab locations and select the restored tab
-                self.tab_widget._update_tab_locations()
-                self.tab_widget.navigate_to_location(location)
-                
-        # Create and execute the command
         cmd = CloseTabCommand(self, subcontainer_id, index, subcontainer_type)
         cmd.set_trigger_widget(self.widget_id)
         get_command_manager().execute(cmd)
@@ -290,22 +230,6 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             return
             
         # Create a tab selection command
-        class TabSelectionCommand(Command):
-            def __init__(self, tab_widget, old_index, new_index):
-                super().__init__()
-                self.tab_widget = tab_widget
-                self.old_index = old_index
-                self.new_index = new_index
-                
-            def execute(self):
-                if 0 <= self.new_index < self.tab_widget.count():
-                    self.tab_widget.setCurrentIndex(self.new_index)
-                
-            def undo(self):
-                if 0 <= self.old_index < self.tab_widget.count():
-                    self.tab_widget.setCurrentIndex(self.old_index)
-        
-        # Execute the command (only if not triggered by another command)
         old_index = self.currentIndex()
         if old_index != index:  # Extra check to avoid unnecessary commands
             cmd = TabSelectionCommand(self, old_index, index)
@@ -398,3 +322,101 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             self.setMovable(serialized_data['moving_enabled'])
             
         return result
+
+    # MARK: - Command Classes
+    
+class AddTabCommand(SerializationCommand):
+    """Command for adding a new tab."""
+    
+    def __init__(self, tab_widget, type_id):
+        """Initialize with tab widget and tab type."""
+        super().__init__(tab_widget.widget_id)
+        self.tab_widget = tab_widget
+        self.type_id = type_id
+        self.subcontainer_id = None
+        self.capture_state()
+        
+    def execute(self):
+        """Execute the command to add a tab."""
+        self.subcontainer_id = self.tab_widget.add_subcontainer(
+            self.type_id, str(self.tab_widget.count())
+        )
+        
+        if self.subcontainer_id:
+            # Emit signal for the new tab
+            self.tab_widget.tabAdded.emit(self.subcontainer_id)
+            
+        # Capture the new state after adding the tab
+        super().execute()
+        
+    def undo(self):
+        """Undo the command by restoring the previous state."""
+        if self.subcontainer_id:
+            self.tab_widget.close_subcontainer(self.subcontainer_id)
+            
+        # Update tab locations
+        self.tab_widget._update_tab_locations()
+        
+class CloseTabCommand(SerializationCommand):
+    """Command for closing a tab with serialization support."""
+    
+    def __init__(self, tab_widget, subcontainer_id, index, subcontainer_type):
+        """Initialize with tab information."""
+        super().__init__(tab_widget.widget_id)
+        self.tab_widget = tab_widget
+        self.subcontainer_id = subcontainer_id
+        self.index = index
+        self.subcontainer_type = subcontainer_type
+        
+        # Capture the state before closing
+        self.serialized_state = tab_widget.serialize_subcontainer(subcontainer_id)
+        
+    def execute(self):
+        """Execute the command to close the tab."""
+        # Close the subcontainer
+        self.tab_widget.close_subcontainer(self.subcontainer_id)
+        
+        # Update tab locations
+        self.tab_widget._update_tab_locations()
+        
+        # Capture the state after closing
+        super().execute()
+        
+    def undo(self):
+        """Undo the command by restoring the tab."""
+        # Check if we have serialized state
+        if not self.serialized_state:
+            return
+            
+        # Restore the tab using deserialization
+        type_id = self.subcontainer_type
+        location = str(self.index)  # Restore at the same index
+        
+        # Deserialize the subcontainer
+        self.tab_widget.deserialize_subcontainer(
+            type_id, location, self.serialized_state
+        )
+        
+        # Update tab locations and select the restored tab
+        self.tab_widget._update_tab_locations()
+        self.tab_widget.navigate_to_location(location)
+        
+class TabSelectionCommand(Command):
+    """Command for changing the selected tab."""
+    
+    def __init__(self, tab_widget, old_index, new_index):
+        """Initialize with tab indices."""
+        super().__init__()
+        self.tab_widget = tab_widget
+        self.old_index = old_index
+        self.new_index = new_index
+        
+    def execute(self):
+        """Execute the command to change the selected tab."""
+        if 0 <= self.new_index < self.tab_widget.count():
+            self.tab_widget.setCurrentIndex(self.new_index)
+    
+    def undo(self):
+        """Undo the command by selecting the previous tab."""
+        if 0 <= self.old_index < self.tab_widget.count():
+            self.tab_widget.setCurrentIndex(self.old_index)

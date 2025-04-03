@@ -279,27 +279,101 @@ class SerializationCommand(Command):
         Initialize with component to track.
         
         Args:
-            component_id: Id of the Component to track
+            component_id: ID of the Component to track
         """
         super().__init__()
-        self.widget_id = component_id
-        self.serialization = None
+        self.component_id = component_id
+        self.serialized_state = None
+        self.post_state = None
+    
+    def capture_state(self) -> None:
+        """
+        Capture the current state of the component.
+        
+        This should be called before making changes to capture the original state
+        for later restoration during undo operations.
+        """
+        component = get_id_registry().get_widget(self.component_id)
+        if component and hasattr(component, 'get_serialization'):
+            self.serialized_state = component.get_serialization()
+    
+    def capture_post_state(self) -> None:
+        """
+        Capture the state after changes have been made.
+        
+        This can be used for redo operations to restore to the post-change state
+        instead of re-executing the potentially complex operations.
+        """
+        component = get_id_registry().get_widget(self.component_id)
+        if component and hasattr(component, 'get_serialization'):
+            self.post_state = component.get_serialization()
+    
+    def restore_state(self) -> bool:
+        """
+        Restore the component to its original state.
+        
+        This is typically called during undo to restore the component
+        to its state before the command was executed.
+        
+        Returns:
+            True if state was successfully restored, False otherwise
+        """
+        if not self.serialized_state:
+            return False
+            
+        component = get_id_registry().get_widget(self.component_id)
+        if component and hasattr(component, 'deserialize'):
+            return component.deserialize(self.serialized_state)
+        return False
+    
+    def restore_post_state(self) -> bool:
+        """
+        Restore the component to its post-operation state.
+        
+        This can be used during redo to restore the component to the state
+        after changes were made initially.
+        
+        Returns:
+            True if post state was successfully restored, False otherwise
+        """
+        if not self.post_state:
+            return False
+            
+        component = get_id_registry().get_widget(self.component_id)
+        if component and hasattr(component, 'deserialize'):
+            return component.deserialize(self.post_state)
+        return False
     
     def execute(self) -> None:
         """
-        Execute the command and capture new state.
+        Execute the command and capture post-operation state.
         
-        This implementation must be overridden in subclasses to
-        perform the actual operation. The base implementation
-        just captures the new state.
+        This base implementation just captures the post-state after
+        the operation. Subclasses should override this to implement
+        their specific operations, and call super().execute() at the end.
         """
-        # TODO: get serialization of component
+        # Default implementation captures the post-state
+        self.capture_post_state()
     
     def undo(self) -> None:
         """
-        Undo the command by restoring old state.
+        Undo the command by restoring the original state.
         
         This restores the component to its state before the command
         was executed.
         """
-        # TODO: deserialize and restore
+        self.restore_state()
+    
+    def redo(self) -> None:
+        """
+        Redo the command.
+        
+        If post_state is available, restores to that state.
+        Otherwise, falls back to re-executing the command.
+        """
+        if self.post_state and self.restore_post_state():
+            # Successfully restored post state
+            return
+            
+        # Fall back to standard execute method
+        super().redo()

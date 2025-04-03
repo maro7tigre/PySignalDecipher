@@ -173,14 +173,16 @@ class ImprovedTabsDemo(QMainWindow):
         layout.addWidget(name_label)
         
         name_edit = CommandLineEdit()
-        name_edit.bind_property("text", model.get_id(), "name")
+        # Using the bind_property method from the updated widget system
+        name_edit.bind_to_text_property(model.get_id(), "name")
         layout.addWidget(name_edit)
         
         email_label = QLabel("Email:")
         layout.addWidget(email_label)
         
         email_edit = CommandLineEdit()
-        email_edit.bind_property("text", model.get_id(), "email")
+        # Using the bind_property method from the updated widget system
+        email_edit.bind_to_text_property(model.get_id(), "email")
         layout.addWidget(email_edit)
         
         # Info about this tab
