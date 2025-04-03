@@ -930,7 +930,7 @@ class IDRegistry:
             self._on_property_unregister(component_id)
         
         # Remove component from mappings
-        if component:
+        if component in self._component_to_id_map:
             del self._component_to_id_map[component]
         
         if component_id in self._id_to_component_map:

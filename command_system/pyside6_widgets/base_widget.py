@@ -6,7 +6,6 @@ handling ID registration, property binding, and command generation.
 """
 from enum import Enum
 from typing import Any, Optional, Callable, Dict, Union, TypeVar, Generic
-import time
 from PySide6.QtCore import QTimer
 
 from command_system.id_system import get_id_registry, TypeCodes
@@ -15,6 +14,7 @@ from command_system.core import Command, WidgetPropertyCommand, PropertyCommand,
 # Type for observable targets
 T = TypeVar('T')
 
+# MARK: - Command Trigger Mode
 class CommandTriggerMode(Enum):
     """
     Defines when a command should be triggered for widget value changes.
@@ -23,6 +23,7 @@ class CommandTriggerMode(Enum):
     DELAYED = 1        # Trigger command after a delay (batching rapid changes)
     ON_EDIT_FINISHED = 2  # Trigger command only when editing is finished
     
+# MARK: - Base Command Widget
 class BaseCommandWidget:
     """Base class for all command-system enabled widgets."""
     
@@ -33,7 +34,7 @@ class BaseCommandWidget:
         """
         pass
     
-    def initiate_widget(self, type_code: str= None, container_id: Optional[str] = None, 
+    def initiate_widget(self, type_code: str, container_id: Optional[str] = None, 
                  location: Optional[str] = None):
         """
         Initialize the base command widget.
@@ -65,15 +66,7 @@ class BaseCommandWidget:
         # We're tracking whether we're already processing a command to prevent recursion
         self._processing_command = False
     
-    def _ensure_qt_widget(self):
-        """
-        Ensure this class also inherits from a Qt widget.
-        Called by child classes to validate inheritance.
-        """
-        from PySide6.QtWidgets import QWidget
-        if not isinstance(self, QWidget):
-            raise TypeError(f"{self.__class__.__name__} must also inherit from a PySide6 QWidget class")
-    
+    # MARK: - Command Trigger Configuration
     def set_command_trigger_mode(self, mode: CommandTriggerMode, delay_ms: int = 300):
         """
         Set when commands should be triggered for widget value changes.
@@ -85,6 +78,7 @@ class BaseCommandWidget:
         self._command_trigger_mode = mode
         self._change_delay_ms = delay_ms
     
+    # MARK: - Container Management
     def update_container(self, new_container_id: Optional[str] = None):
         """
         Update the container for this widget.
@@ -98,19 +92,7 @@ class BaseCommandWidget:
             self.widget_id = id_registry.get_id(self)
         return self.widget_id
     
-    def update_location(self, new_location: str):
-        """
-        Update the location within the container.
-        
-        Args:
-            new_location: New location string
-        """
-        id_registry = get_id_registry()
-        if id_registry.update_location(self.widget_id, new_location):
-            # Update our stored widget ID
-            self.widget_id = id_registry.get_id(self)
-        return self.widget_id
-    
+    # MARK: - Property Binding
     def bind_property(self, widget_property: str, observable_id: str, 
                      property_name: str):
         """
@@ -137,6 +119,12 @@ class BaseCommandWidget:
             observable_id, property_name)
         
         if property_ids:
+            # Check if we're already bound to this property
+            for prop_id in property_ids:
+                controller_id = id_registry.get_controller_id_from_property_id(prop_id)
+                if controller_id == self.widget_id:
+                    raise ValueError(f"Property '{property_name}' already bound to this widget")
+            
             # Property already registered, update controller
             property_id = property_ids[0]
             id_registry.update_controller_id(property_id, self.widget_id)
@@ -184,6 +172,7 @@ class BaseCommandWidget:
         # Remove from our tracking
         del self._controlled_properties[widget_property]
     
+    # MARK: - Property Change Handling
     def _on_observed_property_changed(self, widget_property: str, old_value: Any, new_value: Any):
         """
         Handle changes from the observable property.
@@ -248,6 +237,10 @@ class BaseCommandWidget:
         Handle the completion of editing.
         Should be called by subclasses when editing is finished.
         """
+        # Stop any pending delayed updates
+        if self._change_timer.isActive():
+            self._change_timer.stop()
+            
         if self._command_trigger_mode == CommandTriggerMode.ON_EDIT_FINISHED:
             # Process all pending changes
             for widget_property, new_value in self._pending_changes.items():
@@ -305,99 +298,68 @@ class BaseCommandWidget:
         if widget_property in self._controlled_properties:
             self._create_and_execute_property_command(widget_property, new_value)
     
+    # MARK: - Resource Management
     def unregister_widget(self) -> None:
-        """Unregister this widget"""
+        """Unregister this widget from the ID system"""
         id_registry = get_id_registry()
         id_registry.unregister(self.widget_id)
-        
-        # TODO: consider more cleanup
+        # TODO: Unregister any links in the command system as well
     
-    # -MARK: Serialization
-    #TODO: Implement serialization of Observers
+    # MARK: - Serialization
     def get_serialization(self):
         """
         Get serialized representation of this widget.
         
-        For containers, this will recursively serialize all children.
-        
         Returns:
             Dict containing serialized widget state
         """
-        # Get basic properties
-        result = self.get_serialization_properties()
+        result = {
+            'id': self.widget_id,
+            'properties': {}
+        }
         
-        # For containers, add children
-        if hasattr(self, 'get_child_widgets'):
-            children = []
-            for child in self.get_child_widgets():
-                if hasattr(child, 'get_serialization'):
-                    children.append(child.get_serialization())
+        # Serialize controlled properties
+        for widget_property, property_id in self._controlled_properties.items():
+            id_registry = get_id_registry()
+            observable_id = id_registry.get_observable_id_from_property_id(property_id)
             
-            if children:
-                result['children'] = children
+            if observable_id:
+                observable = id_registry.get_observable(observable_id)
+                if observable and hasattr(observable, 'serialize_property'):
+                    serialized_property = observable.serialize_property(property_id)
+                    result['properties'][widget_property] = serialized_property
         
         return result
-
-    def get_serialization_properties(self):
-        """
-        Get serializable properties for this widget.
-        Override in subclasses to add widget-specific properties.
+        # TODO: Add serialize_property method to Observable class
         
-        Returns:
-            Dict containing basic widget properties
-        """
-        return {
-            'id': self.widget_id,
-            'type_code': self.type_code,
-            # Add layout info if available
-            'layout': self._get_layout_info() if hasattr(self, '_get_layout_info') else {}
-        }
-
-    @staticmethod
-    def deserialize(data, parent=None):
-        """
-        Create a widget from serialized data.
-        
-        Args:
-            data: Serialized widget data dictionary
-            parent: Optional parent widget
-            
-        Returns:
-            Newly created widget instance
-        """
-        # TODO: Implement basic deserialization
-        # This will need to create the appropriate widget type based on type_code
-        pass
-
-    def restore_widget(self, id, type_id, layout, children=None):
+    def restore_widget(self, data):
         """
         Restore this widget's state from serialized data.
-        Override in subclasses to handle widget-specific restoration.
         
         Args:
-            id: Widget ID
-            type_id: Widget type ID
-            layout: Layout information
-            children: List of child widget data (for containers)
+            data: Dictionary containing widget state
             
         Returns:
             True if successful
         """
-        # TODO: Implement basic widget restoration
-        return True
-
-    def _get_layout_info(self):
-        """
-        Get layout information for serialization.
+        # Update widget ID if needed
+        if 'id' in data and data['id'] != self.widget_id:
+            id_registry = get_id_registry()
+            # Register with the specified ID
+            self.widget_id = id_registry.register(self, self.type_code, data['id'])
         
-        Returns:
-            Dictionary with layout properties
-        """
-        # Basic implementation for QWidget
-        return {
-            'x': self.x(),
-            'y': self.y(),
-            'width': self.width(),
-            'height': self.height(),
-            'visible': self.isVisible()
-        }
+        # Restore controlled properties
+        if 'properties' in data:
+            for widget_property, serialized_property in data['properties'].items():
+                if widget_property in self._controlled_properties:
+                    property_id = self._controlled_properties[widget_property]
+                    id_registry = get_id_registry()
+                    observable_id = id_registry.get_observable_id_from_property_id(property_id)
+                    
+                    if observable_id:
+                        observable = id_registry.get_observable(observable_id)
+                        if observable and hasattr(observable, 'deserialize_property'):
+                            observable.deserialize_property(property_id, serialized_property)
+        
+        return True
+        # TODO: Add deserialize_property method to Observable class

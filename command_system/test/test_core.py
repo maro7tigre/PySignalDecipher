@@ -171,6 +171,147 @@ class TestObservablePattern:
         assert retrieved_person.name == "Alice"
         assert retrieved_person.age == 30
 
+    def test_observable_property_serialization(self):
+        """Test serializing and deserializing property values."""
+        # Create person
+        person = Person(name="Alice", age=30)
+        
+        # Ensure properties are registered
+        person._ensure_property_registered("name")
+        person._ensure_property_registered("age")
+        
+        # Get property IDs
+        name_property_id = person._property_id_cache.get("name")
+        age_property_id = person._property_id_cache.get("age")
+        
+        # Serialize properties
+        serialized_name = person.serialize_property(name_property_id)
+        serialized_age = person.serialize_property(age_property_id)
+        
+        # Verify serialized data
+        assert serialized_name["property_name"] == "name"
+        assert serialized_name["value"] == "Alice"
+        assert serialized_name["observable_id"] == person.get_id()
+        
+        assert serialized_age["property_name"] == "age"
+        assert serialized_age["value"] == 30
+        assert serialized_age["observable_id"] == person.get_id()
+        
+        # Change property values
+        person.name = "Bob"
+        person.age = 40
+        
+        # Deserialize properties
+        person.deserialize_property(name_property_id, serialized_name)
+        person.deserialize_property(age_property_id, serialized_age)
+        
+        # Verify values restored
+        assert person.name == "Alice"
+        assert person.age == 30
+    
+    def test_observable_id_change_handling(self):
+        """Test handling of observable ID changes during deserialization."""
+        # Create person
+        person = Person(name="Alice", age=30)
+        original_id = person.get_id()
+        
+        # Ensure properties are registered
+        person._ensure_property_registered("name")
+        person._ensure_property_registered("age")
+        
+        # Get property IDs
+        name_property_id = person._property_id_cache.get("name")
+        age_property_id = person._property_id_cache.get("age")
+        
+        # Save original property IDs
+        original_name_id = name_property_id
+        original_age_id = age_property_id
+        
+        # Create new ID
+        id_registry = get_id_registry()
+        new_id = id_registry._id_generator.generate_observable_id(TypeCodes.OBSERVABLE)
+        
+        # Create serialized data with new ID
+        serialized_name = {
+            "property_id": name_property_id,
+            "property_name": "name",
+            "value": "Charlie",
+            "observable_id": new_id
+        }
+        
+        # Deserialize with new ID
+        person.deserialize_property(name_property_id, serialized_name)
+        
+        # Verify ID updated
+        assert person.get_id() == new_id
+        assert person.get_id() != original_id
+        
+        # Verify property IDs updated
+        assert person._property_id_cache.get("name") != original_name_id
+        assert person._property_id_cache.get("age") != original_age_id
+        
+        # Verify value updated
+        assert person.name == "Charlie"
+
+    def test_observable_error_on_duplicate_id(self):
+        """Test error when deserializing with an existing observable ID."""
+        # Create two people
+        person1 = Person(name="Alice")
+        person2 = Person(name="Bob")
+        
+        # Ensure properties are registered
+        person1._ensure_property_registered("name")
+        person2._ensure_property_registered("name")
+        
+        # Get property IDs
+        name_property_id1 = person1._property_id_cache.get("name")
+        
+        # Create serialized data with person2's ID
+        serialized_data = {
+            "property_id": name_property_id1,
+            "property_name": "name",
+            "value": "Charlie",
+            "observable_id": person2.get_id()
+        }
+        
+        # Attempt to deserialize should raise ValueError
+        with pytest.raises(ValueError) as excinfo:
+            person1.deserialize_property(name_property_id1, serialized_data)
+        
+        # Verify error message
+        assert "cleanup failure" in str(excinfo.value)
+    
+    def test_observable_property_unregistration(self):
+        """Test unregistering properties from an observable."""
+        # Create person
+        person = Person(name="Alice", age=30)
+        
+        # Ensure properties are registered
+        person._ensure_property_registered("name")
+        person._ensure_property_registered("age")
+        
+        # Get property IDs
+        name_property_id = person._property_id_cache.get("name")
+        age_property_id = person._property_id_cache.get("age")
+        
+        # Unregister name property
+        success = person.unregister_property(name_property_id)
+        assert success
+        
+        # Verify property no longer in cache
+        assert "name" not in person._property_id_cache
+        
+        # Verify observable still exists
+        id_registry = get_id_registry()
+        assert id_registry.get_observable(person.get_id()) is not None
+        
+        # Unregister age property
+        success = person.unregister_property(age_property_id)
+        assert success
+        
+        # Verify observable is automatically unregistered
+        assert id_registry.get_observable(person.get_id()) is None
+
 
 class SimpleCommand(Command):
     """Simple command for testing."""

@@ -4,13 +4,14 @@ Command-enabled line edit widget for PySide6 integration.
 This module provides a line edit widget that integrates with the command system
 for automatic undo/redo support and property binding.
 """
-from typing import Any, Optional, Union
+from typing import Any, Optional
 from PySide6.QtWidgets import QLineEdit
 from PySide6.QtCore import Signal, Slot
 
 from command_system.id_system import TypeCodes
 from .base_widget import BaseCommandWidget, CommandTriggerMode
 
+# MARK: - Command Line Edit
 class CommandLineEdit(QLineEdit, BaseCommandWidget):
     """
     A command-system integrated line edit widget.
@@ -34,9 +35,6 @@ class CommandLineEdit(QLineEdit, BaseCommandWidget):
         QLineEdit.__init__(self, text, parent)
         BaseCommandWidget.initiate_widget(self, TypeCodes.LINE_EDIT, container_id, location)
         
-        # Ensure our class is properly set up
-        self._ensure_qt_widget()
-        
         # Connect signals for value changes
         self.textChanged.connect(self._handle_text_changed)
         self.editingFinished.connect(self._handle_editing_finished)
@@ -44,6 +42,7 @@ class CommandLineEdit(QLineEdit, BaseCommandWidget):
         # Default to edit finished trigger mode
         self.set_command_trigger_mode(CommandTriggerMode.ON_EDIT_FINISHED)
     
+    # MARK: - Property Implementation
     def _update_widget_property(self, property_name: str, value: Any):
         """
         Update a widget property value.
@@ -60,6 +59,7 @@ class CommandLineEdit(QLineEdit, BaseCommandWidget):
         else:
             raise ValueError(f"Unsupported property: {property_name}")
     
+    # MARK: - Signal Handlers
     @Slot(str)
     def _handle_text_changed(self, text: str):
         """
@@ -82,6 +82,7 @@ class CommandLineEdit(QLineEdit, BaseCommandWidget):
         # Delegate to base class
         self._on_widget_editing_finished()
     
+    # MARK: - Convenience Methods
     def bind_to_text_property(self, observable_id: str, property_name: str):
         """
         Convenience method to bind text property.

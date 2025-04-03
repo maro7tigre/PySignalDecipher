@@ -64,6 +64,45 @@ registry = get_id_registry()
 same_person = registry.get_observable(person_id)
 ```
 
+### Property Cleanup
+
+```python
+# Unregister a specific property
+property_id = person._property_id_cache.get("name")
+person.unregister_property(property_id)
+
+# The observable will automatically unregister itself if all properties are removed
+```
+
+### Serialization and Deserialization
+
+Observables support property-level serialization:
+
+```python
+# Serialize a specific property
+property_id = person._property_id_cache.get("name")
+serialized_property = person.serialize_property(property_id)
+
+# Deserialize a property (updates the property value)
+person.deserialize_property(property_id, serialized_property)
+```
+
+The serialized property format includes essential information:
+
+```python
+{
+    'property_id': 'op:1A:2B:name:0',
+    'property_name': 'name',
+    'value': 'Alice',
+    'observable_id': 'o:2B'
+}
+```
+
+If the observable ID has changed during deserialization, the system will:
+1. Check for any existing observables with that ID (to detect cleanup failures)
+2. Update the observable's ID
+3. Update all property IDs to maintain the relationship
+
 ## Command Pattern
 
 ### Basic Commands
@@ -248,3 +287,5 @@ The system will automatically navigate back to the UI context when undoing/redoi
 3. **Use compound commands** for complex operations
 4. **Store context info** with commands for proper navigation during undo/redo
 5. **Clean up observers** when they're no longer needed
+6. **Unregister properties** when they're no longer needed
+7. **Check for serialization errors** to detect cleanup failures
