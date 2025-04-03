@@ -1,11 +1,11 @@
 """
-Command-aware tab widget with simplified implementation.
+Command-aware tab widget with integrated command system support.
 
-Provides a tab widget that integrates with the command system
-for undo/redo functionality while being easy to debug and maintain.
+Provides a tab widget that integrates with the ID system and command system
+for undo/redo functionality, serialization, and comprehensive state management.
 """
 from typing import Any, Dict, Optional, List, Callable, Union, Type
-from PySide6.QtWidgets import QTabWidget, QWidget, QTabBar
+from PySide6.QtWidgets import QTabWidget, QWidget, QTabBar, QVBoxLayout
 from PySide6.QtCore import Signal, Slot
 
 from command_system.id_system import get_id_registry, TypeCodes
@@ -14,15 +14,15 @@ from .base_container import BaseCommandContainer
 
 class CommandTabWidget(QTabWidget, BaseCommandContainer):
     """
-    A tab widget with command system integration.
+    A tab widget with full command system integration.
     
-    Tracks tab operations with the ID system for undo/redo support.
-    Supports widget type registration and dynamic tab creation.
+    Manages a collection of tab subcontainers with proper ID tracking,
+    serialization support, and undo/redo operations.
     """
     
-    # Signal emitted when a tab is added or closed
-    tabAdded = Signal(str)      # widget_id
-    tabClosed = Signal(str)     # widget_id
+    # Signals emitted when tabs are modified
+    tabAdded = Signal(str)      # subcontainer_id
+    tabClosed = Signal(str)     # subcontainer_id
     
     def __init__(self, parent=None, container_id=None, location=None):
         """Initialize the command tab widget."""
@@ -37,61 +37,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         self.tabCloseRequested.connect(self._on_tab_close_requested)
         self.currentChanged.connect(self._on_current_changed)
     
-    def addTab(self, widget: QWidget, label: str) -> int:
-        """Override to register the widget with this container."""
-        # Add the tab using the parent implementation
-        index = super().addTab(widget, label)
-        
-        # Emit our signal
-        widget_id = get_id_registry().get_id(widget)
-        if widget_id:
-            self.tabAdded.emit(widget_id)
-        
-        # Update locations of all tabs (in case of insertion)
-        self._update_tab_locations()
-        
-        return index
-    
-    def insertTab(self, index: int, widget: QWidget, label: str) -> int:
-        """Override to register the widget and update locations."""
-        # Insert the tab using the parent implementation
-        index = super().insertTab(index, widget, label)
-        
-        # Emit our signal
-        widget_id = get_id_registry().get_id(widget)
-        if widget_id:
-            self.tabAdded.emit(widget_id)
-        
-        # Update locations of all tabs
-        self._update_tab_locations()
-        
-        return index
-    
-    def removeTab(self, index: int) -> None:
-        """Override to unregister the widget and update locations."""
-        # Get the widget before removal
-        widget = self.widget(index)
-        if widget:
-            widget_id = get_id_registry().get_id(widget)
-            
-            # Remove the tab using the parent implementation
-            super().removeTab(index)
-            
-            self.unregister_childs(index)
-            
-            # Update locations of all tabs
-            self._update_tab_locations()
-    
-    def _update_tab_locations(self) -> None:
-        """Update location IDs for all tabs."""
-        # Iterate through all tabs and update their locations
-        for i in range(self.count()):
-            widget = self.widget(i)
-            if widget:
-                widget_id = get_id_registry().get_id(widget)
-                if widget_id:
-                    get_id_registry().update_location(widget_id, str(i))
-    
+    # MARK: - Tab Registration
     def register_tab(self, factory_func: Callable, tab_name: str = None,
                     observables: List[Union[str, Type[Observable]]] = None, 
                     closable: bool = True) -> str:
@@ -110,9 +56,9 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             ID of the registered tab type
         """
         options = {"tab_name": tab_name, "closable": closable}
-        return self.register_widget_type(factory_func, observables, None, **options)
+        return self.register_subcontainer_type(factory_func, observables, None, **options)
     
-    def add_tab(self, type_id: str) -> str: # TODO: rewrite later with proper optional deserialization and serialization when undo
+    def add_tab(self, type_id: str) -> str:
         """
         Add a new tab of the registered type.
         
@@ -120,11 +66,15 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             type_id: ID of the registered tab type
             
         Returns:
-            ID of the created tab
+            ID of the created tab subcontainer
         """
         # Check if we're in a command execution
         if get_command_manager().is_updating():
-            return self.add_widget(type_id, str(self.count()))
+            subcontainer_id = self.add_subcontainer(type_id, str(self.count()))
+            if subcontainer_id:
+                # Emit signal for the new tab
+                self.tabAdded.emit(subcontainer_id)
+            return subcontainer_id
         
         # Create a command for adding a tab
         class AddTabCommand(Command):
@@ -132,44 +82,96 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
                 super().__init__()
                 self.tab_widget = tab_widget
                 self.type_id = type_id
-                self.location = None
+                self.subcontainer_id = None
                 
             def execute(self):
-                self.location = int(self.tab_widget.add_widget(
+                self.subcontainer_id = self.tab_widget.add_subcontainer(
                     self.type_id, str(self.tab_widget.count())
-                ))
+                )
+                
+                if self.subcontainer_id:
+                    # Emit signal for the new tab
+                    self.tab_widget.tabAdded.emit(self.subcontainer_id)
                 
             def undo(self):
-                if self.location:
-                    self.tab_widget.removeTab(self.location)
+                if self.subcontainer_id:
+                    self.tab_widget.close_subcontainer(self.subcontainer_id)
         
         # Create and execute the command
         cmd = AddTabCommand(self, type_id)
         cmd.set_trigger_widget(self.widget_id)
         get_command_manager().execute(cmd)
+        return cmd.subcontainer_id
     
-    def _add_widget_to_container(self, widget: QWidget, location: str, options: Dict) -> None:
+    # MARK: - Subcontainer Implementation
+    def create_subcontainer(self, type_id: str, location: str = "0") -> Optional[QWidget]:
         """
-        Add a widget as a tab to this tab widget.
+        Create an empty tab subcontainer for the specified type.
         
         Args:
-            widget: Widget to add as tab content
-            location: Tab index as string (ignored, we append)
-            options: Widget type options
+            type_id: Type ID of the subcontainer
+            location: Location for the subcontainer (tab index)
+            
+        Returns:
+            The created tab container widget, or None if failed
         """
+        # Get type info for the display name
+        type_info = self._widget_types.get(type_id)
+        if not type_info:
+            return None
+            
         # Get tab name from options or use default
-        tab_name = options.get("tab_name", "Tab")
+        tab_name = type_info.get("options", {}).get("tab_name", "Tab")
+        
+        # Create an empty container widget for the tab
+        tab_container = QWidget()
+        
+        # Use a layout for the tab content
+        layout = QVBoxLayout(tab_container)
+        layout.setContentsMargins(0, 0, 0, 0)
         
         # Add the tab
-        index = self.addTab(widget, tab_name)
+        index = self.addTab(tab_container, tab_name)
+        
+        # Convert location to integer index
+        try:
+            loc_index = int(location)
+            # Move tab to the specified location if different
+            if loc_index != index:
+                self.tabBar().moveTab(index, loc_index)
+                index = loc_index
+        except ValueError:
+            # Use the current index
+            pass
         
         # Set tab closability if specified
-        if "closable" in options:
-            self.set_tab_closable(index, options["closable"])
+        closable = type_info.get("options", {}).get("closable", True)
+        self.set_tab_closable(index, closable)
         
         # Set as current tab if specified
-        if options.get("make_current", True):
+        if type_info.get("options", {}).get("make_current", True):
             self.setCurrentIndex(index)
+            
+        # Update tab locations in case of insertion
+        self._update_tab_locations()
+        
+        return tab_container
+    
+    # Remove the _add_content_to_subcontainer method as we're handling content directly in the base class now
+    
+    def _update_tab_locations(self) -> None:
+        """Update location IDs for all tabs after changes."""
+        # Iterate through all tabs and update their locations
+        for i in range(self.count()):
+            tab_widget = self.widget(i)
+            if tab_widget:
+                widget_id = get_id_registry().get_id(tab_widget)
+                if widget_id:
+                    get_id_registry().update_location(widget_id, str(i))
+                    
+                    # Also update our locations map
+                    if widget_id in self._subcontainers:
+                        self._locations_map[widget_id] = str(i)
     
     def set_tab_closable(self, index: int, closable: bool = True) -> None:
         """
@@ -193,81 +195,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         if close_button:
             close_button.setVisible(closable)
     
-    @Slot(int) #TODO: rewrite liter with proper serialization/deserialization
-    def _on_tab_close_requested(self, index: int) -> None:
-        """Handle tab close request from UI."""
-        # Check if tab is closable from stored data
-        tab_data = self.tabBar().tabData(index)
-        if tab_data and not tab_data.get("closable", True):
-            # Tab is not closable, ignore the request
-            return
-            
-        # Create a command to remove the tab
-        class RemoveTabCommand(Command):
-            def __init__(self, tab_widget, index):
-                super().__init__()
-                self.tab_widget = tab_widget
-                self.index = index
-                self.widget = tab_widget.widget(index)
-                self.label = tab_widget.tabText(index)
-                self.closable = tab_data.get("closable", True) if tab_data else True
-                self.widget_id = get_id_registry().get_id(self.widget)
-                
-                # Get recreation info for undo
-                self.recreation_info = None
-                if self.widget_id:
-                    widget = get_id_registry().get_widget(self.widget_id)
-                    if hasattr(widget, "get_context_info"):
-                        self.recreation_info = widget.get_context_info("recreation_info")
-                
-            def execute(self):
-                self.tab_widget.removeTab(self.index)
-                
-            def undo(self):
-                if self.recreation_info:
-                    # Recreate using the factory with stored info
-                    type_id = self.recreation_info["type_id"]
-                    self.tab_widget.add_widget(type_id, str(self.index))
-                else:
-                    # Fallback to direct insertion
-                    new_index = self.tab_widget.insertTab(self.index, self.widget, self.label)
-                    # Restore closability state
-                    self.tab_widget.set_tab_closable(new_index, self.closable)
-                    self.tab_widget.navigate_to_location(new_index)
-        
-        # Create and execute the command
-        cmd = RemoveTabCommand(self, index)
-        cmd.set_trigger_widget(self.widget_id)
-        get_command_manager().execute(cmd)
-    
-    @Slot(int) #TODO: make it work
-    def _on_current_changed(self, index: int) -> None:
-        """Handle tab selection change."""
-        # Skip if we're executing a command
-        if get_command_manager().is_updating():
-            return
-            
-        # Create a simple tab selection command
-        class TabSelectionCommand(Command):
-            def __init__(self, tab_widget, old_index, new_index):
-                super().__init__()
-                self.tab_widget = tab_widget
-                self.old_index = old_index
-                self.new_index = new_index
-                
-            def execute(self):
-                self.tab_widget.setCurrentIndex(self.new_index)
-                
-            def undo(self):
-                self.tab_widget.setCurrentIndex(self.old_index)
-        
-        # Execute the command (only if not triggered by another command)
-        old_index = self.currentIndex()
-        if old_index != index:  # Extra check to avoid unnecessary commands
-            cmd = TabSelectionCommand(self, old_index, index)
-            cmd.set_trigger_widget(self.widget_id)
-            get_command_manager().execute(cmd)
-    
+    # MARK: - Navigation
     def navigate_to_location(self, location: str) -> bool:
         """
         Navigate to a specific tab by index.
@@ -287,3 +215,186 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             pass
         
         return False
+    
+    # MARK: - Event Handlers
+    @Slot(int)
+    def _on_tab_close_requested(self, index: int) -> None:
+        """Handle tab close request from UI."""
+        # Check if tab is closable from stored data
+        tab_data = self.tabBar().tabData(index)
+        if tab_data and not tab_data.get("closable", True):
+            # Tab is not closable, ignore the request
+            return
+            
+        # Get the tab widget
+        tab_widget = self.widget(index)
+        if not tab_widget:
+            return
+            
+        # Get the subcontainer ID
+        id_registry = get_id_registry()
+        subcontainer_id = id_registry.get_id(tab_widget)
+        if not subcontainer_id:
+            return
+            
+        # Get the subcontainer type for recreation
+        subcontainer_type = self.get_subcontainer_type(subcontainer_id)
+        
+        # Create a command to close the tab
+        class CloseTabCommand(Command):
+            def __init__(self, tab_widget, subcontainer_id, index, subcontainer_type):
+                super().__init__()
+                self.tab_widget = tab_widget
+                self.subcontainer_id = subcontainer_id
+                self.index = index
+                self.subcontainer_type = subcontainer_type
+                
+                # Save serialization for undo
+                self.serialized_state = tab_widget.serialize_subcontainer(subcontainer_id)
+                
+            def execute(self):
+                # Close the subcontainer
+                self.tab_widget.close_subcontainer(self.subcontainer_id)
+                
+                # Update tab locations
+                self.tab_widget._update_tab_locations()
+                
+            def undo(self):
+                # Check if we have serialized state
+                if not self.serialized_state:
+                    return
+                    
+                # Restore the tab using deserialization
+                type_id = self.subcontainer_type
+                location = str(self.index)  # Restore at the same index
+                
+                # Deserialize the subcontainer
+                self.tab_widget.deserialize_subcontainer(
+                    type_id, location, self.serialized_state
+                )
+                
+                # Update tab locations and select the restored tab
+                self.tab_widget._update_tab_locations()
+                self.tab_widget.navigate_to_location(location)
+                
+        # Create and execute the command
+        cmd = CloseTabCommand(self, subcontainer_id, index, subcontainer_type)
+        cmd.set_trigger_widget(self.widget_id)
+        get_command_manager().execute(cmd)
+    
+    @Slot(int)
+    def _on_current_changed(self, index: int) -> None:
+        """Handle tab selection change."""
+        # Skip if we're executing a command
+        if get_command_manager().is_updating():
+            return
+            
+        # Create a tab selection command
+        class TabSelectionCommand(Command):
+            def __init__(self, tab_widget, old_index, new_index):
+                super().__init__()
+                self.tab_widget = tab_widget
+                self.old_index = old_index
+                self.new_index = new_index
+                
+            def execute(self):
+                if 0 <= self.new_index < self.tab_widget.count():
+                    self.tab_widget.setCurrentIndex(self.new_index)
+                
+            def undo(self):
+                if 0 <= self.old_index < self.tab_widget.count():
+                    self.tab_widget.setCurrentIndex(self.old_index)
+        
+        # Execute the command (only if not triggered by another command)
+        old_index = self.currentIndex()
+        if old_index != index:  # Extra check to avoid unnecessary commands
+            cmd = TabSelectionCommand(self, old_index, index)
+            cmd.set_trigger_widget(self.widget_id)
+            get_command_manager().execute(cmd)
+    
+    # MARK: - Custom Event Handling
+    def closeEvent(self, event):
+        """Handle widget close event."""
+        # Clean up all subcontainers
+        for subcontainer_id in list(self._subcontainers.keys()):
+            self.close_subcontainer(subcontainer_id)
+            
+        # Unregister from ID system
+        id_registry = get_id_registry()
+        id_registry.unregister(self.widget_id)
+        
+        # Process the event
+        super().closeEvent(event)
+    
+    # MARK: - Overridden QTabWidget methods
+    def removeTab(self, index: int) -> None:
+        """Override to properly handle tab removal."""
+        # Get the widget before removal
+        tab_widget = self.widget(index)
+        
+        # Remove the tab using the parent implementation
+        super().removeTab(index)
+        
+        # If we have the tab widget, get its ID and emit signal
+        if tab_widget:
+            subcontainer_id = get_id_registry().get_id(tab_widget)
+            if subcontainer_id and subcontainer_id in self._subcontainers:
+                self.tabClosed.emit(subcontainer_id)
+                
+        # Update locations of all tabs
+        self._update_tab_locations()
+    
+    # MARK: - Advanced Serialization/Deserialization
+    def get_serialization(self) -> Dict:
+        """
+        Get serialized representation of this tab widget.
+        
+        Returns:
+            Dict containing serialized tab widget state
+        """
+        # Get basic container serialization
+        result = super().get_serialization()
+        
+        # Add tab widget specific properties
+        result.update({
+            'current_index': self.currentIndex(),
+            'tab_position': self.tabPosition(),
+            'tabs_closable': self.tabsClosable(),
+            'document_mode': self.documentMode(),
+            'moving_enabled': self.isMovable(),
+        })
+        
+        return result
+    
+    def deserialize(self, serialized_data: Dict) -> bool:
+        """
+        Deserialize and restore tab widget state.
+        
+        Args:
+            serialized_data: Dict containing serialized tab widget state
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        # Restore subcontainers with parent method
+        result = super().deserialize(serialized_data)
+        
+        # Restore tab widget specific properties
+        if 'current_index' in serialized_data:
+            current_index = serialized_data['current_index']
+            if isinstance(current_index, int) and 0 <= current_index < self.count():
+                self.setCurrentIndex(current_index)
+                
+        if 'tab_position' in serialized_data:
+            self.setTabPosition(serialized_data['tab_position'])
+            
+        if 'tabs_closable' in serialized_data:
+            self.setTabsClosable(serialized_data['tabs_closable'])
+            
+        if 'document_mode' in serialized_data:
+            self.setDocumentMode(serialized_data['document_mode'])
+            
+        if 'moving_enabled' in serialized_data:
+            self.setMovable(serialized_data['moving_enabled'])
+            
+        return result

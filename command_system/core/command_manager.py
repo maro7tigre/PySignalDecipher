@@ -312,11 +312,16 @@ class CommandManager:
             return True
             
         container = id_registry.get_widget(container_id)
-        if not container or not hasattr(container, "navigate_to_widget"):
-            return False
-            
-        # Navigate to the command context
-        container.navigate_to_widget(trigger_widget_id)
+        if container and hasattr(container, 'navigate_to_widget'):
+            # Navigate to this container first
+            container.navigate_to_widget(trigger_widget_id)
+        else:
+            parent_container_id = id_registry.get_container_id_from_widget_id(container_id)
+            parent_container = id_registry.get_widget(parent_container_id) if parent_container_id else None
+            if parent_container and hasattr(parent_container, 'navigate_to_widget'):
+                parent_container.navigate_to_widget(container_id)        
+                
+        
         return True
 
     def is_updating(self) -> bool:
