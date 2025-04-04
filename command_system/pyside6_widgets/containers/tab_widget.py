@@ -137,6 +137,35 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         self.refresh_location()
         
         return tab_container, index
+
+    def close_tab(self, subcontainer_id:str) -> None:
+        """
+        Close a tab at the given index.
+        
+        Args:
+            index: Index of the tab to close
+        """
+        # Get the index of the tab
+        
+        index = int(self._locations_map[subcontainer_id])
+        
+        # Get the widget at the index
+        tab_widget = self.widget(index)
+        if not tab_widget:
+            return
+            
+        # Get the subcontainer ID
+        id_registry = get_id_registry()
+        subcontainer_id = id_registry.get_id(tab_widget)
+        if not subcontainer_id:
+            return
+            
+        # Close the subcontainer (will handle ID cleanup)
+        self.close_subcontainer(subcontainer_id)
+        
+        # Remove the tab from the widget
+        # This will trigger the internal removeTab method which emits the signal
+        self.removeTab(index)
         
     def refresh_location(self) -> None:
         """Update location IDs for all tabs after changes."""
@@ -199,6 +228,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
     @Slot(int)
     def _on_tab_close_requested(self, index: int) -> None:
         """Handle tab close request from UI."""
+        print(f"Tab close requested for index {index}")
         # Check if tab is closable from stored data
         tab_data = self.tabBar().tabData(index)
         if tab_data and not tab_data.get("closable", True):
@@ -221,7 +251,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         
         # Check if we're in a command execution
         if get_command_manager().is_updating():
-            #TODO: call method to close tab
+            self.close_tab(subcontainer_id)
             return
         
         # Create a command to close the tab
@@ -289,16 +319,15 @@ class AddTabCommand(SerializationCommand):
     
     def execute(self):
         """Execute simply adds the tab"""
-        print("AddTabCommand.execute", self.container_id, self.type_id)
         container = get_id_registry().get_widget(self.container_id)
-        print("got container", container)
         self.component_id = container.add_subcontainer(self.type_id)
-        print("executed")
 
     def undo(self):
         """Undo saves serialization and closes tab"""
         if self.component_id:
             self.serialize_subcontainer()
+            container = get_id_registry().get_widget(self.container_id)
+            container.close_tab(self.component_id)
             
     def redo(self):
         """Redo restores the tab from serialization"""
@@ -315,6 +344,8 @@ class CloseTabCommand(SerializationCommand):
         """Execute captures state and closes tab"""
         if self.component_id:
             self.serialize_subcontainer()
+            container = get_id_registry().get_widget(self.container_id)
+            container.close_tab(self.component_id)
 
     def undo(self):
         """Undo restores the tab"""
