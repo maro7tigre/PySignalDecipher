@@ -604,6 +604,109 @@ class IDRegistry:
         return property_ids
     
     # -------------------- Update methods --------------------
+    def update_id(self, old_id: str, new_id: str) -> Optional[str]:
+        """
+        Update a component's ID and update all references to it.
+        
+        This method replaces an existing ID with a new one and updates all
+        relationships that reference this ID, such as:
+        - Container references in child widgets
+        - Location maps for containers
+        - Observable references in properties
+        - Controller references in properties
+        
+        Args:
+            old_id: The old ID to replace
+            new_id: The new ID to use
+            
+        Returns:
+            The new ID if successful, None otherwise
+        """
+        # Check if IDs are valid and different
+        if old_id == new_id:
+            return new_id  # Nothing to do
+            
+        # Get the component
+        component = None
+        if is_widget_id(old_id):
+            component = self.get_widget(old_id)
+        elif is_observable_id(old_id):
+            component = self.get_observable(old_id)
+        elif is_observable_property_id(old_id):
+            component = self.get_observable_property(old_id)
+            
+        if not component:
+            return None  # Component not found
+            
+        # Check new ID type matches old ID type
+        if extract_type_code(old_id) != extract_type_code(new_id):
+            return None  # Type codes must match
+        
+        # Handle based on component type
+        if is_widget_id(old_id):
+            # For widgets/containers
+            if is_subcontainer_id(old_id):
+                # Handle container ID change
+                
+                # Update all children to reference new container ID
+                child_ids = self.get_widget_ids_by_container_id(old_id)
+                for child_id in child_ids:
+                    self.update_container_id(child_id, new_id)
+                    
+                # Update container in locations map
+                for container_id, locations_map in self._container_locations_map.items():
+                    if old_id in locations_map:
+                        location = locations_map[old_id]
+                        del locations_map[old_id]
+                        locations_map[new_id] = location
+                        
+                # Transfer subcontainer generator if exists
+                if old_id in self._subcontainer_generators:
+                    self._subcontainer_generators[new_id] = self._subcontainer_generators[old_id]
+                    del self._subcontainer_generators[old_id]
+                    
+                # Transfer container's own locations map if it exists
+                if old_id in self._container_locations_map:
+                    self._container_locations_map[new_id] = self._container_locations_map[old_id]
+                    del self._container_locations_map[old_id]
+                    
+            # Update container references if this widget is in a container
+            container_id = self.get_container_id_from_widget_id(old_id)
+            if container_id:
+                # Update locations map in parent container
+                if container_id in self._container_locations_map:
+                    locations_map = self._container_locations_map[container_id]
+                    if old_id in locations_map:
+                        location = locations_map[old_id]
+                        del locations_map[old_id]
+                        locations_map[new_id] = location
+        
+        elif is_observable_id(old_id):
+            # For observables
+            
+            # Update all properties to reference new observable ID
+            property_ids = self.get_property_ids_by_observable_id(old_id)
+            for property_id in property_ids:
+                self.update_observable_id(property_id, new_id)
+                
+        elif is_observable_property_id(old_id):
+            # For observable properties
+            
+            # No additional references to update
+            pass
+            
+        # Update component to ID mapping
+        self._component_to_id_map[component] = new_id
+        
+        # Update ID to component mapping
+        self._id_to_component_map[new_id] = component
+        if old_id in self._id_to_component_map:
+            del self._id_to_component_map[old_id]
+            
+        # Signal ID change
+        self._on_id_changed(old_id, new_id)
+        
+        return new_id
     
     def update_container_id(self, widget_id: str, new_container_id: Optional[str]) -> bool:
         """

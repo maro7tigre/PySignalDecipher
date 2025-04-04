@@ -89,7 +89,7 @@ class BaseCommandContainer(BaseCommandWidget):
         """
         raise NotImplementedError("Subclasses must implement create_subcontainer")
     
-    def add_subcontainer(self, type_id: str, location: str = "0") -> Optional[str]:
+    def add_subcontainer(self, type_id: str, location: str = None) -> Optional[str]:
         """
         Add a new subcontainer of the registered type.
         
@@ -105,24 +105,18 @@ class BaseCommandContainer(BaseCommandWidget):
             return None
         
         # Create an empty subcontainer
-        subcontainer = self.create_subcontainer(type_id, location)
+        subcontainer, index = self.create_subcontainer(type_id, location)
         if not subcontainer:
             return None
         
         # Register the subcontainer with the ID system - using consistent container type
+        container_location = extract_location(self.widget_id)
         id_registry = get_id_registry()
-        subcontainer_id = id_registry.register(
-            subcontainer, self.type_code, 
-            None, self.widget_id, location
-        )
+        subcontainer_id = id_registry.register(subcontainer, self.type_code, None, self.widget_id, container_location)
         
-        # Store type mapping
+        # Store mapping and reference
         self._types_map[subcontainer_id] = type_id
-        
-        # Store location mapping
-        self._locations_map[subcontainer_id] = location
-        
-        # Store subcontainer
+        self._locations_map[subcontainer_id] = index
         self._subcontainers[subcontainer_id] = subcontainer
         
         # Get type info for the content
@@ -471,49 +465,57 @@ class BaseCommandContainer(BaseCommandWidget):
                 # Subcontainer no longer exists, create a new one
                 return self.deserialize_subcontainer(
                     type_id, location, serialized_subcontainer)
-            
-            # Update location if needed
-            current_location = self._locations_map.get(existing_subcontainer_id)
-            if current_location != location:
-                self._locations_map[existing_subcontainer_id] = location
-            
+                
             # The ID stays the same
             subcontainer_id = existing_subcontainer_id
         else:
             # Create a new subcontainer
-            subcontainer_id = self.create_subcontainer(type_id, location)
+            subcontainer_id = self.add_subcontainer(type_id, location)
             if not subcontainer_id:
                 return None
             
-            # Store type and location mappings
-            self._types_map[subcontainer_id] = type_id
-            self._locations_map[subcontainer_id] = location
+        # Update the ID if it's different
+        if subcontainer_id != serialized_subcontainer['id']:
+            # Update the ID if it's different
+            id_registry.update_id(subcontainer_id, serialized_subcontainer['id'])
+            # Remove old ID from maps before updating
+            if subcontainer_id in self._types_map:
+                del self._types_map[subcontainer_id]
+            if subcontainer_id in self._locations_map:
+                del self._locations_map[subcontainer_id]
+            if subcontainer_id in self._subcontainers:
+                del self._subcontainers[subcontainer_id]
             
-            # Store subcontainer
-            self._subcontainers[subcontainer_id] = id_registry.get_widget(subcontainer_id)
+            subcontainer_id = serialized_subcontainer['id']
+        
+        # Store mappings and reference
+        self._types_map[subcontainer_id] = type_id
+        self._locations_map[subcontainer_id] = location
+        self._subcontainers[subcontainer_id] = id_registry.get_widget(subcontainer_id)
         
         # Deserialize children
-        if 'children' in serialized_subcontainer:
-            children_data = serialized_subcontainer['children']
-            
-            # Get current children IDs
-            current_children = set(id_registry.get_widget_ids_by_container_id(subcontainer_id))
-            serialized_children = set(children_data.keys())
-            
-            # Find matching children
-            for child_id in current_children:
-                child = id_registry.get_widget(child_id)
-                if not child or not hasattr(child, 'deserialize'):
-                    continue
-                    
-                # Find matching serialized child
-                if child_id in serialized_children:
-                    # Deserialize child
-                    child.deserialize(children_data[child_id])
-                else:
-                    # Child not in serialized data - this shouldn't happen
-                    # Raise an error as the same container type should always
-                    # generate the same children structure
-                    raise ValueError(f"Child {child_id} not found in serialized data for subcontainer {subcontainer_id}")
+        children_data = serialized_subcontainer['children']
+        
+        # Get current children IDs
+        current_children = id_registry.get_widget_ids_by_container_id(subcontainer_id)
+        
+        # Find matching children
+        for child_data in children_data:
+            found = False
+            sucess = False
+            for currennt_child_id in current_children:
+                if child_data['location'] == extract_location(currennt_child_id):
+                    child = id_registry.get_widget(currennt_child_id)
+                    if child and hasattr(child, 'deserialize'):
+                        child.deserialize(children_data)
+                        sucess = True
+                    found = True
+                    break                    
+                
+            if not found or not sucess:
+                # Child not in serialized data - this shouldn't happen
+                # Raise an error as the same container type should always
+                # generate the same children structure
+                raise ValueError(f"Child {child_data['id']} was {"not " if not found else ""}found in serialized data for subcontainer {subcontainer_id} {"but was not deserialized" if found else ""}")
         
         return subcontainer_id

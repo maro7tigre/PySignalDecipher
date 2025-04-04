@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any, Optional, Callable, Dict, Union, TypeVar, Generic
 from PySide6.QtCore import QTimer
 
-from command_system.id_system import get_id_registry, TypeCodes
+from command_system.id_system import get_id_registry, TypeCodes, extract_location
 from command_system.core import Command, WidgetPropertyCommand, PropertyCommand, get_command_manager
 
 # Type for observable targets
@@ -315,6 +315,7 @@ class BaseCommandWidget:
         """
         result = {
             'id': self.widget_id,
+            'location': extract_location(self.widget_id),
             'properties': {}
         }
         

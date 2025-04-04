@@ -232,6 +232,37 @@ subcontainer_id = registry.get_subcontainer_id_at_location(container_id, "2")
 container_widget.navigate_to_widget(widget_id)
 ```
 
+### ID Updates
+
+```python
+from command_system.id_system import get_id_registry
+
+# Get the registry
+registry = get_id_registry()
+
+# Update a component's ID
+old_id = "pb:3a:2J:2-4b"
+new_id = "pb:7c:2J:3-5d"
+result_id = registry.update_id(old_id, new_id)
+
+# This will automatically update:
+# - Container references in child widgets
+# - Location maps for containers
+# - Observable references in properties
+# - Controller references in properties
+```
+
+The `update_id` method provides a way to update a component's ID while maintaining all the relationships that reference it. This is particularly useful for complex operations like moving components between containers, merging containers, or implementing custom serialization/deserialization logic.
+
+Unlike the more specialized update methods like `update_container_id` or `update_observable_id`, this method handles all types of IDs and updates all relevant relationships automatically. The method returns the new ID if successful or `None` if the update fails.
+
+When updating an ID:
+- The component type must remain the same (type code is preserved)
+- All child widgets' container references are updated
+- All location maps are updated
+- All property bindings are maintained
+- The ID registry's change callback is triggered
+
 ## Type Codes Reference
 
 | Component Type | Code |

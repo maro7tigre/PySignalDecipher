@@ -7,7 +7,7 @@ and container-level location management.
 import pytest
 import sys
 import os
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 # Add project root to path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -580,6 +580,80 @@ class TestIDSystem:
         assert is_subcontainer_id(tab_id)
         assert not is_subcontainer_id(widget_id)
         assert not is_subcontainer_id(observable_id)
+        
+    def test_update_id(self):
+        """Test updating a component's ID with relationship maintenance."""
+        # Create a container hierarchy
+        container = MockContainer("MainContainer")
+        subcontainer = MockContainer("SubContainer")
+        widget1 = MockWidget("Widget1")
+        widget2 = MockWidget("Widget2")
+        
+        # Register components
+        container_id = self.registry.register(container, TypeCodes.CUSTOM_CONTAINER)
+        subcontainer_id = self.registry.register(subcontainer, TypeCodes.CUSTOM_CONTAINER, None, container_id, "0")
+        widget1_id = self.registry.register(widget1, TypeCodes.PUSH_BUTTON, None, subcontainer_id, "0/1")
+        widget2_id = self.registry.register(widget2, TypeCodes.PUSH_BUTTON, None, subcontainer_id, "0/2")
+        
+        # Set up location maps
+        self.registry._container_locations_map[container_id] = {subcontainer_id: "0"}
+        self.registry._container_locations_map[subcontainer_id] = {}
+        
+        # Create new ID for subcontainer
+        new_subcontainer_id = f"{TypeCodes.CUSTOM_CONTAINER}:ZZZ:{extract_container_unique_id(subcontainer_id)}:{extract_location(subcontainer_id)}"
+        
+        # Update the ID
+        result_id = self.registry.update_id(subcontainer_id, new_subcontainer_id)
+        assert result_id == new_subcontainer_id
+        
+        # Verify subcontainer's ID is updated
+        assert self.registry.get_id(subcontainer) == new_subcontainer_id
+        
+        # Verify children's container references are updated
+        assert self.registry.get_container_id_from_widget_id(self.registry.get_id(widget1)) == new_subcontainer_id
+        assert self.registry.get_container_id_from_widget_id(self.registry.get_id(widget2)) == new_subcontainer_id
+        
+        # Verify location maps are updated
+        assert self.registry._container_locations_map[container_id][new_subcontainer_id] == "0"
+        assert new_subcontainer_id in self.registry._container_locations_map
+        
+        # Verify ID change callback was triggered
+        assert (subcontainer_id, new_subcontainer_id) in self.id_changes
+        
+        # Also test with an observable
+        observable = MockObservable("TestObservable")
+        property1 = MockObservableProperty("Property1")
+        
+        # Register components
+        observable_id = self.registry.register_observable(observable, TypeCodes.OBSERVABLE)
+        property_id = self.registry.register_observable_property(
+            property1, TypeCodes.OBSERVABLE_PROPERTY, None, "test", observable_id)
+        
+        # Create new ID for observable
+        new_observable_id = f"{TypeCodes.OBSERVABLE}:YYY"
+        
+        # Update the observable ID
+        result_id = self.registry.update_id(observable_id, new_observable_id)
+        assert result_id == new_observable_id
+        
+        # Verify observable's ID is updated
+        assert self.registry.get_id(observable) == new_observable_id
+        
+        # Verify property references are updated
+        updated_property_id = self.registry.get_id(property1)
+        assert self.registry.get_observable_id_from_property_id(updated_property_id) == new_observable_id
+        
+        # Test case for failure - trying to update with a non-existent ID
+        non_existent_id = "pb:999:0:0"
+        result = self.registry.update_id(non_existent_id, new_subcontainer_id)
+        assert result is None  # Should return None for failure
+        
+        # Test case for type mismatch - should fail
+        button = MockWidget("TestButton")
+        button_id = self.registry.register(button, TypeCodes.PUSH_BUTTON)
+        invalid_new_id = f"{TypeCodes.SLIDER}:XXX:0:0"
+        result = self.registry.update_id(button_id, invalid_new_id)
+        assert result is None  # Should return None for type mismatch
 
 
 if __name__ == "__main__":
