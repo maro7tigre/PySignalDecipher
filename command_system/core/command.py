@@ -268,112 +268,66 @@ class WidgetPropertyCommand(Command):
 # MARK:  serialization Command
 class SerializationCommand(Command):
     """
-    Command that captures serialized state for undo/redo.
-    
-    This command uses the serialization system to capture component state
-    before and after operations, enabling undo/redo through state restoration.
+    Command for handling serialization of components/containers with clear serialization methods.
     """
-    
-    def __init__(self, component_id: str):
-        """
-        Initialize with component to track.
-        
-        Args:
-            component_id: ID of the Component to track
-        """
+    def __init__(self, component_id: str = None, type_id: str = None, container_id: str = None):
         super().__init__()
         self.component_id = component_id
+        self.type_id = type_id
+        self.container_id = container_id
         self.serialized_state = None
-        self.post_state = None
-    
-    def capture_state(self) -> None:
-        """
-        Capture the current state of the component.
-        
-        This should be called before making changes to capture the original state
-        for later restoration during undo operations.
-        """
+        self.location = None
+
+    def get_serialization(self) -> bool:
+        """Get serialization from component"""
         component = get_id_registry().get_widget(self.component_id)
         if component and hasattr(component, 'get_serialization'):
             self.serialized_state = component.get_serialization()
-    
-    def capture_post_state(self) -> None:
-        """
-        Capture the state after changes have been made.
-        
-        This can be used for redo operations to restore to the post-change state
-        instead of re-executing the potentially complex operations.
-        """
-        component = get_id_registry().get_widget(self.component_id)
-        if component and hasattr(component, 'get_serialization'):
-            self.post_state = component.get_serialization()
-    
-    def restore_state(self) -> bool:
-        """
-        Restore the component to its original state.
-        
-        This is typically called during undo to restore the component
-        to its state before the command was executed.
-        
-        Returns:
-            True if state was successfully restored, False otherwise
-        """
-        if not self.serialized_state:
-            return False
-            
+            return True
+        raise ValueError(f"Component {self.component_id} does not support serialization")
+
+    def deserialize(self) -> bool:
+        """Deserialize state to component"""
         component = get_id_registry().get_widget(self.component_id)
         if component and hasattr(component, 'deserialize'):
             return component.deserialize(self.serialized_state)
-        return False
-    
-    def restore_post_state(self) -> bool:
-        """
-        Restore the component to its post-operation state.
-        
-        This can be used during redo to restore the component to the state
-        after changes were made initially.
-        
-        Returns:
-            True if post state was successfully restored, False otherwise
-        """
-        if not self.post_state:
-            return False
+        raise ValueError(f"Component {self.component_id} does not support deserialization")
+
+    def serialize_subcontainer(self) -> bool:
+        """Get serialization from container's subcontainer"""
+        container_id = get_id_registry().get_container_id_from_widget_id(self.component_id)
+        if not container_id:
+            raise ValueError(f"No container found for component {self.component_id}")
             
-        component = get_id_registry().get_widget(self.component_id)
-        if component and hasattr(component, 'deserialize'):
-            return component.deserialize(self.post_state)
-        return False
-    
-    def execute(self) -> None:
-        """
-        Execute the command and capture post-operation state.
-        
-        This base implementation just captures the post-state after
-        the operation. Subclasses should override this to implement
-        their specific operations, and call super().execute() at the end.
-        """
-        # Default implementation captures the post-state
-        self.capture_post_state()
-    
-    def undo(self) -> None:
-        """
-        Undo the command by restoring the original state.
-        
-        This restores the component to its state before the command
-        was executed.
-        """
-        self.restore_state()
-    
-    def redo(self) -> None:
-        """
-        Redo the command.
-        
-        If post_state is available, restores to that state.
-        Otherwise, falls back to re-executing the command.
-        """
-        if self.post_state and self.restore_post_state():
-            # Successfully restored post state
-            return
+        container = get_id_registry().get_widget(container_id)
+        if container and hasattr(container, 'serialize_subcontainer'):
+            self.serialized_state = container.serialize_subcontainer(self.component_id)
+            return True
+        raise ValueError(f"Container {container_id} does not support subcontainer serialization")
+
+    def deserialize_subcontainer(self) -> bool:
+        """Deserialize subcontainer state back to container"""
+        container_id = get_id_registry().get_container_id_from_widget_id(self.component_id)
+        if not container_id:
+            raise ValueError(f"No container found for component {self.component_id}")
             
-        # Fall back to standard execute method
-        super().redo()
+        container = get_id_registry().get_widget(container_id)
+        if container and hasattr(container, 'deserialize_subcontainer'):
+            return container.deserialize_subcontainer(
+                self.type_id,
+                self.location,
+                self.serialized_state
+            )
+        raise ValueError(f"Container {container_id} does not support subcontainer deserialization")
+
+    def execute(self):
+        """Execute should be implemented by subclasses"""
+        pass
+
+    def undo(self):
+        """Undo should be implemented by subclasses"""
+        pass
+        
+    def redo(self):
+        """Default to execute but can be overridden"""
+        self.execute()

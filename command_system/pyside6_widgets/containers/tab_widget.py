@@ -323,83 +323,51 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             
         return result
 
-    # MARK: - Command Classes
-    
+# MARK: - Command Classes    
 class AddTabCommand(SerializationCommand):
-    """Command for adding a new tab."""
+    """Command for adding a new tab with serialization support"""
+    def __init__(self, type_id, container_id):
+        super().__init__(type_id=type_id, container_id=container_id)
+        
     
-    def __init__(self, tab_widget, type_id):
-        """Initialize with tab widget and tab type."""
-        super().__init__(tab_widget.widget_id)
-        self.tab_widget = tab_widget
-        self.type_id = type_id
-        self.subcontainer_id = None
-        self.capture_state()
-        
     def execute(self):
-        """Execute the command to add a tab."""
-        self.subcontainer_id = self.tab_widget.add_subcontainer(
-            self.type_id, str(self.tab_widget.count())
-        )
-        
-        if self.subcontainer_id:
-            # Emit signal for the new tab
-            self.tab_widget.tabAdded.emit(self.subcontainer_id)
-            
-        # Capture the new state after adding the tab
-        super().execute()
-        
+        """Execute simply adds the tab"""
+        container = get_id_registry().get_widget(self.container_id)
+        #TODO: Create a new tab and save it location
+
     def undo(self):
-        """Undo the command by restoring the previous state."""
-        if self.subcontainer_id:
-            self.tab_widget.close_subcontainer(self.subcontainer_id)
+        """Undo saves serialization and closes tab"""
+        if self.component_id:
+            self.serialize_subcontainer()
+            container = get_id_registry().get_widget(self.container_id)
+            container.removeTab(self.component_id)
             
-        # Update tab locations
-        self.tab_widget._update_tab_locations()
-        
+    def redo(self):
+        """Redo restores the tab from serialization"""
+        if self.serialized_state:
+            self.deserialize_subcontainer()
+            component = get_id_registry().get_widget(self.component_id)
+            #TODO: update tabs locations and navigate to it
+
 class CloseTabCommand(SerializationCommand):
-    """Command for closing a tab with serialization support."""
-    
-    def __init__(self, tab_widget, subcontainer_id, index, subcontainer_type):
-        """Initialize with tab information."""
-        super().__init__(tab_widget.widget_id)
-        self.tab_widget = tab_widget
-        self.subcontainer_id = subcontainer_id
-        self.index = index
-        self.subcontainer_type = subcontainer_type
-        
-        # Capture the state before closing
-        self.serialized_state = tab_widget.serialize_subcontainer(subcontainer_id)
+    """Command for closing a tab with serialization support"""
+    def __init__(self, component_id: str, type_id: str, container_id:str, index):
+        super().__init__(component_id, type_id, container_id)
+        self.location = str(index)
         
     def execute(self):
-        """Execute the command to close the tab."""
-        # Close the subcontainer
-        self.tab_widget.close_subcontainer(self.subcontainer_id)
-        
-        # Update tab locations
-        self.tab_widget._update_tab_locations()
-        
-        # Capture the state after closing
-        super().execute()
-        
+        """Execute captures state and closes tab"""
+        if self.component_id:
+            self.serialize_subcontainer()
+            component = get_id_registry().get_widget(self.component_id)
+            #TODO: close and update tabs locations
+
     def undo(self):
-        """Undo the command by restoring the tab."""
-        # Check if we have serialized state
-        if not self.serialized_state:
-            return
-            
-        # Restore the tab using deserialization
-        type_id = self.subcontainer_type
-        location = str(self.index)  # Restore at the same index
-        
-        # Deserialize the subcontainer
-        self.tab_widget.deserialize_subcontainer(
-            type_id, location, self.serialized_state
-        )
-        
-        # Update tab locations and select the restored tab
-        self.tab_widget._update_tab_locations()
-        self.tab_widget.navigate_to_location(location)
+        """Undo restores the tab"""
+        if self.serialized_state:
+            self.deserialize_subcontainer()
+            component = get_id_registry().get_widget(self.component_id)
+            #TODO: update tabs locations and navigate to it
         
 class TabSelectionCommand(Command):
     """Command for changing the selected tab."""
