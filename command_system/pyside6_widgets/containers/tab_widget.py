@@ -138,7 +138,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         
         return tab_container, index
 
-    def close_tab(self, subcontainer_id:str) -> None:
+    def close_tab(self, subcontainer_id:str=None) -> None:
         """
         Close a tab at the given index.
         
@@ -146,7 +146,9 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             index: Index of the tab to close
         """
         # Get the index of the tab
-        
+        if self._locations_map[subcontainer_id] is None :
+            print("close_tab: subcontainer_id is None", subcontainer_id, self._locations_map)
+            return
         index = int(self._locations_map[subcontainer_id])
         
         # Get the widget at the index
@@ -214,6 +216,9 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         Returns:
             True if navigation was successful
         """
+        if location is None:
+            return False
+        
         try:
             tab_index = int(location)
             if 0 <= tab_index < self.count():
@@ -228,7 +233,6 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
     @Slot(int)
     def _on_tab_close_requested(self, index: int) -> None:
         """Handle tab close request from UI."""
-        print(f"Tab close requested for index {index}")
         # Check if tab is closable from stored data
         tab_data = self.tabBar().tabData(index)
         if tab_data and not tab_data.get("closable", True):
@@ -327,6 +331,7 @@ class AddTabCommand(SerializationCommand):
         if self.component_id:
             self.serialize_subcontainer()
             container = get_id_registry().get_widget(self.container_id)
+            self.location = container._locations_map[self.component_id]
             container.close_tab(self.component_id)
             
     def redo(self):

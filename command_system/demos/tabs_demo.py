@@ -3,14 +3,14 @@ Improved demo for the simplified command system container architecture.
 
 This demo showcases the registration and instantiation pattern with
 full undo/redo support for tab operations, using both existing observables
-and dynamic observable creation.
+and dynamic observable creation. Also includes command count tracking.
 """
 import sys
 import os
 from typing import Type, Union, List
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, 
-    QHBoxLayout, QPushButton, QLabel
+    QHBoxLayout, QPushButton, QLabel, QStatusBar
 )
 
 # Add project root to path
@@ -42,7 +42,7 @@ class ImprovedTabsDemo(QMainWindow):
         # Create shared model
         self.person = Person()
         self.cmd_manager = get_command_manager()
-        
+        self.cmd_manager._is_initializing = True
         # Set up UI
         self.setup_ui()
         
@@ -51,6 +51,15 @@ class ImprovedTabsDemo(QMainWindow):
         
         # Add initial welcome tab
         self.tab_widget.add_tab(self.welcome_tab_id)
+        
+        # Set up command tracking
+        self.cmd_manager.add_after_execute_callback("tabs_demo", self.update_command_count)
+        self.cmd_manager.add_after_undo_callback("tabs_demo", self.update_command_count)
+        
+        # Initialize command count display
+        self.update_command_count()
+        
+        self.cmd_manager._is_initializing = False
     
     def setup_ui(self):
         """Set up the user interface."""
@@ -91,6 +100,15 @@ class ImprovedTabsDemo(QMainWindow):
         redo_btn = QPushButton("Redo")
         redo_btn.clicked.connect(self.cmd_manager.redo)
         undo_redo_layout.addWidget(redo_btn)
+        
+        # Create command count label
+        self.count_label = QLabel("Commands: 0")
+        undo_redo_layout.addWidget(self.count_label)
+        
+        # Create status bar
+        self.statusBar = QStatusBar()
+        self.setStatusBar(self.statusBar)
+        self.statusBar.showMessage("Ready")
     
     def register_tab_types(self):
         """Register all tab types."""
@@ -137,7 +155,8 @@ class ImprovedTabsDemo(QMainWindow):
             "• Observable registration and instantiation\n"
             "• Both shared and per-tab observable instances\n"
             "• Full undo/redo support for all operations\n"
-            "• Selective tab closability\n\n"
+            "• Selective tab closability\n"
+            "• Command history tracking\n\n"
             "Try out the buttons below to add different types of tabs."
         )
         label.setWordWrap(True)
@@ -147,7 +166,8 @@ class ImprovedTabsDemo(QMainWindow):
             "About the tabs:\n"
             "- Shared Model Tab: Uses a single shared observable across all tabs\n"
             "- New Model Tab: Creates a new observable instance for each tab\n"
-            "- Non-Closable Tab: Cannot be closed with the close button"
+            "- Non-Closable Tab: Cannot be closed with the close button\n\n"
+            "The command count at the bottom shows the number of commands in the history."
         )
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
@@ -197,15 +217,38 @@ class ImprovedTabsDemo(QMainWindow):
     
     def add_shared_model_tab(self):
         """Add a tab that uses the shared model."""
-        self.tab_widget.add_tab(self.shared_model_tab_id)
+        tab_id = self.tab_widget.add_tab(self.shared_model_tab_id)
+        self.statusBar.showMessage(f"Added shared model tab (ID: {tab_id})")
     
     def add_new_model_tab(self):
         """Add a tab with a new model instance."""
-        self.tab_widget.add_tab(self.new_model_tab_id)
+        tab_id = self.tab_widget.add_tab(self.new_model_tab_id)
+        self.statusBar.showMessage(f"Added new model tab (ID: {tab_id})")
     
     def add_non_closable_tab(self):
         """Add a non-closable tab with the shared model."""
-        self.tab_widget.add_tab(self.non_closable_tab_id)
+        tab_id = self.tab_widget.add_tab(self.non_closable_tab_id)
+        self.statusBar.showMessage(f"Added non-closable tab (ID: {tab_id})")
+    
+    def update_command_count(self, *args):
+        """Update command count display in the UI."""
+        count = len(self.cmd_manager._history.get_executed_commands())
+        self.count_label.setText(f"Commands: {count}")
+        
+        # Update status bar with undo/redo availability
+        if self.cmd_manager.can_undo():
+            undo_cmd = self.cmd_manager._history._executed_commands[-1]
+            undo_msg = f"Can undo ({undo_cmd.__class__.__name__})"
+        else:
+            undo_msg = "Cannot undo"
+            
+        if self.cmd_manager.can_redo():
+            redo_cmd = self.cmd_manager._history._undone_commands[-1]
+            redo_msg = f"Can redo ({redo_cmd.__class__.__name__})"
+        else:
+            redo_msg = "Cannot redo"
+            
+        self.statusBar.showMessage(f"{undo_msg} | {redo_msg}")
 
 
 if __name__ == "__main__":
