@@ -6,7 +6,7 @@ This module implements a generator for unique IDs following these patterns:
 - Observable: [type_code]:[unique_id]
 - ObservableProperty: [type_code]:[unique_id]:[observable_unique_id]:[property_name]:[controller_id]
 """
-from typing import Dict, Optional
+from typing import Dict, Optional, Set
 
 class IDGenerator:
     """Generates unique, memory-efficient component IDs."""
@@ -14,6 +14,7 @@ class IDGenerator:
     def __init__(self):
         """Initialize the ID generator with a global counter."""
         self._counter: int = 0
+        self._used_ids: Set[str] = set()  # Track used unique IDs to avoid collisions
         
     def generate_id(self, type_code: str, container_unique_id: str = "0", 
                    location: str = "0") -> str:
@@ -34,7 +35,7 @@ class IDGenerator:
         self._counter += 1
         
         # Generate unique ID component using base62 encoding
-        unique_id = self._encode_to_base62(self._counter)
+        unique_id = self._generate_unique_id()
         
         # Create full ID
         return f"{type_code}:{unique_id}:{container_unique_id}:{location}"
@@ -49,11 +50,8 @@ class IDGenerator:
         Returns:
             A unique ID string in the format: type_code:unique_id
         """
-        # Increment the global counter
-        self._counter += 1
-        
         # Generate unique ID component using base62 encoding
-        unique_id = self._encode_to_base62(self._counter)
+        unique_id = self._generate_unique_id()
         
         # Create full ID
         return f"{type_code}:{unique_id}"
@@ -72,11 +70,8 @@ class IDGenerator:
         Returns:
             A unique ID string in format: type_code:unique_id:observable_unique_id:property_name:controller_unique_id
         """
-        # Increment the global counter
-        self._counter += 1
-        
         # Generate unique ID component using base62 encoding
-        unique_id = self._encode_to_base62(self._counter)
+        unique_id = self._generate_unique_id()
         
         # Create full ID
         return f"{type_code}:{unique_id}:{observable_unique_id}:{property_name}:{controller_unique_id}"
@@ -87,7 +82,7 @@ class IDGenerator:
         Each subcontainer has its own generator to ensure stable widget location IDs.
         
         Returns:
-            A new IDGenerator instance with the same state
+            A new IDGenerator instance with a fresh counter
         """
         sub_generator = IDGenerator()
         sub_generator._counter = 0  # Start fresh for this subcontainer
@@ -144,24 +139,37 @@ class IDGenerator:
         
         return f"{type_code}:{unique_id}:{observable_id}:{property_name}:{controller_id}"
     
-    def generate_location_id(self, subcontainer_location: str) -> str:
+    def generate_location_id(self) -> str:
         """
         Generate a unique location ID for a widget within a subcontainer.
         
-        Args:
-            subcontainer_location: Location of the subcontainer
-            
         Returns:
-            Location string in format: [subcontainer_location]-[widget_location_id]
+            Unique location ID string
         """
-        # Increment the counter for this subcontainer
-        self._counter += 1
+        return self._generate_unique_id()
+    
+    def register_existing_id(self, unique_id: str) -> None:
+        """
+        Register an existing unique ID to avoid future collisions.
         
-        # Generate unique location ID using base62 encoding
-        widget_location_id = self._encode_to_base62(self._counter)
+        Args:
+            unique_id: Unique ID string to register
+        """
+        self._used_ids.add(unique_id)
+    
+    def _generate_unique_id(self) -> str:
+        """
+        Generate a unique ID ensuring no collisions with previously used IDs.
         
-        # Create composite location
-        return f"{subcontainer_location}-{widget_location_id}"
+        Returns:
+            A unique base62-encoded string
+        """
+        while True:
+            self._counter += 1
+            unique_id = self._encode_to_base62(self._counter)
+            if unique_id not in self._used_ids:
+                self._used_ids.add(unique_id)
+                return unique_id
     
     def _encode_to_base62(self, number: int) -> str:
         """

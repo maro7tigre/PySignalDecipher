@@ -27,8 +27,9 @@ class SimpleIDRegistry:
             raise RuntimeError("Use get_simple_id_registry() to get the singleton instance")
             
         SimpleIDRegistry._instance = self
-        self._registry = {}  # type: Dict[str, str]
-        self._counters = {}  # type: Dict[str, int]
+        self._id_to_name = {}  # type: Dict[str, str]
+        self._name_to_id = {}  # type: Dict[str, str]
+        self._counters = {}    # type: Dict[str, int]
         
         # Get the main ID registry for unique ID generation
         self._id_registry = get_id_registry()
@@ -47,7 +48,8 @@ class SimpleIDRegistry:
         """  
         # If ID is provided, use it
         if id_str:
-            self._registry[id_str] = name
+            self._id_to_name[id_str] = name
+            self._name_to_id[name] = id_str
             return id_str
             
         # Generate a new ID
@@ -65,7 +67,8 @@ class SimpleIDRegistry:
         new_id = f"{type_code}:{unique_id}"
         
         # Register the ID
-        self._registry[new_id] = name
+        self._id_to_name[new_id] = name
+        self._name_to_id[name] = new_id
         
         return new_id
     
@@ -79,10 +82,19 @@ class SimpleIDRegistry:
         Returns:
             Name or None if not registered
         """
-        for name, registered_id in self._registry.items():
-            if registered_id == id_str:
-                return name
-        return None
+        return self._id_to_name.get(id_str)
+    
+    def get_id(self, name: str) -> Optional[str]:
+        """
+        Get the ID for a registered name.
+        
+        Args:
+            name: Name to look up
+            
+        Returns:
+            ID string or None if not registered
+        """
+        return self._name_to_id.get(name)
     
     def is_registered(self, name: str) -> bool:
         """
@@ -94,11 +106,32 @@ class SimpleIDRegistry:
         Returns:
             True if registered, False otherwise
         """
-        return name in self._registry
+        return name in self._name_to_id
     
-    def unregister(self, id_str: str) -> bool:
+    def unregister_by_id(self, id_str: str) -> bool:
         """
-        Unregister a name.
+        Unregister by ID.
+        
+        Args:
+            id_str: ID to unregister
+            
+        Returns:
+            True if successfully unregistered, False if not found
+        """
+        if id_str not in self._id_to_name:
+            return False
+            
+        name = self._id_to_name[id_str]
+        del self._id_to_name[id_str]
+        
+        if name in self._name_to_id:
+            del self._name_to_id[name]
+            
+        return True
+    
+    def unregister_by_name(self, name: str) -> bool:
+        """
+        Unregister by name.
         
         Args:
             name: Name to unregister
@@ -106,15 +139,21 @@ class SimpleIDRegistry:
         Returns:
             True if successfully unregistered, False if not found
         """
-        if id_str not in self._registry:
+        if name not in self._name_to_id:
             return False
             
-        del self._registry[id_str]
+        id_str = self._name_to_id[name]
+        del self._name_to_id[name]
+        
+        if id_str in self._id_to_name:
+            del self._id_to_name[id_str]
+            
         return True
     
     def reset(self):
         """Reset the registry (for testing only)."""
-        self._registry.clear()
+        self._id_to_name.clear()
+        self._name_to_id.clear()
         self._counters.clear()
 
 

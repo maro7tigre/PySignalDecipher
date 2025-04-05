@@ -13,11 +13,11 @@ The ID system creates and manages unique identifiers that encode type, hierarchy
 [type_code]:[unique_id]:[container_unique_id]:[location]
 ```
 
-Where `location` uses a composite format: `[subcontainer_location]-[widget_location_id]`
+Where `location` uses a composite format: `[subcontainer_path]-[widget_location_id]`
 
 Examples:
-- `le:1Z:0:0` - A line edit widget with no container
-- `t:2J:0:1` - A tab container (in slot 1) with no parent
+- `le:1Z:0:0-2A` - A line edit widget with no container (at root location 0 with widget ID 2A)
+- `t:2J:0:1-3B` - A tab container (in slot 1 with widget ID 3B) with no parent
 - `pb:3a:2J:2-4b` - A push button widget in a subcontainer at location 2, with widget location ID 4b
 - `cb:5c:3a:2/1-7d` - A checkbox in a deeply nested container at path 2/1 with widget location ID 7d
 
@@ -45,17 +45,17 @@ Each container can have subcontainers (tabs, docks, etc.) which have their own l
 Each subcontainer has its own ID generator for creating stable widget location IDs.
 
 ```
-Container (t:1A:0:0)
-  ├── Subcontainer 1 (t:2B:1A:0-1)
-  │     ├── Widget 1-1 (pb:3C:2B:0-1)
-  │     ├── Widget 1-2 (le:4D:2B:0-2)
-  │     └── Nested Container (d:8H:2B:0/1-3)
-  │           ├── Nested Widget 1 (pb:9I:8H:0/1-1)
-  │           └── Nested Widget 2 (le:10J:8H:0/1-2)
+Container (t:1A:0:0-5X)
+  ├── Subcontainer 1 (t:2B:1A:0-1Y)
+  │     ├── Widget 1-1 (pb:3C:2B:0-1Z)
+  │     ├── Widget 1-2 (le:4D:2B:0-2A)
+  │     └── Nested Container (d:8H:2B:0/1-3B)
+  │           ├── Nested Widget 1 (pb:9I:8H:0/1-1C)
+  │           └── Nested Widget 2 (le:10J:8H:0/1-2D)
   │
-  └── Subcontainer 2 (t:5E:1A:1-1)
-        ├── Widget 2-1 (pb:6F:5E:1-1)
-        └── Widget 2-2 (le:7G:5E:1-2)
+  └── Subcontainer 2 (t:5E:1A:1-1E)
+        ├── Widget 2-1 (pb:6F:5E:1-1F)
+        └── Widget 2-2 (le:7G:5E:1-2G)
 ```
 
 This hierarchical approach supports arbitrarily deep nesting of containers, with each level maintaining its own location context.
@@ -80,6 +80,7 @@ This hierarchical approach supports arbitrarily deep nesting of containers, with
 - `set_locations_map(container_id, locations_map)` - Set locations map for a container
 - `get_widgets_at_subcontainer_location(container_id, subcontainer_location)` - Get widgets at a specific location
 - `get_subcontainer_id_at_location(container_id, location)` - Get subcontainer at a specific location
+- `update_location_from_container(widget_id, container_id, preserve_widget_location_id)` - Update a widget's location based on its container
 
 ### ID-Based Relationship Queries
 - `get_container_id_from_widget_id(widget_id)`
@@ -172,7 +173,8 @@ name = registry.get_name("wt:1")             # "welcome_tab"
 
 # Check registration and unregister
 is_reg = registry.is_registered("welcome_tab")   # True
-registry.unregister("welcome_tab")               # True
+registry.unregister_by_name("welcome_tab")       # True
+registry.unregister_by_id("wt:1")                # True
 ```
 
 ## Using with Containers
@@ -198,15 +200,23 @@ button_id = get_id_registry().register(button, TypeCodes.PUSH_BUTTON,
 ### Working with Location IDs
 
 ```python
-# Generate a location ID for a widget in a subcontainer
+# Get a subcontainer generator for custom location IDs
 sub_generator = registry._get_subcontainer_generator(container_id)
-location = sub_generator.generate_location_id("0")  # "0-1"
+
+# Generate a unique widget location ID
+widget_location_id = sub_generator.generate_location_id()
+
+# Create a location with this ID
+location = f"0-{widget_location_id}"
 
 # Create a widget with this location
 button_id = registry.register(button, TypeCodes.PUSH_BUTTON, None, container_id, location)
 
-# Update a widget location
-registry.update_location(button_id, "1")  # Will generate new widget location ID
+# Update a widget's location
+registry.update_location(button_id, "1")  # Will generate a new location like "1-<ID>"
+
+# Update location based on container
+registry.update_location_from_container(button_id, container_id)
 ```
 
 ### Hierarchical Locations
@@ -217,7 +227,12 @@ Locations use a composite format:
 
 When registering:
 - If you provide a full location with widget_id part, it will be used as is
-- If you provide only a subcontainer path, a widget_id will be generated
+- If you provide only a subcontainer path, a widget_id will be generated using the subcontainer's generator
+- If no location is provided, the system will generate a default location with the subcontainer's generator
+
+When updating a widget's container:
+- The system will automatically update the location to match the new container's hierarchy
+- You can preserve the original widget location ID part if needed
 
 ### Container Navigation
 
