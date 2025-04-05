@@ -136,6 +136,7 @@ class BaseCommandWidget:
         # Store the controlled property mapping
         self._controlled_properties[widget_property] = property_id
         subscribe_to_id(property_id, self.refresh_controlled_properties)
+        print("subscribed to:", property_id)
         # Set up observer for property changes
         observer_id = observable.add_property_observer(
             property_name, 
@@ -180,6 +181,7 @@ class BaseCommandWidget:
             old_id: Old widget ID
             new_id: New widget ID
         """
+        print("refresh_controlled_properties", old_id, new_id)
         for widget, id in self._controlled_properties.items():
             if id == old_id:
                 if new_id is None:
