@@ -364,7 +364,7 @@ class Observable:
             'observable_id': self.get_id()
         }
     
-    def deserialize_property(self, property_id: str, data: Dict[str, Any]) -> bool:
+    def deserialize_property(self, property_id: str, data: Dict[str, Any], observable_id: str) -> bool:
         """
         Deserialize property data and apply it to this observable.
         
@@ -375,26 +375,14 @@ class Observable:
         Returns:
             True if successful, False otherwise
         """
-        # Check if observable ID matches
-        observable_id = data.get('observable_id')
-        if observable_id and observable_id != self.get_id():
-            # Check if there's already an observable with this ID
-            id_registry = get_id_registry()
-            existing_observable = id_registry.get_observable(observable_id)
-            if existing_observable and existing_observable is not self:
-                raise ValueError(f"Observable with ID {observable_id} already exists. This indicates a cleanup failure when removing a widget.")
+        # Validate property_id matches data
+        id_registry = get_id_registry()
+        
+        if observable_id != data.get('observable_id'):
+            observable_id = id_registry.update_id(observable_id, data.get('observable_id'))
             
-            # Observable ID changed, update it
-            old_id = self._id
-            self._id = observable_id
-            
-            # Update all property IDs with the new observable_unique_id
-            new_observable_unique_id = extract_observable_unique_id(observable_id)
-            for prop_name, old_prop_id in self._property_id_cache.items():
-                # Update property ID with new observable ID
-                new_prop_id = id_registry.update_observable_id(old_prop_id, observable_id)
-                if new_prop_id:
-                    self._property_id_cache[prop_name] = new_prop_id
+        if property_id != data.get('property_id'):
+            property_id = id_registry.update_id(property_id, data.get('property_id'))
         
         # Get property name and value
         property_name = data.get('property_name')

@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any, Optional, Callable, Dict, Union, TypeVar, Generic
 from PySide6.QtCore import QTimer
 
-from command_system.id_system import get_id_registry, TypeCodes, extract_location
+from command_system.id_system import get_id_registry, TypeCodes, extract_property_name, extract_location, subscribe_to_id, unsubscribe_from_id
 from command_system.core import Command, WidgetPropertyCommand, PropertyCommand, get_command_manager
 
 # Type for observable targets
@@ -135,7 +135,7 @@ class BaseCommandWidget:
         
         # Store the controlled property mapping
         self._controlled_properties[widget_property] = property_id
-        
+        subscribe_to_id(property_id, self.refresh_controlled_properties)
         # Set up observer for property changes
         observer_id = observable.add_property_observer(
             property_name, 
@@ -151,7 +151,7 @@ class BaseCommandWidget:
         
         # Child classes should connect their value changed signals
         # to _on_widget_value_changed method for updating the observable
-    
+
     def unbind_property(self, widget_property: str):
         """
         Unbind a widget property from its observable property.
@@ -171,6 +171,21 @@ class BaseCommandWidget:
         
         # Remove from our tracking
         del self._controlled_properties[widget_property]
+
+    def refresh_controlled_properties(self, old_id, new_id):
+        """
+        Refresh the controlled properties when the widget ID changes.
+
+        Args:
+            old_id: Old widget ID
+            new_id: New widget ID
+        """
+        for widget, id in self._controlled_properties.items():
+            if id == old_id:
+                if new_id is None:
+                    del self._controlled_properties[widget]
+                else:
+                    self._controlled_properties[widget] = new_id
     
     # MARK: - Property Change Handling
     def _on_observed_property_changed(self, widget_property: str, old_value: Any, new_value: Any):
@@ -328,10 +343,23 @@ class BaseCommandWidget:
                 observable = id_registry.get_observable(observable_id)
                 if observable and hasattr(observable, 'serialize_property'):
                     serialized_property = observable.serialize_property(property_id)
-                    result['properties'][widget_property] = serialized_property
+                    result['properties'][property_id] = serialized_property
         
         return result
         # TODO: Add serialize_property method to Observable class
+    
+    def deserialize(self, data):
+        """
+        Restore this widget's state from serialized data.
+
+        Args:
+            data: Dictionary containing widget state
+
+        Returns:
+            True if successful
+        """
+        # Update widget ID if needed
+        self.restore_widget(data)
         
     def restore_widget(self, data):
         """
@@ -344,23 +372,25 @@ class BaseCommandWidget:
             True if successful
         """
         # Update widget ID if needed
-        if 'id' in data and data['id'] != self.widget_id:
+        if data['id'] != self.widget_id:
             id_registry = get_id_registry()
             # Register with the specified ID
-            self.widget_id = id_registry.register(self, self.type_code, data['id'])
+            id_registry.update_id(self.widget_id, data['id'])
+            self.widget_id = id_registry.get_id(self)
+        
+        
         
         # Restore controlled properties
-        if 'properties' in data:
-            for widget_property, serialized_property in data['properties'].items():
-                if widget_property in self._controlled_properties:
-                    property_id = self._controlled_properties[widget_property]
-                    id_registry = get_id_registry()
-                    observable_id = id_registry.get_observable_id_from_property_id(property_id)
-                    
-                    if observable_id:
-                        observable = id_registry.get_observable(observable_id)
-                        if observable and hasattr(observable, 'deserialize_property'):
-                            observable.deserialize_property(property_id, serialized_property)
+        for _, property_id in self._controlled_properties.items():
+            #TODO: a better tracking of controlled properties observables
+            observable_id = id_registry.get_observable_id_from_property_id(property_id)
+            observable = id_registry.get_observable(observable_id)
+            
+            current_property_name = extract_property_name(property_id)
+            for _, serialized_property in data['properties'].items():
+                if serialized_property['property_name'] == current_property_name:
+                    observable.deserialize_property(property_id, serialized_property)
+                    break
+            
         
         return True
-        # TODO: Add deserialize_property method to Observable class

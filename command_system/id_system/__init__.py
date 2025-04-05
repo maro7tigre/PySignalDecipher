@@ -7,7 +7,10 @@ without maintaining direct references, enabling advanced serialization and navig
 
 # Public API
 from .generator import IDGenerator
-from .registry import IDRegistry, get_id_registry
+from .registry import (
+    IDRegistry, get_id_registry,
+    subscribe_to_id, unsubscribe_from_id, clear_subscriptions
+)
 from .simple_id_registry import get_simple_id_registry
 from .utils import (
     extract_type_code,
@@ -80,5 +83,10 @@ __all__ = [
     'is_widget_id',
     'is_observable_id',
     'is_observable_property_id',
-    'is_subcontainer_id'
+    'is_subcontainer_id',
+    
+    # Subscription methods
+    'subscribe_to_id',
+    'unsubscribe_from_id',
+    'clear_subscriptions',
 ]

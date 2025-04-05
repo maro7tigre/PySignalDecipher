@@ -183,9 +183,7 @@ class BaseCommandContainer(BaseCommandWidget):
             
             # Set this container as the widget's container
             if hasattr(current_widget, "update_container"):
-                print(f"Registering widget with ID {id_registry.get_id(current_widget)}")
                 current_widget.update_container(subcontainer_id)
-                print(f"Registered widget with ID {id_registry.get_id(current_widget)}")
             
             # Process child widgets - even for container widgets
             # This allows nested containers to work properly
@@ -408,7 +406,6 @@ class BaseCommandContainer(BaseCommandWidget):
         
         # Get all children of the subcontainer
         child_ids = id_registry.get_widget_ids_by_container_id(subcontainer_id)
-        print(f"Child IDs: {child_ids}")
         # Serialize each child
         for child_id in child_ids:
             child = id_registry.get_widget(child_id)
@@ -510,9 +507,7 @@ class BaseCommandContainer(BaseCommandWidget):
         # Update the ID if it's different
         if subcontainer_id != serialized_subcontainer['id']:
             # Update the ID if it's different
-            print(f"Updating ID from {id_registry.get_id(current_subcontainer)}")
             id_registry.update_id(subcontainer_id, serialized_subcontainer['id'])
-            print(f"to {id_registry.get_id(current_subcontainer)}")
             # Remove old ID from maps before updating
             if subcontainer_id in self._types_map:
                 del self._types_map[subcontainer_id]

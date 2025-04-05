@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional, TypeVar, Union, Callable, Tuple, S
 import weakref
 
 from .generator import IDGenerator
+from .subscription import IDSubscriptionManager
 from .utils import (
     extract_type_code, extract_unique_id, extract_container_unique_id, extract_location,
     extract_location_parts, extract_subcontainer_path, extract_widget_location_id,
@@ -65,6 +66,9 @@ class IDRegistry:
         self._on_observable_unregister = lambda observable_id: None
         self._on_property_unregister = lambda property_id: None
         self._on_id_changed = lambda old_id, new_id: None
+        
+        # Initialize subscription manager
+        self._subscription_manager = IDSubscriptionManager()
     
     # -------------------- Registration methods --------------------
     
@@ -85,60 +89,69 @@ class IDRegistry:
         Returns:
             Generated or updated widget ID
         """
-        # Initialize ID components
         final_location = location or "0"
-        container_unique_id = "0"
         
-        if container_id:
-            container_unique_id = extract_unique_id(container_id) if container_id else "0"
-            
-            # If location not provided, generate from container
-            if not location or location == "0":
-                widget_id = self._process_widget_id(widget_id, type_code, container_unique_id, final_location)
-                self._register_component_id(widget, widget_id)
-                return self.update_location_from_container(widget_id, container_id)
+        # Process location - determine if we need to generate a widget_location_id
+        if container_id and is_subcontainer_id(container_id):
+            # Check if location already has a widget_location_id (contains a hyphen)
+            if not final_location or final_location == "0" or not ("-" in final_location):
+                # We need to generate a widget_location_id
+                # Get the subcontainer location part
+                subcontainer_location = final_location if final_location != "0" else "0"
+                
+                # Get or create a generator for this subcontainer
+                sub_generator = self._get_subcontainer_generator(container_id)
+                
+                # Generate a widget location ID
+                widget_location_id = extract_unique_id(sub_generator.generate_observable_id("tmp"))
+                
+                # Create composite location
+                final_location = f"{subcontainer_location}-{widget_location_id}"
+                
+                # Update container locations map
+                parent_container_id = self.get_container_id_from_widget_id(container_id)
+                
+                if parent_container_id:
+                    # Get or initialize locations map for parent container
+                    if parent_container_id not in self._container_locations_map:
+                        self._container_locations_map[parent_container_id] = {}
+                    
+                    # Store subcontainer location
+                    self._container_locations_map[parent_container_id][container_id] = subcontainer_location
         
-        # Process location
-        if final_location != "0" and "-" not in final_location:
-            # No widget location ID, generate one
-            sub_generator = self._get_subcontainer_generator("0")  # Default to root generator
-            widget_location_id = sub_generator.generate_location_id()
-            final_location = f"{final_location}-{widget_location_id}"
-        
-        # Process widget ID
-        widget_id = self._process_widget_id(widget_id, type_code, container_unique_id, final_location)
-        
-        # Register the component
-        self._register_component_id(widget, widget_id)
-        
-        return widget_id
-    
-    def _process_widget_id(self, widget_id: Optional[str], type_code: str, 
-                           container_unique_id: str, location: str) -> str:
-        """
-        Process widget ID, either using existing ID or generating a new one.
-        
-        Args:
-            widget_id: Optional existing ID
-            type_code: Type code
-            container_unique_id: Container unique ID
-            location: Location string
-            
-        Returns:
-            Processed widget ID
-        """
+        # If widget_id is provided, update it
         if widget_id:
             # Extract parts
             parts = widget_id.split(':')
             if len(parts) != 4:
                 # Invalid format, generate new ID
-                return self._id_generator.generate_id(type_code, container_unique_id, location)
+                container_unique_id = extract_unique_id(container_id) if container_id else "0"
+                widget_id = self._id_generator.generate_id(type_code, container_unique_id, final_location)
             else:
-                # Update with new container and location if provided
-                return self._id_generator.update_id(widget_id, container_unique_id, location)
+                # Update with new container if provided
+                container_unique_id = container_id and extract_unique_id(container_id) or None
+                new_location = final_location or None
+                widget_id = self._id_generator.update_id(widget_id, container_unique_id, new_location)
         else:
             # Generate new ID
-            return self._id_generator.generate_id(type_code, container_unique_id, location)
+            container_unique_id = extract_unique_id(container_id) if container_id else "0"
+            widget_id = self._id_generator.generate_id(type_code, container_unique_id, final_location)
+        
+        # Store mappings
+        old_id = self._component_to_id_map.get(widget)
+        self._component_to_id_map[widget] = widget_id
+        self._id_to_component_map[widget_id] = widget
+        
+        # If this is a subcontainer, create a subcontainer generator
+        if is_subcontainer_id(widget_id) and widget_id not in self._subcontainer_generators:
+            self._subcontainer_generators[widget_id] = self._id_generator.create_sub_generator()
+        
+        # Signal ID change if applicable
+        if old_id and old_id != widget_id:
+            self._on_id_changed(old_id, widget_id)
+            self._subscription_manager.notify_id_changed(old_id, widget_id)
+        
+        return widget_id
     
     def register_observable(self, observable: Any, type_code: str, 
                           observable_id: Optional[str] = None) -> str:
@@ -164,8 +177,15 @@ class IDRegistry:
             # Generate new ID
             observable_id = self._id_generator.generate_observable_id(type_code)
         
-        # Register the component
-        self._register_component_id(observable, observable_id)
+        # Store mappings
+        old_id = self._component_to_id_map.get(observable)
+        self._component_to_id_map[observable] = observable_id
+        self._id_to_component_map[observable_id] = observable
+        
+        # Signal ID change if applicable
+        if old_id and old_id != observable_id:
+            self._on_id_changed(old_id, observable_id)
+            self._subscription_manager.notify_id_changed(old_id, observable_id)
         
         return observable_id
     
@@ -214,114 +234,59 @@ class IDRegistry:
             property_id = self._id_generator.generate_observable_property_id(
                 type_code, observable_unique_id, property_name, controller_unique_id)
         
-        # Register the component
-        self._register_component_id(property, property_id)
+        # Store mappings
+        old_id = self._component_to_id_map.get(property)
+        self._component_to_id_map[property] = property_id
+        self._id_to_component_map[property_id] = property
+        
+        # Signal ID change if applicable
+        if old_id and old_id != property_id:
+            self._on_id_changed(old_id, property_id)
+            self._subscription_manager.notify_id_changed(old_id, property_id)
         
         return property_id
     
-    def _register_component_id(self, component: Any, component_id: str) -> None:
+    # -------------------- Subscription methods --------------------
+    
+    def subscribe_to_id(self, component_id: str, callback: Callable[[str, str], None]) -> bool:
         """
-        Register a component with its ID and handle ID changes.
+        Subscribe to changes for a specific component ID.
         
         Args:
-            component: Component to register
-            component_id: ID to associate with the component
-        """
-        # Check for ID change
-        old_id = self._component_to_id_map.get(component)
-        
-        # Store mappings
-        self._component_to_id_map[component] = component_id
-        self._id_to_component_map[component_id] = component
-        
-        # If this is a subcontainer, create a subcontainer generator
-        if is_subcontainer_id(component_id) and component_id not in self._subcontainer_generators:
-            self._subcontainer_generators[component_id] = self._id_generator.create_sub_generator()
-        
-        # Signal ID change if applicable
-        if old_id and old_id != component_id:
-            self._on_id_changed(old_id, component_id)
-    
-    # -------------------- Location management methods --------------------
-    
-    def update_location_from_container(self, widget_id: str, container_id: str, 
-                                      preserve_widget_location_id: bool = False) -> str:
-        """
-        Update a widget's location based on its container.
-        
-        Args:
-            widget_id: Widget ID to update
-            container_id: Container ID
-            preserve_widget_location_id: If True, preserve the original widget location ID
+            component_id: ID to monitor for changes
+            callback: Function to call when ID changes, receives (old_id, new_id)
             
         Returns:
-            Updated widget ID
+            True if subscription added, False if component_id doesn't exist
         """
-        if not is_widget_id(widget_id) or not container_id:
-            return widget_id
+        # Check if the component exists
+        if self.get_widget(component_id) or self.get_observable(component_id) or self.get_observable_property(component_id):
+            # For components, track the object ID for cleanup
+            component = self.get_widget(component_id) or self.get_observable(component_id) or self.get_observable_property(component_id)
+            if component:
+                # Use the object's memory address as a stable identifier
+                object_id = str(id(component))
+                self._subscription_manager.track_object_id(component_id, object_id)
             
-        widget = self.get_widget(widget_id)
-        if not widget:
-            return widget_id
+            return self._subscription_manager.subscribe(component_id, callback)
+        return False
+    
+    def unsubscribe_from_id(self, component_id: str, callback: Optional[Callable] = None) -> bool:
+        """
+        Unsubscribe from changes for a specific component ID.
+        
+        Args:
+            component_id: ID to stop monitoring
+            callback: Specific callback to remove, or None to remove all
             
-        # Get container location
-        container_location = extract_location(container_id)
-        container_location = container_location.replace('-', '/')
-        if container_location == "0":
-            container_location = ""  # Use empty string for root location
-            
-        # Get or create subcontainer generator
-        sub_generator = self._get_subcontainer_generator(container_id)
-        
-        # Extract existing widget location ID if we need to preserve it
-        existing_widget_location_id = None
-        if preserve_widget_location_id:
-            old_location = extract_location(widget_id)
-            if "-" in old_location:
-                existing_widget_location_id = old_location.split("-")[-1]
-                if existing_widget_location_id:
-                    # Register existing ID to prevent future collisions
-                    sub_generator.register_existing_id(existing_widget_location_id)
-        
-        # Generate widget location ID
-        widget_location_id = existing_widget_location_id or sub_generator.generate_location_id()
-        
-        # Create composite location
-        if container_location:
-            final_location = f"{container_location}-{widget_location_id}"
-        else:
-            final_location = f"0-{widget_location_id}"
-        
-        # Update container unique ID
-        container_unique_id = extract_unique_id(container_id)
-        
-        # Update ID
-        updated_widget_id = self._id_generator.update_id(widget_id, container_unique_id, final_location)
-        
-        # Update mappings
-        self._component_to_id_map[widget] = updated_widget_id
-        self._id_to_component_map[updated_widget_id] = widget
-        
-        # Update container locations map
-        parent_container_id = self.get_container_id_from_widget_id(container_id)
-        if parent_container_id:
-            # Get or initialize locations map for parent container
-            if parent_container_id not in self._container_locations_map:
-                self._container_locations_map[parent_container_id] = {}
-            
-            # Store subcontainer location
-            subcontainer_location = container_location if container_location else "0"
-            self._container_locations_map[parent_container_id][container_id] = subcontainer_location
-        
-        # Remove old ID mapping if different
-        if updated_widget_id != widget_id:
-            if widget_id in self._id_to_component_map:
-                del self._id_to_component_map[widget_id]
-            
-            # Signal ID change
-            self._on_id_changed(widget_id, updated_widget_id)
-        
-        return updated_widget_id
+        Returns:
+            True if unsubscribed successfully, False if not found
+        """
+        return self._subscription_manager.unsubscribe(component_id, callback)
+    
+    def clear_subscriptions(self) -> None:
+        """Clear all ID subscriptions."""
+        self._subscription_manager.clear()
     
     # -------------------- Subcontainer methods --------------------
     
@@ -613,6 +578,80 @@ class IDRegistry:
                 
         return property_ids
     
+    def get_property_ids_by_observable_id_and_property_name(self, observable_id: str, 
+                                                         property_name: str) -> List[str]:
+        """
+        Get all property IDs for an observable with a specific property name.
+        
+        Args:
+            observable_id: Observable ID
+            property_name: Property name
+            
+        Returns:
+            List of property IDs matching the criteria
+        """
+        if not observable_id or not property_name:
+            return []
+            
+        # Extract observable unique ID
+        observable_unique_id = extract_unique_id(observable_id)
+        
+        # Find all properties with this observable and property name
+        property_ids = []
+        for component_id in self._id_to_component_map.keys():
+            if (is_observable_property_id(component_id) and 
+                extract_observable_unique_id(component_id) == observable_unique_id and
+                extract_property_name(component_id) == property_name):
+                property_ids.append(component_id)
+                
+        return property_ids
+    
+    def get_controller_id_from_property_id(self, property_id: str) -> Optional[str]:
+        """
+        Get the controller widget ID for a property.
+        
+        Args:
+            property_id: Property ID
+            
+        Returns:
+            Controller widget ID or None if no controller
+        """
+        if not is_observable_property_id(property_id):
+            return None
+            
+        # Extract controller unique ID
+        controller_unique_id = extract_controller_unique_id(property_id)
+        if controller_unique_id == "0":
+            return None
+            
+        # Look up full controller ID
+        return self.get_full_id_from_unique_id(controller_unique_id)
+    
+    def get_property_ids_by_controller_id(self, controller_id: str) -> List[str]:
+        """
+        Get all property IDs controlled by a widget.
+        
+        Args:
+            controller_id: Controller widget ID
+            
+        Returns:
+            List of property IDs controlled by the widget
+        """
+        if not controller_id:
+            return []
+            
+        # Extract controller unique ID
+        controller_unique_id = extract_unique_id(controller_id)
+        
+        # Find all properties with this controller
+        property_ids = []
+        for component_id in self._id_to_component_map.keys():
+            if (is_observable_property_id(component_id) and 
+                extract_controller_unique_id(component_id) == controller_unique_id):
+                property_ids.append(component_id)
+                
+        return property_ids
+    
     # -------------------- Update methods --------------------
     def update_id(self, old_id: str, new_id: str) -> Optional[str]:
         """
@@ -701,7 +740,6 @@ class IDRegistry:
                 
         elif is_observable_property_id(old_id):
             # For observable properties
-            
             # No additional references to update
             pass
             
@@ -715,6 +753,9 @@ class IDRegistry:
             
         # Signal ID change
         self._on_id_changed(old_id, new_id)
+        
+        # Notify subscribers
+        self._subscription_manager.notify_id_changed(old_id, new_id)
         
         return new_id
     
@@ -737,34 +778,222 @@ class IDRegistry:
         if not widget:
             return False
             
+        # Extract new container unique ID
+        container_unique_id = "0"
         if new_container_id:
-            # Using the new update_location_from_container
-            updated_widget_id = self.update_location_from_container(widget_id, new_container_id, True)
-            return updated_widget_id != widget_id  # Success if ID was changed
-        else:
-            # Remove container reference
-            container_unique_id = "0"
+            container_unique_id = extract_unique_id(new_container_id)
             
-            # Preserve the original location
-            current_location = extract_location(widget_id)
-                
-            # Update ID
-            updated_widget_id = self._id_generator.update_id(
-                widget_id, container_unique_id, current_location)
-                
-            # Update mappings
-            self._component_to_id_map[widget] = updated_widget_id
-            self._id_to_component_map[updated_widget_id] = widget
+        # Preserve the original location
+        current_location = extract_location(widget_id)
             
-            # Remove old ID mapping if different
-            if updated_widget_id != widget_id:
-                if widget_id in self._id_to_component_map:
-                    del self._id_to_component_map[widget_id]
-                
-                # Signal ID change
-                self._on_id_changed(widget_id, updated_widget_id)
-                
-            return True
+        # Update ID
+        updated_widget_id = self._id_generator.update_id(
+            widget_id, container_unique_id, current_location)
+            
+        # Update mappings
+        old_id = widget_id
+        self._component_to_id_map[widget] = updated_widget_id
+        self._id_to_component_map[updated_widget_id] = widget
+        
+        # Remove old ID mapping if different
+        if updated_widget_id != old_id:
+            if old_id in self._id_to_component_map:
+                del self._id_to_component_map[old_id]
+            
+            # Signal ID change
+            self._on_id_changed(old_id, updated_widget_id)
+            
+            # Notify subscribers
+            self._subscription_manager.notify_id_changed(old_id, updated_widget_id)
+            
+        return True
+    
+    def update_location(self, widget_id: str, new_location: str) -> bool:
+        """
+        Update the location for a widget.
+        
+        Args:
+            widget_id: Widget ID to update
+            new_location: New location
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not is_widget_id(widget_id):
+            return False
+            
+        # Get the widget
+        widget = self.get_widget(widget_id)
+        if not widget:
+            return False
+        
+        # Determine container ID
+        container_id = self.get_container_id_from_widget_id(widget_id)
+        
+        # Process location based on whether it has widget_location_id
+        final_location = new_location
+        
+        # If we have a container and the location doesn't include a separator
+        if container_id and is_subcontainer_id(container_id) and "-" not in new_location:
+            # Need to generate a widget location ID
+            sub_generator = self._get_subcontainer_generator(container_id)
+            widget_location_id = extract_unique_id(sub_generator.generate_observable_id("tmp"))
+            final_location = f"{new_location}-{widget_location_id}"
+            
+        # Update ID
+        updated_widget_id = self._id_generator.update_id(
+            widget_id, None, final_location)
+            
+        # Update mappings
+        old_id = widget_id
+        self._component_to_id_map[widget] = updated_widget_id
+        self._id_to_component_map[updated_widget_id] = widget
+        
+        # Remove old ID mapping if different
+        if updated_widget_id != widget_id:
+            if widget_id in self._id_to_component_map:
+                del self._id_to_component_map[widget_id]
+            
+            # Signal ID change
+            self._on_id_changed(widget_id, updated_widget_id)
+            
+            # Notify subscribers
+            self._subscription_manager.notify_id_changed(widget_id, updated_widget_id)
+            
+        return True
+    
+    def update_observable_id(self, property_id: str, new_observable_id: Optional[str]) -> bool:
+        """
+        Update the observable ID for a property.
+        
+        Args:
+            property_id: Property ID to update
+            new_observable_id: New observable ID or None to remove observable
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not is_observable_property_id(property_id):
+            return False
+            
+        # Get the property
+        property = self.get_observable_property(property_id)
+        if not property:
+            return False
+            
+        # Extract new observable unique ID
+        observable_unique_id = "0"
+        if new_observable_id:
+            observable_unique_id = extract_unique_id(new_observable_id)
+            
+        # Update ID
+        updated_property_id = self._id_generator.update_observable_property_id(
+            property_id, observable_unique_id, None, None)
+            
+        # Update mappings
+        old_id = property_id
+        self._component_to_id_map[property] = updated_property_id
+        self._id_to_component_map[updated_property_id] = property
+        
+        # Remove old ID mapping if different
+        if updated_property_id != property_id:
+            if property_id in self._id_to_component_map:
+                del self._id_to_component_map[property_id]
+            
+            # Signal ID change
+            self._on_id_changed(property_id, updated_property_id)
+            
+            # Notify subscribers
+            self._subscription_manager.notify_id_changed(property_id, updated_property_id)
+            
+        return True
+    
+    def update_property_name(self, property_id: str, new_property_name: str) -> bool:
+        """
+        Update the property name for a property.
+        
+        Args:
+            property_id: Property ID to update
+            new_property_name: New property name
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not is_observable_property_id(property_id):
+            return False
+            
+        # Get the property
+        property = self.get_observable_property(property_id)
+        if not property:
+            return False
+            
+        # Update ID
+        updated_property_id = self._id_generator.update_observable_property_id(
+            property_id, None, new_property_name, None)
+            
+        # Update mappings
+        old_id = property_id
+        self._component_to_id_map[property] = updated_property_id
+        self._id_to_component_map[updated_property_id] = property
+        
+        # Remove old ID mapping if different
+        if updated_property_id != property_id:
+            if property_id in self._id_to_component_map:
+                del self._id_to_component_map[property_id]
+            
+            # Signal ID change
+            self._on_id_changed(property_id, updated_property_id)
+            
+            # Notify subscribers
+            self._subscription_manager.notify_id_changed(property_id, updated_property_id)
+            
+        return True
+    
+    def update_controller_id(self, property_id: str, new_controller_id: Optional[str]) -> bool:
+        """
+        Update the controller ID for a property.
+        
+        Args:
+            property_id: Property ID to update
+            new_controller_id: New controller ID or None to remove controller
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if not is_observable_property_id(property_id):
+            return False
+            
+        # Get the property
+        property = self.get_observable_property(property_id)
+        if not property:
+            return False
+            
+        # Extract new controller unique ID
+        controller_unique_id = "0"
+        if new_controller_id:
+            controller_unique_id = extract_unique_id(new_controller_id)
+            
+        # Update ID
+        updated_property_id = self._id_generator.update_observable_property_id(
+            property_id, None, None, controller_unique_id)
+            
+        # Update mappings
+        old_id = property_id
+        self._component_to_id_map[property] = updated_property_id
+        self._id_to_component_map[updated_property_id] = property
+        
+        # Remove old ID mapping if different
+        if updated_property_id != property_id:
+            if property_id in self._id_to_component_map:
+                del self._id_to_component_map[property_id]
+            
+            # Signal ID change
+            self._on_id_changed(property_id, updated_property_id)
+            
+            # Notify subscribers
+            self._subscription_manager.notify_id_changed(property_id, updated_property_id)
+            
+        return True
     
     def remove_container_reference(self, widget_id: str) -> Optional[str]:
         """
@@ -844,11 +1073,12 @@ class IDRegistry:
                 for container_id, locations_map in self._container_locations_map.items():
                     if component_id in locations_map:
                         del locations_map[component_id]
-                
-                # Remove container's own locations map if it exists
-                if component_id in self._container_locations_map:
-                    del self._container_locations_map[component_id]
             
+            # Clean up object subscriptions
+            if component:
+                object_id = str(id(component))
+                self._subscription_manager.object_unregistered(object_id)
+                
             # Call widget unregister callback
             self._on_widget_unregister(component_id)
                 
@@ -867,6 +1097,11 @@ class IDRegistry:
                     # Remove observable reference
                     self.remove_observable_reference(property_id)
                     
+            # Clean up object subscriptions
+            if component:
+                object_id = str(id(component))
+                self._subscription_manager.object_unregistered(object_id)
+                
             # Call observable unregister callback
             self._on_observable_unregister(component_id)
                 
@@ -874,6 +1109,11 @@ class IDRegistry:
             component = self.get_observable_property(component_id)
             if not component:
                 return False
+                
+            # Clean up object subscriptions
+            if component:
+                object_id = str(id(component))
+                self._subscription_manager.object_unregistered(object_id)
                 
             # Call property unregister callback
             self._on_property_unregister(component_id)
@@ -924,262 +1164,7 @@ class IDRegistry:
             callback: Function to call when an ID changes (old_id, new_id)
         """
         self._on_id_changed = callback
-    
-    def update_location(self, widget_id: str, new_location: str) -> bool:
-        """
-        Update the location for a widget.
-        
-        Args:
-            widget_id: Widget ID to update
-            new_location: New location
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        if not is_widget_id(widget_id):
-            return False
-            
-        # Get the widget
-        widget = self.get_widget(widget_id)
-        if not widget:
-            return False
-        
-        # Determine container ID
-        container_id = self.get_container_id_from_widget_id(widget_id)
-        
-        # Process location based on whether it has widget_location_id
-        final_location = new_location
-        
-        # If we have a container and the location doesn't include a separator
-        if container_id and "-" not in new_location:
-            # First, check if this is already a fully qualified location
-            if "/" in new_location and new_location.count("/") > 0:
-                # This might be a hierarchical path, so let's try to use it directly
-                pass
-            else:
-                # Need to generate a widget location ID
-                sub_generator = self._get_subcontainer_generator(container_id)
-                widget_location_id = sub_generator.generate_location_id()
-                final_location = f"{new_location}-{widget_location_id}"
-        elif "-" not in new_location:
-            # No container, use default generator
-            sub_generator = self._get_subcontainer_generator("0")
-            widget_location_id = sub_generator.generate_location_id()
-            final_location = f"{new_location}-{widget_location_id}"
-        
-        # Update ID
-        updated_widget_id = self._id_generator.update_id(
-            widget_id, None, final_location)
-            
-        # Update mappings
-        self._component_to_id_map[widget] = updated_widget_id
-        self._id_to_component_map[updated_widget_id] = widget
-        
-        # Remove old ID mapping if different
-        if updated_widget_id != widget_id:
-            if widget_id in self._id_to_component_map:
-                del self._id_to_component_map[widget_id]
-            
-            # Signal ID change
-            self._on_id_changed(widget_id, updated_widget_id)
-            
-        return True
-    
-    def update_observable_id(self, property_id: str, new_observable_id: Optional[str]) -> bool:
-        """
-        Update the observable ID for a property.
-        
-        Args:
-            property_id: Property ID to update
-            new_observable_id: New observable ID or None to remove observable
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        if not is_observable_property_id(property_id):
-            return False
-            
-        # Get the property
-        property = self.get_observable_property(property_id)
-        if not property:
-            return False
-            
-        # Extract new observable unique ID
-        observable_unique_id = "0"
-        if new_observable_id:
-            observable_unique_id = extract_unique_id(new_observable_id)
-            
-        # Update ID
-        updated_property_id = self._id_generator.update_observable_property_id(
-            property_id, observable_unique_id, None, None)
-            
-        # Update mappings
-        self._component_to_id_map[property] = updated_property_id
-        self._id_to_component_map[updated_property_id] = property
-        
-        # Remove old ID mapping if different
-        if updated_property_id != property_id:
-            if property_id in self._id_to_component_map:
-                del self._id_to_component_map[property_id]
-            
-            # Signal ID change
-            self._on_id_changed(property_id, updated_property_id)
-            
-        return True
-    
-    def update_property_name(self, property_id: str, new_property_name: str) -> bool:
-        """
-        Update the property name for a property.
-        
-        Args:
-            property_id: Property ID to update
-            new_property_name: New property name
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        if not is_observable_property_id(property_id):
-            return False
-            
-        # Get the property
-        property = self.get_observable_property(property_id)
-        if not property:
-            return False
-            
-        # Update ID
-        updated_property_id = self._id_generator.update_observable_property_id(
-            property_id, None, new_property_name, None)
-            
-        # Update mappings
-        self._component_to_id_map[property] = updated_property_id
-        self._id_to_component_map[updated_property_id] = property
-        
-        # Remove old ID mapping if different
-        if updated_property_id != property_id:
-            if property_id in self._id_to_component_map:
-                del self._id_to_component_map[property_id]
-            
-            # Signal ID change
-            self._on_id_changed(property_id, updated_property_id)
-            
-        return True
-    
-    def update_controller_id(self, property_id: str, new_controller_id: Optional[str]) -> bool:
-        """
-        Update the controller ID for a property.
-        
-        Args:
-            property_id: Property ID to update
-            new_controller_id: New controller ID or None to remove controller
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        if not is_observable_property_id(property_id):
-            return False
-            
-        # Get the property
-        property = self.get_observable_property(property_id)
-        if not property:
-            return False
-            
-        # Extract new controller unique ID
-        controller_unique_id = "0"
-        if new_controller_id:
-            controller_unique_id = extract_unique_id(new_controller_id)
-            
-        # Update ID
-        updated_property_id = self._id_generator.update_observable_property_id(
-            property_id, None, None, controller_unique_id)
-            
-        # Update mappings
-        self._component_to_id_map[property] = updated_property_id
-        self._id_to_component_map[updated_property_id] = property
-        
-        # Remove old ID mapping if different
-        if updated_property_id != property_id:
-            if property_id in self._id_to_component_map:
-                del self._id_to_component_map[property_id]
-            
-            # Signal ID change
-            self._on_id_changed(property_id, updated_property_id)
-            
-        return True
-    
-    def get_property_ids_by_observable_id_and_property_name(self, observable_id: str, 
-                                                         property_name: str) -> List[str]:
-        """
-        Get all property IDs for an observable with a specific property name.
-        
-        Args:
-            observable_id: Observable ID
-            property_name: Property name
-            
-        Returns:
-            List of property IDs matching the criteria
-        """
-        if not observable_id or not property_name:
-            return []
-            
-        # Extract observable unique ID
-        observable_unique_id = extract_unique_id(observable_id)
-        
-        # Find all properties with this observable and property name
-        property_ids = []
-        for component_id in self._id_to_component_map.keys():
-            if (is_observable_property_id(component_id) and 
-                extract_observable_unique_id(component_id) == observable_unique_id and
-                extract_property_name(component_id) == property_name):
-                property_ids.append(component_id)
-                
-        return property_ids
-    
-    def get_controller_id_from_property_id(self, property_id: str) -> Optional[str]:
-        """
-        Get the controller widget ID for a property.
-        
-        Args:
-            property_id: Property ID
-            
-        Returns:
-            Controller widget ID or None if no controller
-        """
-        if not is_observable_property_id(property_id):
-            return None
-            
-        # Extract controller unique ID
-        controller_unique_id = extract_controller_unique_id(property_id)
-        if controller_unique_id == "0":
-            return None
-            
-        # Look up full controller ID
-        return self.get_full_id_from_unique_id(controller_unique_id)
-    
-    def get_property_ids_by_controller_id(self, controller_id: str) -> List[str]:
-        """
-        Get all property IDs controlled by a widget.
-        
-        Args:
-            controller_id: Controller widget ID
-            
-        Returns:
-            List of property IDs controlled by the widget
-        """
-        if not controller_id:
-            return []
-            
-        # Extract controller unique ID
-        controller_unique_id = extract_unique_id(controller_id)
-        
-        # Find all properties with this controller
-        property_ids = []
-        for component_id in self._id_to_component_map.keys():
-            if (is_observable_property_id(component_id) and 
-                extract_controller_unique_id(component_id) == controller_unique_id):
-                property_ids.append(component_id)
-                
-        return property_ids
-    
+
 def get_id_registry():
     """
     Get the singleton ID registry instance.
@@ -1188,3 +1173,35 @@ def get_id_registry():
         IDRegistry singleton instance
     """
     return IDRegistry.get_instance()
+
+# Helper functions for the subscription system
+
+def subscribe_to_id(component_id: str, callback: Callable[[str, str], None]) -> bool:
+    """
+    Subscribe to changes for a specific component ID.
+    
+    Args:
+        component_id: ID to monitor for changes
+        callback: Function to call when ID changes, receives (old_id, new_id)
+        
+    Returns:
+        True if subscription added, False if component_id doesn't exist
+    """
+    return get_id_registry().subscribe_to_id(component_id, callback)
+
+def unsubscribe_from_id(component_id: str, callback: Optional[Callable] = None) -> bool:
+    """
+    Unsubscribe from changes for a specific component ID.
+    
+    Args:
+        component_id: ID to stop monitoring
+        callback: Specific callback to remove, or None to remove all
+        
+    Returns:
+        True if unsubscribed successfully, False if not found
+    """
+    return get_id_registry().unsubscribe_from_id(component_id, callback)
+
+def clear_subscriptions() -> None:
+    """Clear all ID subscriptions."""
+    get_id_registry().clear_subscriptions()

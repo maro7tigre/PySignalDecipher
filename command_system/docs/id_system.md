@@ -13,11 +13,11 @@ The ID system creates and manages unique identifiers that encode type, hierarchy
 [type_code]:[unique_id]:[container_unique_id]:[location]
 ```
 
-Where `location` uses a composite format: `[subcontainer_path]-[widget_location_id]`
+Where `location` uses a composite format: `[subcontainer_location]-[widget_location_id]`
 
 Examples:
-- `le:1Z:0:0-2A` - A line edit widget with no container (at root location 0 with widget ID 2A)
-- `t:2J:0:1-3B` - A tab container (in slot 1 with widget ID 3B) with no parent
+- `le:1Z:0:0` - A line edit widget with no container
+- `t:2J:0:1` - A tab container (in slot 1) with no parent
 - `pb:3a:2J:2-4b` - A push button widget in a subcontainer at location 2, with widget location ID 4b
 - `cb:5c:3a:2/1-7d` - A checkbox in a deeply nested container at path 2/1 with widget location ID 7d
 
@@ -45,17 +45,17 @@ Each container can have subcontainers (tabs, docks, etc.) which have their own l
 Each subcontainer has its own ID generator for creating stable widget location IDs.
 
 ```
-Container (t:1A:0:0-5X)
-  ├── Subcontainer 1 (t:2B:1A:0-1Y)
-  │     ├── Widget 1-1 (pb:3C:2B:0-1Z)
-  │     ├── Widget 1-2 (le:4D:2B:0-2A)
-  │     └── Nested Container (d:8H:2B:0/1-3B)
-  │           ├── Nested Widget 1 (pb:9I:8H:0/1-1C)
-  │           └── Nested Widget 2 (le:10J:8H:0/1-2D)
+Container (t:1A:0:0)
+  ├── Subcontainer 1 (t:2B:1A:0-1)
+  │     ├── Widget 1-1 (pb:3C:2B:0-1)
+  │     ├── Widget 1-2 (le:4D:2B:0-2)
+  │     └── Nested Container (d:8H:2B:0/1-3)
+  │           ├── Nested Widget 1 (pb:9I:8H:0/1-1)
+  │           └── Nested Widget 2 (le:10J:8H:0/1-2)
   │
-  └── Subcontainer 2 (t:5E:1A:1-1E)
-        ├── Widget 2-1 (pb:6F:5E:1-1F)
-        └── Widget 2-2 (le:7G:5E:1-2G)
+  └── Subcontainer 2 (t:5E:1A:1-1)
+        ├── Widget 2-1 (pb:6F:5E:1-1)
+        └── Widget 2-2 (le:7G:5E:1-2)
 ```
 
 This hierarchical approach supports arbitrarily deep nesting of containers, with each level maintaining its own location context.
@@ -80,7 +80,6 @@ This hierarchical approach supports arbitrarily deep nesting of containers, with
 - `set_locations_map(container_id, locations_map)` - Set locations map for a container
 - `get_widgets_at_subcontainer_location(container_id, subcontainer_location)` - Get widgets at a specific location
 - `get_subcontainer_id_at_location(container_id, location)` - Get subcontainer at a specific location
-- `update_location_from_container(widget_id, container_id, preserve_widget_location_id)` - Update a widget's location based on its container
 
 ### ID-Based Relationship Queries
 - `get_container_id_from_widget_id(widget_id)`
@@ -108,6 +107,11 @@ This hierarchical approach supports arbitrarily deep nesting of containers, with
 - `set_on_observable_unregister(callback)`
 - `set_on_property_unregister(callback)`
 - `set_on_id_changed(callback)` - Set callback for ID changes
+
+### Subscription Methods
+- `subscribe_to_id(component_id, callback)` - Subscribe to ID changes
+- `unsubscribe_from_id(component_id, callback=None)` - Unsubscribe from ID changes
+- `clear_subscriptions()` - Clear all ID subscriptions
 
 ### Utility Functions
 
@@ -173,8 +177,7 @@ name = registry.get_name("wt:1")             # "welcome_tab"
 
 # Check registration and unregister
 is_reg = registry.is_registered("welcome_tab")   # True
-registry.unregister_by_name("welcome_tab")       # True
-registry.unregister_by_id("wt:1")                # True
+registry.unregister("welcome_tab")               # True
 ```
 
 ## Using with Containers
@@ -200,23 +203,15 @@ button_id = get_id_registry().register(button, TypeCodes.PUSH_BUTTON,
 ### Working with Location IDs
 
 ```python
-# Get a subcontainer generator for custom location IDs
+# Generate a location ID for a widget in a subcontainer
 sub_generator = registry._get_subcontainer_generator(container_id)
-
-# Generate a unique widget location ID
-widget_location_id = sub_generator.generate_location_id()
-
-# Create a location with this ID
-location = f"0-{widget_location_id}"
+location = sub_generator.generate_location_id("0")  # "0-1"
 
 # Create a widget with this location
 button_id = registry.register(button, TypeCodes.PUSH_BUTTON, None, container_id, location)
 
-# Update a widget's location
-registry.update_location(button_id, "1")  # Will generate a new location like "1-<ID>"
-
-# Update location based on container
-registry.update_location_from_container(button_id, container_id)
+# Update a widget location
+registry.update_location(button_id, "1")  # Will generate new widget location ID
 ```
 
 ### Hierarchical Locations
@@ -227,12 +222,7 @@ Locations use a composite format:
 
 When registering:
 - If you provide a full location with widget_id part, it will be used as is
-- If you provide only a subcontainer path, a widget_id will be generated using the subcontainer's generator
-- If no location is provided, the system will generate a default location with the subcontainer's generator
-
-When updating a widget's container:
-- The system will automatically update the location to match the new container's hierarchy
-- You can preserve the original widget location ID part if needed
+- If you provide only a subcontainer path, a widget_id will be generated
 
 ### Container Navigation
 
@@ -277,6 +267,79 @@ When updating an ID:
 - All location maps are updated
 - All property bindings are maintained
 - The ID registry's change callback is triggered
+
+## ID Subscription System
+
+The ID subscription system allows you to monitor changes to component IDs and receive notifications when IDs are updated through any method, including `update_id`, `update_container_id`, `update_location`, etc.
+
+### Subscribing to ID Changes
+
+```python
+from command_system.id_system import subscribe_to_id, unsubscribe_from_id, clear_subscriptions
+
+# Subscribe to changes for a widget ID
+def on_widget_id_changed(old_id, new_id):
+    print(f"Widget ID changed: {old_id} -> {new_id}")
+    
+subscribe_to_id("pb:3a:2J:2-4b", on_widget_id_changed)
+
+# Subscribe to changes for an observable ID
+def on_observable_id_changed(old_id, new_id):
+    print(f"Observable ID changed: {old_id} -> {new_id}")
+    
+subscribe_to_id("o:4C", on_observable_id_changed)
+```
+
+### Unsubscribing from ID Changes
+
+```python
+# Unsubscribe a specific callback
+unsubscribe_from_id("pb:3a:2J:2-4b", on_widget_id_changed)
+
+# Unsubscribe all callbacks for an ID
+unsubscribe_from_id("o:4C")
+
+# Clear all subscriptions
+clear_subscriptions()
+```
+
+### Automatic Subscription Cleanup
+
+Subscriptions are automatically cleaned up when components are unregistered, so you don't need to manually unsubscribe when removing widgets, observables, or properties.
+
+### Use Cases
+
+The ID subscription system is useful for:
+
+1. **Tracking widget movement**: Monitor when widgets are moved between containers
+2. **Property binding maintenance**: Update bindings when property IDs change
+3. **UI synchronization**: Update UI elements when their underlying components change
+4. **Serialization**: Keep serialized references up-to-date
+
+### Example: Container Navigation
+
+```python
+# Monitor a specific tab
+def on_tab_moved(old_id, new_id):
+    print(f"Tab moved: {old_id} -> {new_id}")
+    # Update UI navigation
+    my_ui.navigateTo(new_id)
+    
+tab_id = "t:2J:0:1"
+subscribe_to_id(tab_id, on_tab_moved)
+```
+
+### Example: Observable Property Tracking
+
+```python
+# Keep track of property changes in a table model
+def track_property(old_id, new_id):
+    # Update references in table model
+    table_model.update_column_reference(old_id, new_id)
+    
+property_id = "op:5D:4C:name:0"
+subscribe_to_id(property_id, track_property)
+```
 
 ## Type Codes Reference
 
