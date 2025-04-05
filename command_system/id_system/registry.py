@@ -679,28 +679,19 @@ class IDRegistry:
             
         # Get the component
         component = None
-        print(old_id)
         if is_widget_id(old_id):
-            print("widget")
             component = self.get_widget(old_id)
         elif is_observable_id(old_id):
-            print("observable")
             component = self.get_observable(old_id)
         elif is_observable_property_id(old_id):
-            print("observable property")
             component = self.get_observable_property(old_id)
-        else :
-            print("Unknown type")
-            return old_id  # Unknown type
             
         if not component:
-            print("Component not found")
-            return old_id  # Component not found
+            return None  # Component not found
             
         # Check new ID type matches old ID type
         if extract_type_code(old_id) != extract_type_code(new_id):
-            print("Type codes must match")
-            return old_id  # Type codes must match
+            return None  # Type codes must match
         
         # Handle based on component type
         if is_widget_id(old_id):

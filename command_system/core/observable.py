@@ -382,9 +382,7 @@ class Observable:
             id_registry.update_id(self._id, data.get('observable_id'))
             
         if property_id != data.get('property_id'):
-            print(f'will update property_id: {property_id} to {data.get("property_id")}')
             property_id = id_registry.update_id(property_id, data.get('property_id'))
-            print(f"Updated property_id: {property_id}")
         
         # Get property name and value
         property_name = data.get('property_name')
