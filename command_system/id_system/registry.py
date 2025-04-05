@@ -409,6 +409,8 @@ class IDRegistry:
         Returns:
             Observable or None if not found
         """
+        if observable_id is None:
+            return None
         if not is_observable_id(observable_id):
             return None
         return self._id_to_component_map.get(observable_id)

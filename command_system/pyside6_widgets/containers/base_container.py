@@ -528,16 +528,16 @@ class BaseCommandContainer(BaseCommandWidget):
         
         # Get current children IDs
         current_children = id_registry.get_widget_ids_by_container_id(subcontainer_id)
-        
+        print("=========================")
         # Find matching children
-        for child_data in children_data:
+        for child_id, child_data in children_data.items():
             found = False
             sucess = False
             for currennt_child_id in current_children:
                 if child_data['location'] == extract_location(currennt_child_id):
                     child = id_registry.get_widget(currennt_child_id)
                     if child and hasattr(child, 'deserialize'):
-                        child.deserialize(children_data)
+                        child.deserialize(child_data)
                         sucess = True
                     found = True
                     break                    

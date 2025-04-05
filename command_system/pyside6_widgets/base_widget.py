@@ -384,6 +384,7 @@ class BaseCommandWidget:
         for _, property_id in self._controlled_properties.items():
             #TODO: a better tracking of controlled properties observables
             observable_id = id_registry.get_observable_id_from_property_id(property_id)
+            print(observable_id)
             observable = id_registry.get_observable(observable_id)
             
             current_property_name = extract_property_name(property_id)

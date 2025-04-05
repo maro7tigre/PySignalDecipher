@@ -364,7 +364,7 @@ class Observable:
             'observable_id': self.get_id()
         }
     
-    def deserialize_property(self, property_id: str, data: Dict[str, Any], observable_id: str) -> bool:
+    def deserialize_property(self, property_id: str, data: Dict[str, Any]) -> bool:
         """
         Deserialize property data and apply it to this observable.
         
@@ -378,8 +378,8 @@ class Observable:
         # Validate property_id matches data
         id_registry = get_id_registry()
         
-        if observable_id != data.get('observable_id'):
-            observable_id = id_registry.update_id(observable_id, data.get('observable_id'))
+        if self._id != data.get('observable_id'):
+            id_registry.update_id(self._id, data.get('observable_id'))
             
         if property_id != data.get('property_id'):
             property_id = id_registry.update_id(property_id, data.get('property_id'))
