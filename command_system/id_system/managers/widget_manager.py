@@ -94,12 +94,11 @@ class WidgetManager:
                 container_components = parse_widget_id(container_widget_id)
                 if container_components:
                     # Use the container's full path
-                    component_loc = container_components['container_location']
-                    component_widget_loc = container_components['widget_location_id']
-                    if component_loc == DEFAULT_ROOT_LOCATION:
-                        container_location = component_widget_loc
-                    else:
-                        container_location = f"{component_loc}{PATH_SEPARATOR}{component_widget_loc}"
+                    container_loc = container_components['container_location']
+                    container_widget_loc = container_components['widget_location_id']
+                    
+                    # Construct the proper path including the parent's location
+                    container_location = f"{container_loc}{PATH_SEPARATOR}{container_widget_loc}"
                 else:
                     container_location = DEFAULT_ROOT_LOCATION
             else:
@@ -261,12 +260,11 @@ class WidgetManager:
                 container_components = parse_widget_id(container_widget_id)
                 if container_components:
                     # Use the container's full path
-                    component_loc = container_components['container_location']
-                    component_widget_loc = container_components['widget_location_id']
-                    if component_loc == DEFAULT_ROOT_LOCATION:
-                        new_container_location = component_widget_loc
-                    else:
-                        new_container_location = f"{component_loc}{PATH_SEPARATOR}{component_widget_loc}"
+                    container_loc = container_components['container_location']
+                    container_widget_loc = container_components['widget_location_id']
+                    
+                    # Construct the proper path including the parent's location
+                    new_container_location = f"{container_loc}{PATH_SEPARATOR}{container_widget_loc}"
                 else:
                     new_container_location = DEFAULT_ROOT_LOCATION
             else:

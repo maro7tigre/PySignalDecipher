@@ -229,7 +229,7 @@ class TestIDSystem:
         
         # Container location should be the container's widget_location_id
         container_components = parse_widget_id(container_id)
-        expected_location = container_components['widget_location_id']
+        expected_location = container_components['container_location']+"/"+container_components['widget_location_id']
         assert components['container_location'] == expected_location
         
         # Should generate a new widget_location_id (usually "1" for first widget)
@@ -304,7 +304,7 @@ class TestIDSystem:
         
         # Container location should be updated to match container2's path
         container2_components = parse_widget_id(container2_id)
-        expected_location = container2_components['widget_location_id']
+        expected_location = container2_components['container_unique_id']+"/"+container2_components['widget_location_id']
         assert updated_components['container_location'] == expected_location
     
     def test_update_container_with_collision(self):
@@ -410,19 +410,19 @@ class TestIDSystem:
         assert main_components['container_location'] == "0"
         
         # Tab container's container_location is main container's widget_location_id
-        assert tab_components['container_location'] == main_components['widget_location_id']
+        assert tab_components['container_location'] == main_components['container_location']+"/"+main_components['widget_location_id']
         
         # Dock container's container_location is tab container's widget_location_id
-        assert dock_components['container_location'] == tab_components['widget_location_id']
+        assert dock_components['container_location'] == tab_components['container_location']+"/"+tab_components['widget_location_id']
         
         # Button1's container_location is the same as main_id's widget_location_id
-        assert button1_components['container_location'] == main_components['widget_location_id']
+        assert button1_components['container_location'] == main_components['container_location']+"/"+main_components['widget_location_id']
         
         # Button2's container_location is the same as tab_id's widget_location_id
-        assert button2_components['container_location'] == tab_components['widget_location_id']
+        assert button2_components['container_location'] == tab_components['container_location']+"/"+tab_components['widget_location_id']
         
         # Button3's container_location is the same as dock_id's widget_location_id
-        assert button3_components['container_location'] == dock_components['widget_location_id']
+        assert button3_components['container_location'] == dock_components['container_location']+"/"+dock_components['widget_location_id']
 
     #MARK: - Observable and Property Tests
     
