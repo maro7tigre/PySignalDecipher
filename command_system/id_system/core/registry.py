@@ -15,7 +15,7 @@ from command_system.id_system.core.parser import (
     create_observable_id,
     create_property_id
 )
-from command_system.id_system.managers.widget_manager import WidgetManager
+from command_system.id_system.managers.widget_manager import WidgetManager, IDRegistrationError
 from command_system.id_system.managers.observable_manager import ObservableManager
 from command_system.id_system.managers.subscription_manager import (
     subscribe_to_id,
@@ -94,11 +94,13 @@ class IDRegistry:
             type_code: The widget type code
             widget_id: Optional full widget ID or unique ID (default: None, will be generated)
             container_id: The container's full ID (default: None, will use root container)
-            location: The location or widget_location_id within the container 
-                     (default: None, will use root location)
+            location: The widget_location_id (default: None, will be generated)
             
         Returns:
             str: The generated widget ID
+            
+        Raises:
+            IDRegistrationError: If the widget_location_id already exists in the container location
         """
         # Extract unique ID if full widget ID is provided
         unique_id = None
@@ -118,19 +120,20 @@ class IDRegistry:
         # Determine container ID
         final_container_id = container_id if container_id else DEFAULT_ROOT_CONTAINER_ID
         
-        # Determine location
-        widget_location = location
-        
         # Register with the widget manager
-        widget_id = self._widget_manager.register_widget(
-            widget,
-            type_code,
-            unique_id,
-            final_container_id,
-            widget_location
-        )
-        
-        return widget_id
+        try:
+            widget_id = self._widget_manager.register_widget(
+                widget,
+                type_code,
+                unique_id,
+                final_container_id,
+                location
+            )
+            return widget_id
+        except IDRegistrationError as e:
+            # Unregister the unique ID since registration failed
+            self._id_generator.unregister(unique_id)
+            raise e
     
     def register_observable(self, observable, type_code, observable_id=None):
         """
@@ -419,48 +422,62 @@ class IDRegistry:
             
         Returns:
             str: The updated widget ID
+            
+        Raises:
+            IDRegistrationError: If the widget_location_id already exists in the new container location
         """
         # Extract container unique ID if full ID provided
         new_container_unique_id = new_container_id
         if ID_SEPARATOR in new_container_id:
             new_container_unique_id = get_unique_id_from_id(new_container_id)
-            
-        old_id = widget_id
-        new_id = self._widget_manager.update_widget_container(widget_id, new_container_unique_id)
         
-        # Notify subscribers if ID changed
-        if old_id != new_id:
-            self._subscription_manager.notify(old_id, new_id)
+        try:    
+            old_id = widget_id
+            new_id = self._widget_manager.update_widget_container(widget_id, new_container_unique_id)
             
-            # Call the ID changed callback if set
-            if self._on_id_changed:
-                self._on_id_changed(old_id, new_id)
-        
-        return new_id
+            # Notify subscribers if ID changed
+            if old_id != new_id:
+                self._subscription_manager.notify(old_id, new_id)
+                
+                # Call the ID changed callback if set
+                if self._on_id_changed:
+                    self._on_id_changed(old_id, new_id)
+            
+            return new_id
+        except IDRegistrationError as e:
+            # Re-raise the error
+            raise e
     
     def update_location(self, widget_id, new_location):
         """
-        Update a widget's location.
+        Update a widget's location ID within its container.
         
         Args:
             widget_id: The ID of the widget to update
-            new_location: The new widget location or widget_location_id
+            new_location: The new widget_location_id
             
         Returns:
             str: The updated widget ID
-        """
-        old_id = widget_id
-        new_id = self._widget_manager.update_widget_location(widget_id, new_location)
-        
-        # Notify subscribers if ID changed
-        if old_id != new_id:
-            self._subscription_manager.notify(old_id, new_id)
             
-            # Call the ID changed callback if set
-            if self._on_id_changed:
-                self._on_id_changed(old_id, new_id)
-        
-        return new_id
+        Raises:
+            IDRegistrationError: If the new widget_location_id already exists in the container location
+        """
+        try:
+            old_id = widget_id
+            new_id = self._widget_manager.update_widget_location(widget_id, new_location)
+            
+            # Notify subscribers if ID changed
+            if old_id != new_id:
+                self._subscription_manager.notify(old_id, new_id)
+                
+                # Call the ID changed callback if set
+                if self._on_id_changed:
+                    self._on_id_changed(old_id, new_id)
+            
+            return new_id
+        except IDRegistrationError as e:
+            # Re-raise the error
+            raise e
     
     def update_observable_reference(self, property_id, new_observable_id):
         """

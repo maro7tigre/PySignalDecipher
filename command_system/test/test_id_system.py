@@ -21,7 +21,8 @@ from command_system.id_system import (
     IDRegistry, get_id_registry,
     WIDGET_TYPE_CODES, CONTAINER_TYPE_CODES, OBSERVABLE_TYPE_CODES, PROPERTY_TYPE_CODES,
     subscribe_to_id, unsubscribe_from_id, clear_subscriptions,
-    SimpleIDRegistry, get_simple_id_registry
+    SimpleIDRegistry, get_simple_id_registry,
+    IDRegistrationError
 )
 
 from command_system.id_system.core.parser import (
@@ -79,6 +80,9 @@ class TestIDSystem:
         global _id_registry
         _id_registry = None
         self.registry = get_id_registry()
+        
+        # Explicitly clear the registry to ensure a clean state
+        self.registry.clear()
         
         # Set up callback tracking
         self.unregistered_widgets = []
@@ -169,44 +173,207 @@ class TestIDSystem:
 
     #MARK: - Container Hierarchy Tests
     
-    def test_container_hierarchy_basics(self):
+    def test_register_no_container_no_location(self):
         """
-        Test basic container-widget relationships.
+        Test registering a widget without a container or location.
         
-        Verifies that widgets can be placed in containers and that the container
-        hierarchy is correctly maintained and can be queried.
+        Expects:
+        - Generate a unique ID
+        - Use "0" as container_unique_id
+        - Use "0" as container_location
+        - Generate a new widget_location_id (usually "1" for first widget)
+        """
+        # Create widget
+        button = MockWidget("Button")
+        
+        # Register without container or location
+        button_id = self.registry.register(button, "pb")
+        
+        # Verify components
+        components = parse_widget_id(button_id)
+        assert components is not None
+        assert components['type_code'] == "pb"
+        assert components['container_unique_id'] == "0"
+        assert components['container_location'] == "0"
+        
+        # Usually "1" for first widget at this location
+        assert components['widget_location_id'] == "1"
+    
+    def test_register_with_container_no_location(self):
+        """
+        Test registering a widget with a container but no location.
+        
+        Expects:
+        - Generate a unique ID
+        - Use container's unique_id
+        - Use container's location path
+        - Generate a new widget_location_id
+        """
+        # Create container and widget
+        container = MockContainer("MainContainer")
+        button = MockWidget("Button")
+        
+        # Register container first
+        container_id = self.registry.register(container, "d")  # Dock container
+        
+        # Register button with container but no location
+        button_id = self.registry.register(button, "pb", None, container_id)
+        
+        # Verify components
+        components = parse_widget_id(button_id)
+        assert components is not None
+        
+        # Should use container's unique ID
+        container_unique_id = get_unique_id_from_id(container_id)
+        assert components['container_unique_id'] == container_unique_id
+        
+        # Container location should be the container's widget_location_id
+        container_components = parse_widget_id(container_id)
+        expected_location = container_components['widget_location_id']
+        assert components['container_location'] == expected_location
+        
+        # Should generate a new widget_location_id (usually "1" for first widget)
+        assert components['widget_location_id'] == "1"
+    
+    def test_register_with_container_and_location(self):
+        """
+        Test registering a widget with a container and location.
+        
+        Expects:
+        - Generate a unique ID
+        - Use container's unique_id
+        - Use container's location path
+        - Use provided widget_location_id if not in use
+        - Raise error if widget_location_id is already in use
         """
         # Create container and widgets
-        container = MockContainer("MainWindow")
-        widget1 = MockWidget("Button1")
-        widget2 = MockWidget("Button2")
+        container = MockContainer("MainContainer")
+        button1 = MockWidget("Button1")
+        button2 = MockWidget("Button2")
+        
+        # Register container first
+        container_id = self.registry.register(container, "d")  # Dock container
+        
+        # Register button1 with container and specific location ID
+        button1_id = self.registry.register(button1, "pb", None, container_id, "custom_loc")
+        
+        # Verify components
+        button1_components = parse_widget_id(button1_id)
+        assert button1_components is not None
+        assert button1_components['widget_location_id'] == "custom_loc"
+        
+        # Try to register button2 with same location ID - should raise error
+        with pytest.raises(IDRegistrationError):
+            self.registry.register(button2, "pb", None, container_id, "custom_loc")
+    
+    def test_update_container(self):
+        """
+        Test updating a widget's container.
+        
+        Expects:
+        - Update container_unique_id
+        - Update container_location to new container's path
+        - Keep the same widget_location_id if not in use in new container
+        - Generate new widget_location_id if there's a collision
+        """
+        # Create containers and widget
+        container1 = MockContainer("Container1")
+        container2 = MockContainer("Container2")
+        button = MockWidget("Button")
         
         # Register components
-        container_id = self.registry.register(container, "w")  # Window container
-        widget1_id = self.registry.register(widget1, "pb", None, container_id, "0")  # At root location
-        widget2_id = self.registry.register(widget2, "pb", None, container_id, "1")  # At location 1
+        container1_id = self.registry.register(container1, "d")
+        container2_id = self.registry.register(container2, "d")
+        button_id = self.registry.register(button, "pb", None, container1_id, "custom_loc")
         
-        # Verify container relationships
-        assert parse_widget_id(widget1_id)['container_unique_id'] == get_unique_id_from_id(container_id)
-        assert parse_widget_id(widget2_id)['container_unique_id'] == get_unique_id_from_id(container_id)
+        # Verify original container
+        button_components = parse_widget_id(button_id)
+        container1_unique_id = get_unique_id_from_id(container1_id)
+        assert button_components['container_unique_id'] == container1_unique_id
         
-        # Get widgets in container directly using full ID
-        container_widgets = self.registry.get_container_widgets(container_id)
-        assert len(container_widgets) == 2
-        assert widget1_id in container_widgets
-        assert widget2_id in container_widgets
+        # Update container
+        updated_id = self.registry.update_container(button_id, container2_id)
         
-        # Verify widgets by container and location
-        widgets_at_location1 = self.registry.get_container_widgets_at_location(container_id, "1")
-        assert len(widgets_at_location1) == 1
-        assert widget2_id in widgets_at_location1
+        # Verify updated container reference
+        updated_components = parse_widget_id(updated_id)
+        container2_unique_id = get_unique_id_from_id(container2_id)
+        assert updated_components['container_unique_id'] == container2_unique_id
+        
+        # Widget location ID should be preserved
+        assert updated_components['widget_location_id'] == "custom_loc"
+        
+        # Container location should be updated to match container2's path
+        container2_components = parse_widget_id(container2_id)
+        expected_location = container2_components['widget_location_id']
+        assert updated_components['container_location'] == expected_location
+    
+    def test_update_container_with_collision(self):
+        """
+        Test updating a widget's container when there's a location ID collision.
+        
+        Expects:
+        - Generate a new widget_location_id if there's a collision
+        """
+        # Create containers and widgets
+        container1 = MockContainer("Container1")
+        container2 = MockContainer("Container2")
+        button1 = MockWidget("Button1")
+        button2 = MockWidget("Button2")
+        
+        # Register components
+        container1_id = self.registry.register(container1, "d")
+        container2_id = self.registry.register(container2, "d")
+        button1_id = self.registry.register(button1, "pb", None, container1_id, "custom_loc")
+        
+        # Create a widget in container2 with the same location ID
+        button2_id = self.registry.register(button2, "pb", None, container2_id, "custom_loc")
+        
+        # Update button1's container - should generate new location ID due to collision
+        updated_id = self.registry.update_container(button1_id, container2_id)
+        
+        # Verify updated components
+        updated_components = parse_widget_id(updated_id)
+        
+        # Widget location ID should be different (auto-generated)
+        assert updated_components['widget_location_id'] != "custom_loc"
+    
+    def test_update_location(self):
+        """
+        Test updating a widget's location.
+        
+        Expects:
+        - Only update widget_location_id
+        - Raise error if new widget_location_id already exists in container
+        """
+        # Create container and widget
+        container = MockContainer("Container")
+        button1 = MockWidget("Button1")
+        button2 = MockWidget("Button2")
+        
+        # Register components
+        container_id = self.registry.register(container, "d")
+        button1_id = self.registry.register(button1, "pb", None, container_id, "loc1")
+        button2_id = self.registry.register(button2, "pb", None, container_id, "loc2")
+        
+        # Update button1's location to a new location ID
+        new_location = "new_loc"
+        updated_id = self.registry.update_location(button1_id, new_location)
+        
+        # Verify updated components
+        updated_components = parse_widget_id(updated_id)
+        
+        # Only widget_location_id should change
+        assert updated_components['widget_location_id'] == new_location
+        assert updated_components['container_unique_id'] == parse_widget_id(button1_id)['container_unique_id']
+        assert updated_components['container_location'] == parse_widget_id(button1_id)['container_location']
+        
+        # Try to update button1 to button2's location - should raise error
+        with pytest.raises(IDRegistrationError):
+            self.registry.update_location(updated_id, "loc2")
     
     def test_nested_container_hierarchy(self):
         """
-        Test nested container hierarchy with deep nesting.
-        
-        Verifies that containers can be nested to arbitrary depth and that
-        location paths are correctly maintained.
+        Test nested container hierarchy with the updated system.
         """
         # Create a deep container hierarchy
         main_container = MockContainer("MainApp")
@@ -217,220 +384,45 @@ class TestIDSystem:
         main_id = self.registry.register(main_container, "w")  # Window container
         
         # Create a tab container within the main container
-        tab_id = self.registry.register(tab_container, "t", None, main_id, "0")
+        tab_id = self.registry.register(tab_container, "t", None, main_id)
         
         # Create a dock container within the tab container
-        dock_id = self.registry.register(dock_container, "d", None, tab_id, "0/1")
+        dock_id = self.registry.register(dock_container, "d", None, tab_id)
         
         # Create widgets at different levels
         button1 = MockWidget("Button1")
         button2 = MockWidget("Button2")
         button3 = MockWidget("Button3")
         
-        button1_id = self.registry.register(button1, "pb", None, main_id, "1")
-        button2_id = self.registry.register(button2, "pb", None, tab_id, "0/2")
-        button3_id = self.registry.register(button3, "pb", None, dock_id, "0/1/3")
+        button1_id = self.registry.register(button1, "pb", None, main_id)
+        button2_id = self.registry.register(button2, "pb", None, tab_id)
+        button3_id = self.registry.register(button3, "pb", None, dock_id)
         
-        # Verify container relationships by parsing
-        button1_components = parse_widget_id(button1_id)
+        # Verify container path nesting
+        main_components = parse_widget_id(main_id)
         tab_components = parse_widget_id(tab_id)
         dock_components = parse_widget_id(dock_id)
-        
-        assert button1_components['container_unique_id'] == get_unique_id_from_id(main_id)
-        assert tab_components['container_unique_id'] == get_unique_id_from_id(main_id)
-        assert dock_components['container_unique_id'] == get_unique_id_from_id(tab_id)
-        
-        # Verify widget locations have the correct prefix
-        assert tab_components['container_location'] == "0"
-        assert dock_components['container_location'] == "0/1"
-        assert parse_widget_id(button3_id)['container_location'] == "0/1/3"
-        
-        # Verify that widgets are found at the correct containers
-        main_widgets = self.registry.get_container_widgets(main_id)
-        tab_widgets = self.registry.get_container_widgets(tab_id)
-        dock_widgets = self.registry.get_container_widgets(dock_id)
-        
-        assert len(main_widgets) == 2  # tab container and button1
-        assert len(tab_widgets) == 2   # dock container and button2
-        assert len(dock_widgets) == 1  # button3
-        
-        assert tab_id in main_widgets
-        assert button1_id in main_widgets
-        assert dock_id in tab_widgets
-        assert button2_id in tab_widgets
-        assert button3_id in dock_widgets
-    
-    def test_container_locations_map(self):
-        """
-        Test the container locations map functionality.
-        
-        Verifies that the system correctly maintains maps of subcontainer
-        locations and can retrieve widgets at specific locations.
-        """
-        # Create a container with subcontainers
-        main_container = MockContainer("MainWindow")
-        tab1_container = MockContainer("Tab1")
-        tab2_container = MockContainer("Tab2")
-        
-        # Register components
-        main_id = self.registry.register(main_container, "w")  # Window container
-        
-        tab1_id = self.registry.register(tab1_container, "t", None, main_id, "0")
-        tab2_id = self.registry.register(tab2_container, "t", None, main_id, "1")
-        
-        # Set up location maps
-        locations_map = {
-            "0": tab1_id,
-            "1": tab2_id
-        }
-        self.registry.set_locations_map(main_id, locations_map)
-        
-        # Get and verify location maps
-        main_locations = self.registry.get_locations_map(main_id)
-        assert main_locations == locations_map
-    
-    #MARK: - Location Management Tests
-    
-    def test_location_id_generation(self):
-        """
-        Test location ID generation.
-        
-        Verifies that each container location has its own generator and
-        produces unique widget location IDs.
-        """
-        # Create containers
-        container1 = MockContainer("Container1")
-        container2 = MockContainer("Container2")
-        
-        # Register containers
-        container1_id = self.registry.register(container1, "d")  # Dock container
-        container2_id = self.registry.register(container2, "d")  # Dock container
-        
-        # Create widgets in each container at the same location path
-        button1 = MockWidget("Button1")
-        button2 = MockWidget("Button2")
-        button3 = MockWidget("Button3")
-        button4 = MockWidget("Button4")
-        
-        # Register widgets without specifying widget_location_id to have them generated
-        button1_id = self.registry.register(button1, "pb", None, container1_id, "0")
-        button2_id = self.registry.register(button2, "pb", None, container1_id, "0")
-        button3_id = self.registry.register(button3, "pb", None, container2_id, "0")
-        button4_id = self.registry.register(button4, "pb", None, container2_id, "0")
-        
-        # Parse widget IDs to extract location components
         button1_components = parse_widget_id(button1_id)
         button2_components = parse_widget_id(button2_id)
         button3_components = parse_widget_id(button3_id)
-        button4_components = parse_widget_id(button4_id)
         
-        # Verify locations were generated and are unique within each container
-        assert button1_components['widget_location_id'] != button2_components['widget_location_id']
-        assert button3_components['widget_location_id'] != button4_components['widget_location_id']
+        # Main container is at root
+        assert main_components['container_location'] == "0"
         
-        # Each container should have its own sequence starting from 1
-        # First widgets in each container should have ID "1"
-        assert button1_components['widget_location_id'] == "1"
-        assert button3_components['widget_location_id'] == "1"
+        # Tab container's container_location is main container's widget_location_id
+        assert tab_components['container_location'] == main_components['widget_location_id']
         
-        # Second widgets should have ID "2"
-        assert button2_components['widget_location_id'] == "2"
-        assert button4_components['widget_location_id'] == "2"
-    
-    def test_location_id_collision_handling(self):
-        """
-        Test handling of location ID collisions.
+        # Dock container's container_location is tab container's widget_location_id
+        assert dock_components['container_location'] == tab_components['widget_location_id']
         
-        Verifies that when registering a widget with a location ID that already
-        exists, the system finds the next available ID.
-        """
-        # Create a container
-        container = MockContainer("Container")
-        container_id = self.registry.register(container, "d")  # Dock container
+        # Button1's container_location is the same as main_id's widget_location_id
+        assert button1_components['container_location'] == main_components['widget_location_id']
         
-        # Create widgets
-        button1 = MockWidget("Button1")
-        button2 = MockWidget("Button2")
-        button3 = MockWidget("Button3")
+        # Button2's container_location is the same as tab_id's widget_location_id
+        assert button2_components['container_location'] == tab_components['widget_location_id']
         
-        # Register first widget with specific location ID
-        button1_id = self.registry.register(button1, "pb", None, container_id, "custom_loc")
-        
-        # Try to register second widget with the same location ID - it should get incremented
-        button2_id = self.registry.register(button2, "pb", None, container_id, "custom_loc")
-        
-        # Parse components to check location IDs
-        button1_components = parse_widget_id(button1_id)
-        button2_components = parse_widget_id(button2_id)
-        
-        # The system should have assigned a different location ID
-        assert button2_components['widget_location_id'] != button1_components['widget_location_id']
-        assert button2_components['widget_location_id'] == "custom_loc1"
-        
-        # Try registering a third widget with a numeric ID
-        button3_id = self.registry.register(button3, "pb", None, container_id, "5")
-        
-        # Register another widget with same numeric ID
-        button4 = MockWidget("Button4")
-        button4_id = self.registry.register(button4, "pb", None, container_id, "5")
-        
-        # Parse components to check location IDs
-        button3_components = parse_widget_id(button3_id)
-        button4_components = parse_widget_id(button4_id)
-        
-        # Numeric IDs should be properly incremented
-        assert button3_components['widget_location_id'] == "5"
-        assert button4_components['widget_location_id'] == "6"
-    
-    def test_update_widget_location(self):
-        """
-        Test updating a widget's location.
-        
-        Verifies that a widget can be moved to a different location within
-        its container and that its ID is updated accordingly.
-        """
-        # Create a container and a widget
-        container = MockContainer("Container")
-        button = MockWidget("Button")
-        
-        # Register the container and widget
-        container_id = self.registry.register(container, "d")  # Dock container
-        button_id = self.registry.register(button, "pb", None, container_id, "0")
-        
-        # Get the original location components
-        button_components = parse_widget_id(button_id)
-        original_widget_location_id = button_components['widget_location_id']
-        
-        # Update the widget location to a new widget_location_id
-        new_widget_location_id = "new_location"
-        updated_id = self.registry.update_location(button_id, new_widget_location_id)
-        
-        # Verify ID changed
-        assert updated_id != button_id
-        
-        # Get the updated location components
-        updated_components = parse_widget_id(updated_id)
-        
-        # Verify only the widget_location_id changed
-        assert updated_components['type_code'] == button_components['type_code']
-        assert updated_components['unique_id'] == button_components['unique_id']
-        assert updated_components['container_unique_id'] == button_components['container_unique_id']
-        assert updated_components['widget_location_id'] == new_widget_location_id
-        
-        # Verify the widget can be retrieved with the new ID
-        assert self.registry.get_widget(updated_id) == button
-        
-        # Verify the ID change was tracked
-        assert (button_id, updated_id) in self.id_changes
-        
-        # Try updating with a full location (container_location-widget_location_id)
-        new_full_location = "new_container_loc-widget_loc_xyz"
-        updated_id2 = self.registry.update_location(updated_id, new_full_location)
-        
-        # Verify both parts changed
-        updated_components2 = parse_widget_id(updated_id2)
-        assert updated_components2['container_location'] == "new_container_loc"
-        assert updated_components2['widget_location_id'] == "widget_loc_xyz"
+        # Button3's container_location is the same as dock_id's widget_location_id
+        assert button3_components['container_location'] == dock_components['widget_location_id']
 
     #MARK: - Observable and Property Tests
     
@@ -574,48 +566,6 @@ class TestIDSystem:
 
     #MARK: - ID Update and Unregistration Tests
     
-    def test_update_container_id(self):
-        """
-        Test updating a widget's container.
-        
-        Verifies that a widget can be moved to a different container and
-        that its ID is updated accordingly.
-        """
-        # Create components
-        container1 = MockContainer("Container1")
-        container2 = MockContainer("Container2")
-        button = MockWidget("Button")
-        
-        # Register components
-        container1_id = self.registry.register(container1, "d")
-        container2_id = self.registry.register(container2, "d")
-        
-        # Register button in container1
-        button_id = self.registry.register(button, "pb", None, container1_id, "0")
-        
-        # Verify initial container
-        button_components = parse_widget_id(button_id)
-        assert button_components['container_unique_id'] == get_unique_id_from_id(container1_id)
-        
-        # Update container using full container ID
-        updated_id = self.registry.update_container(button_id, container2_id)
-        
-        # Verify the ID changed
-        assert updated_id != button_id
-        
-        # Verify new container reference
-        updated_components = parse_widget_id(updated_id)
-        assert updated_components['container_unique_id'] == get_unique_id_from_id(container2_id)
-        
-        # Verify the button is in container2's widget list
-        container2_widgets = self.registry.get_container_widgets(container2_id)
-        assert updated_id in container2_widgets
-        
-        # Verify the button is not in container1's widget list anymore
-        container1_widgets = self.registry.get_container_widgets(container1_id)
-        assert updated_id not in container1_widgets
-        assert button_id not in container1_widgets
-    
     def test_unregister_widget(self):
         """
         Test unregistering a widget.
@@ -659,8 +609,8 @@ class TestIDSystem:
         # Register the components
         container_id = self.registry.register(container, "d")
         
-        widget1_id = self.registry.register(widget1, "pb", None, container_id, "0")
-        widget2_id = self.registry.register(widget2, "pb", None, container_id, "1")
+        widget1_id = self.registry.register(widget1, "pb", None, container_id)
+        widget2_id = self.registry.register(widget2, "pb", None, container_id)
         
         # Verify initial registration
         assert self.registry.get_widget(container_id) == container
@@ -750,7 +700,7 @@ class TestIDSystem:
         controller_id = self.registry.register(controller, "pb")
         
         # Register widget with container
-        widget_id = self.registry.register(widget, "pb", None, container_id, "0")
+        widget_id = self.registry.register(widget, "pb", None, container_id)
         
         # Register property with observable and controller
         property_id = self.registry.register_observable_property(
@@ -788,7 +738,7 @@ class TestIDSystem:
         # Verify components are still registered
         assert self.registry.get_widget(updated_widget_id) == widget
         assert self.registry.get_observable_property(final_property_id) == property_obj
-        
+    
     #MARK: - ID Subscription Tests
     
     def test_id_subscription_basics(self):

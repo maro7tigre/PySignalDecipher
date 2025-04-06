@@ -21,6 +21,10 @@ from command_system.id_system.types import (
     LOCATION_SEPARATOR,
 )
 
+class IDRegistrationError(Exception):
+    """Exception raised for ID registration errors."""
+    pass
+
 #MARK: - WidgetManager class
 
 class WidgetManager:
@@ -66,46 +70,53 @@ class WidgetManager:
             type_code: The widget type code
             unique_id: The unique ID for the widget
             container_id: The container's ID or unique ID (default: "0")
-            location: The widget location or widget_location_id (default: None)
+            location: The widget_location_id (default: None, will be generated)
             
         Returns:
             str: The generated widget ID
+            
+        Raises:
+            IDRegistrationError: If the widget_location_id already exists in the container location
         """
         # Extract container's unique ID if full ID provided
         container_unique_id = container_id
         if container_id and ID_SEPARATOR in container_id:
             container_unique_id = get_unique_id_from_id(container_id)
             
-        # Determine container location and widget location ID
-        container_location = DEFAULT_ROOT_LOCATION
-        widget_location_id = None
-        
-        # Parse the location argument
-        if location is not None:
-            # Check if this is a full location with container part and widget part
-            if LOCATION_SEPARATOR in location:
-                container_location, widget_location_id = location.split(LOCATION_SEPARATOR)
+        # Determine container location and widget location ID based on container
+        if container_unique_id == DEFAULT_ROOT_CONTAINER_ID:
+            # For root container (no container)
+            container_location = DEFAULT_ROOT_LOCATION
+        else:
+            # Get the container's location from its ID
+            container_widget_id = self._unique_id_to_widget_id.get(container_unique_id)
+            if container_widget_id:
+                container_components = parse_widget_id(container_widget_id)
+                if container_components:
+                    # Use the container's full path
+                    component_loc = container_components['container_location']
+                    component_widget_loc = container_components['widget_location_id']
+                    if component_loc == DEFAULT_ROOT_LOCATION:
+                        container_location = component_widget_loc
+                    else:
+                        container_location = f"{component_loc}{PATH_SEPARATOR}{component_widget_loc}"
+                else:
+                    container_location = DEFAULT_ROOT_LOCATION
             else:
-                # Just a widget location ID, use default container location
-                widget_location_id = location
+                container_location = DEFAULT_ROOT_LOCATION
         
-        # If widget_location_id is still None, generate one
+        # Get the location generator for this container path
+        location_gen = self._get_location_generator(container_unique_id, container_location)
+        
+        # Determine widget_location_id
+        widget_location_id = location
         if widget_location_id is None:
-            # Get or create location generator for this container location
-            location_gen = self._get_location_generator(container_unique_id, container_location)
+            # Generate a new widget_location_id
             widget_location_id = location_gen.generate()
         else:
-            # Check if the widget location ID is available
-            location_gen = self._get_location_generator(container_unique_id, container_location)
+            # Check if the widget_location_id is available
             if location_gen.is_registered(widget_location_id):
-                # Find an available ID by incrementing
-                while location_gen.is_registered(widget_location_id):
-                    # Try to increment numerically if possible
-                    if widget_location_id.isdigit():
-                        widget_location_id = str(int(widget_location_id) + 1)
-                    else:
-                        # Append a number if not numeric
-                        widget_location_id = f"{widget_location_id}1"
+                raise IDRegistrationError(f"Widget location ID '{widget_location_id}' already exists in container location '{container_location}'")
             
             # Register the widget location ID
             location_gen.register(widget_location_id)
@@ -214,6 +225,9 @@ class WidgetManager:
             
         Returns:
             str: The updated widget ID
+            
+        Raises:
+            IDRegistrationError: If the widget_location_id already exists in the new container location
         """
         if widget_id not in self._widgets:
             return widget_id
@@ -236,26 +250,39 @@ class WidgetManager:
             old_location_gen = self._container_location_generators[old_container_id][old_container_location]
             old_location_gen.unregister(widget_location_id)
         
-        # Use the default root location for the new container
-        new_container_location = DEFAULT_ROOT_LOCATION
+        # Determine the new container location based on container
+        if new_container_id == DEFAULT_ROOT_CONTAINER_ID:
+            # For root container (no container)
+            new_container_location = DEFAULT_ROOT_LOCATION
+        else:
+            # Get the container's location from its ID
+            container_widget_id = self._unique_id_to_widget_id.get(new_container_id)
+            if container_widget_id:
+                container_components = parse_widget_id(container_widget_id)
+                if container_components:
+                    # Use the container's full path
+                    component_loc = container_components['container_location']
+                    component_widget_loc = container_components['widget_location_id']
+                    if component_loc == DEFAULT_ROOT_LOCATION:
+                        new_container_location = component_widget_loc
+                    else:
+                        new_container_location = f"{component_loc}{PATH_SEPARATOR}{component_widget_loc}"
+                else:
+                    new_container_location = DEFAULT_ROOT_LOCATION
+            else:
+                new_container_location = DEFAULT_ROOT_LOCATION
         
-        # Register with new location generator
+        # Get the location generator for the new container path
         new_location_gen = self._get_location_generator(new_container_id, new_container_location)
         
-        # Check if the widget location ID is available in the new container
-        final_widget_location_id = widget_location_id
+        # Check if the widget_location_id is available in the new container
         if new_location_gen.is_registered(widget_location_id):
-            # Find an available ID by incrementing
-            while new_location_gen.is_registered(final_widget_location_id):
-                # Try to increment numerically if possible
-                if final_widget_location_id.isdigit():
-                    final_widget_location_id = str(int(final_widget_location_id) + 1)
-                else:
-                    # Append a number if not numeric
-                    final_widget_location_id = f"{final_widget_location_id}1"
-        
-        # Register the widget location ID
-        new_location_gen.register(final_widget_location_id)
+            # Generate a new widget_location_id
+            final_widget_location_id = new_location_gen.generate()
+        else:
+            final_widget_location_id = widget_location_id
+            # Register the widget location ID
+            new_location_gen.register(final_widget_location_id)
         
         # Create the updated widget ID
         new_widget_id = create_widget_id(
@@ -293,10 +320,13 @@ class WidgetManager:
         
         Args:
             widget_id: The ID of the widget to update
-            new_location: The new widget location or widget_location_id
+            new_location: The new widget_location_id
             
         Returns:
             str: The updated widget ID
+            
+        Raises:
+            IDRegistrationError: If the new widget_location_id already exists in the container location
         """
         if widget_id not in self._widgets:
             return widget_id
@@ -310,49 +340,30 @@ class WidgetManager:
         container_location = components['container_location']
         old_widget_location_id = components['widget_location_id']
         
-        # Determine new widget location ID and container location
-        new_container_location = container_location
-        new_widget_location_id = new_location
-        
-        # Check if location contains both parts
-        if LOCATION_SEPARATOR in new_location:
-            new_container_location, new_widget_location_id = new_location.split(LOCATION_SEPARATOR)
-        
-        # If nothing changed, return original ID
-        if new_container_location == container_location and new_widget_location_id == old_widget_location_id:
+        # If the widget_location_id hasn't changed, return original ID
+        if new_location == old_widget_location_id:
             return widget_id
         
-        # Unregister from old location generator if container location is the same
-        if container_location == new_container_location:
-            if container_unique_id in self._container_location_generators and container_location in self._container_location_generators[container_unique_id]:
-                location_gen = self._container_location_generators[container_unique_id][container_location]
-                location_gen.unregister(old_widget_location_id)
+        # Get the location generator
+        location_gen = self._get_location_generator(container_unique_id, container_location)
         
-        # Get the location generator for the new location
-        new_location_gen = self._get_location_generator(container_unique_id, new_container_location)
+        # Unregister from old location
+        location_gen.unregister(old_widget_location_id)
         
-        # Check if the new widget location ID is available
-        final_widget_location_id = new_widget_location_id
-        if new_location_gen.is_registered(new_widget_location_id):
-            # Find an available ID by incrementing
-            while new_location_gen.is_registered(final_widget_location_id):
-                # Try to increment numerically if possible
-                if final_widget_location_id.isdigit():
-                    final_widget_location_id = str(int(final_widget_location_id) + 1)
-                else:
-                    # Append a number if not numeric
-                    final_widget_location_id = f"{final_widget_location_id}1"
+        # Check if the new widget_location_id is available
+        if location_gen.is_registered(new_location):
+            raise IDRegistrationError(f"Widget location ID '{new_location}' already exists in container location '{container_location}'")
         
-        # Register the new widget location ID
-        new_location_gen.register(final_widget_location_id)
+        # Register the new widget_location_id
+        location_gen.register(new_location)
         
         # Create the updated widget ID
         new_widget_id = create_widget_id(
             components['type_code'],
             components['unique_id'],
             container_unique_id,
-            new_container_location,
-            final_widget_location_id
+            container_location,
+            new_location
         )
         
         # Update the mappings
