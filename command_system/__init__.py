@@ -1,4 +1,4 @@
-"""
+"""'''
 PySignalDecipher Command System
 
 A comprehensive system for building UIs with integrated undo/redo functionality,
@@ -11,7 +11,7 @@ This package provides core components for:
 4. PySide6 widget integration
 
 For complete documentation, see the docs directory.
-"""
+'''
 
 # Version info
 __version__ = "1.0.0"
@@ -119,4 +119,4 @@ if __has_pyside6__:
         # Widgets
         'CommandLineEdit',
         # More widgets will be added here
-    ])
+    ])"""

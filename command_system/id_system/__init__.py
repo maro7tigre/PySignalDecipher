@@ -1,0 +1,42 @@
+"""
+PySignalDecipher ID System
+
+Public API for the ID system that creates and manages unique identifiers
+for tracking components without maintaining direct references.
+"""
+
+#MARK: - Public API exports
+
+# Import core functionality
+from command_system.id_system.core.registry import IDRegistry, get_id_registry
+
+# Import simple registry for basic ID management
+from command_system.id_system.simple.simple_registry import SimpleIDRegistry, get_simple_id_registry
+
+# Import subscription functions
+from command_system.id_system.managers.subscription_manager import (
+    subscribe_to_id,
+    unsubscribe_from_id,
+    clear_subscriptions,
+)
+
+# Export type codes for public use
+from command_system.id_system.types import (
+    WIDGET_TYPE_CODES,
+    CONTAINER_TYPE_CODES,
+    OBSERVABLE_TYPE_CODES,
+    PROPERTY_TYPE_CODES,
+)
+
+__all__ = [
+    # Registry classes and accessors
+    'IDRegistry', 'get_id_registry',
+    'SimpleIDRegistry', 'get_simple_id_registry',
+    
+    # Subscription system
+    'subscribe_to_id', 'unsubscribe_from_id', 'clear_subscriptions',
+    
+    # Type codes
+    'WIDGET_TYPE_CODES', 'CONTAINER_TYPE_CODES', 
+    'OBSERVABLE_TYPE_CODES', 'PROPERTY_TYPE_CODES',
+]
