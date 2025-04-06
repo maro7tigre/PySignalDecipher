@@ -32,6 +32,8 @@ def base62_to_int(base62_str):
     base = len(BASE62_CHARS)
     
     for char in base62_str:
+        if char not in BASE62_CHARS:
+            raise ValueError(f"Invalid base62 character: {char}")
         result = result * base + BASE62_CHARS.index(char)
         
     return result
@@ -64,13 +66,16 @@ class UniqueIDGenerator:
             str: A unique base62-encoded ID
         """
         # Find an available ID
-        while True:
+        self._counter += 1
+        unique_id = int_to_base62(self._counter)
+        
+        # Ensure the ID is unique
+        while unique_id in self._used_ids:
             self._counter += 1
             unique_id = int_to_base62(self._counter)
-            
-            if unique_id not in self._used_ids:
-                self._used_ids.add(unique_id)
-                return unique_id
+        
+        self._used_ids.add(unique_id)
+        return unique_id
     
     def register(self, unique_id):
         """
@@ -85,15 +90,8 @@ class UniqueIDGenerator:
         if unique_id in self._used_ids:
             return False
         
-        # Try to convert to an integer to update counter
-        try:
-            id_int = base62_to_int(unique_id)
-            if id_int > self._counter:
-                self._counter = id_int
-        except ValueError:
-            # If not a valid base62 ID, just register it
-            pass
-        
+        # Just register the ID without affecting the counter
+        # This ensures custom IDs don't disrupt the numeric sequence
         self._used_ids.add(unique_id)
         return True
     
@@ -130,7 +128,7 @@ class UniqueIDGenerator:
         self._used_ids.clear()
 
 
-#MARK: - Location ID Generator
+#MARK: - LocationIDGenerator
 
 class LocationIDGenerator:
     """
@@ -153,15 +151,16 @@ class LocationIDGenerator:
             str: A unique ID for use at this location
         """
         # Find an available ID
-        while True:
+        self._counter += 1
+        location_id = str(self._counter)
+        
+        # Ensure the ID is unique
+        while location_id in self._used_ids:
             self._counter += 1
-            # For simplicity, we use string numbers as location IDs
-            # Advanced implementations can use base62 encoding like the UniqueIDGenerator
             location_id = str(self._counter)
             
-            if location_id not in self._used_ids:
-                self._used_ids.add(location_id)
-                return location_id
+        self._used_ids.add(location_id)
+        return location_id
     
     def register(self, location_id):
         """

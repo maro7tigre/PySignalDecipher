@@ -2,7 +2,7 @@
 ID parser module.
 
 This module contains functions for parsing different types of ID strings
-in the ID system.
+and creating IDs in the ID system.
 """
 
 from command_system.id_system.types import (
@@ -119,7 +119,7 @@ def parse_property_id(id_string):
 
 #MARK: - ID creation functions
 
-def create_widget_id(type_code, unique_id, container_unique_id=DEFAULT_NO_CONTAINER, 
+def create_widget_id(type_code, unique_id, container_id=DEFAULT_NO_CONTAINER, 
                     container_location="0", widget_location_id="0"):
     """
     Create a widget ID string from components.
@@ -127,13 +127,18 @@ def create_widget_id(type_code, unique_id, container_unique_id=DEFAULT_NO_CONTAI
     Args:
         type_code: The widget type code
         unique_id: The unique ID of the widget
-        container_unique_id: The unique ID of the container (default: "0")
+        container_id: The container ID or unique ID (default: "0")
         container_location: The container's location path (default: "0")
         widget_location_id: The widget's ID within the container (default: "0")
         
     Returns:
         str: The formatted widget ID string
     """
+    # Extract container_unique_id if full container ID is provided
+    container_unique_id = container_id
+    if container_id and ID_SEPARATOR in container_id:
+        container_unique_id = get_unique_id_from_id(container_id)
+    
     location = f"{container_location}{LOCATION_SEPARATOR}{widget_location_id}"
     return f"{type_code}{ID_SEPARATOR}{unique_id}{ID_SEPARATOR}{container_unique_id}{ID_SEPARATOR}{location}"
 
@@ -152,7 +157,7 @@ def create_observable_id(type_code, unique_id):
     return f"{type_code}{ID_SEPARATOR}{unique_id}"
 
 
-def create_property_id(type_code, unique_id, observable_unique_id=DEFAULT_NO_OBSERVABLE,
+def create_property_id(type_code, unique_id, observable_id=DEFAULT_NO_OBSERVABLE,
                       property_name=DEFAULT_NO_PROPERTY_NAME, controller_id=DEFAULT_NO_CONTROLLER):
     """
     Create a property ID string from components.
@@ -160,15 +165,25 @@ def create_property_id(type_code, unique_id, observable_unique_id=DEFAULT_NO_OBS
     Args:
         type_code: The property type code
         unique_id: The unique ID of the property
-        observable_unique_id: The unique ID of the associated observable (default: "0")
+        observable_id: The observable ID or unique ID (default: "0")
         property_name: The name of the property (default: "0")
-        controller_id: The unique ID of the controller widget (default: "0")
+        controller_id: The controller ID or unique ID (default: "0")
         
     Returns:
         str: The formatted property ID string
     """
+    # Extract observable_unique_id if full observable ID is provided
+    observable_unique_id = observable_id
+    if observable_id and observable_id != DEFAULT_NO_OBSERVABLE and ID_SEPARATOR in observable_id:
+        observable_unique_id = get_unique_id_from_id(observable_id)
+        
+    # Extract controller_unique_id if full controller ID is provided
+    controller_unique_id = controller_id
+    if controller_id and controller_id != DEFAULT_NO_CONTROLLER and ID_SEPARATOR in controller_id:
+        controller_unique_id = get_unique_id_from_id(controller_id)
+    
     return (f"{type_code}{ID_SEPARATOR}{unique_id}{ID_SEPARATOR}"
-            f"{observable_unique_id}{ID_SEPARATOR}{property_name}{ID_SEPARATOR}{controller_id}")
+            f"{observable_unique_id}{ID_SEPARATOR}{property_name}{ID_SEPARATOR}{controller_unique_id}")
 
 
 #MARK: - ID utility functions

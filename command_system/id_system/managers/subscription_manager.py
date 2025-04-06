@@ -135,10 +135,7 @@ class SubscriptionManager:
         Returns:
             bool: True if unsubscription was successful, False otherwise
         """
-        if not component_id:
-            return False
-        
-        if component_id not in self._subscriptions:
+        if not component_id or component_id not in self._subscriptions:
             return False
         
         if callback is None:
@@ -186,10 +183,7 @@ class SubscriptionManager:
         Returns:
             bool: True if notification was successful, False otherwise
         """
-        if not old_id or not new_id:
-            return False
-        
-        if old_id not in self._subscriptions:
+        if not old_id or not new_id or old_id not in self._subscriptions:
             return False
         
         # Make a copy to avoid modification during iteration

@@ -11,16 +11,13 @@ from command_system.id_system.core.parser import (
     parse_property_id,
     create_observable_id,
     create_property_id,
-)
-from command_system.id_system.utils.id_operations import (
-    update_property_observable,
-    update_property_name,
-    update_property_controller,
+    get_unique_id_from_id,
 )
 from command_system.id_system.types import (
     DEFAULT_NO_OBSERVABLE,
     DEFAULT_NO_CONTROLLER,
     DEFAULT_NO_PROPERTY_NAME,
+    ID_SEPARATOR,
 )
 
 #MARK: - ObservableManager class
@@ -141,7 +138,7 @@ class ObservableManager:
     #MARK: - Property registration methods
     
     def register_property(self, property_obj, type_code, unique_id, 
-                         observable_unique_id=DEFAULT_NO_OBSERVABLE,
+                         observable_id=DEFAULT_NO_OBSERVABLE,
                          property_name=DEFAULT_NO_PROPERTY_NAME, 
                          controller_id=DEFAULT_NO_CONTROLLER):
         """
@@ -151,20 +148,30 @@ class ObservableManager:
             property_obj: The property object to register
             type_code: The property type code
             unique_id: The unique ID for the property
-            observable_unique_id: The unique ID of the associated observable (default: "0")
+            observable_id: The observable ID or unique ID (default: "0")
             property_name: The name of the property (default: "0")
-            controller_id: The unique ID of the controller widget (default: "0")
+            controller_id: The controller ID or unique ID (default: "0")
             
         Returns:
             str: The generated property ID
         """
+        # Extract observable unique ID if full ID provided
+        observable_unique_id = observable_id
+        if observable_id and observable_id != DEFAULT_NO_OBSERVABLE and ID_SEPARATOR in observable_id:
+            observable_unique_id = get_unique_id_from_id(observable_id)
+            
+        # Extract controller unique ID if full ID provided
+        controller_unique_id = controller_id
+        if controller_id and controller_id != DEFAULT_NO_CONTROLLER and ID_SEPARATOR in controller_id:
+            controller_unique_id = get_unique_id_from_id(controller_id)
+        
         # Create the property ID
         property_id = create_property_id(
             type_code,
             unique_id,
             observable_unique_id,
             property_name,
-            controller_id
+            controller_unique_id
         )
         
         # Save the ID mappings
@@ -179,10 +186,10 @@ class ObservableManager:
             self._observable_to_properties[observable_unique_id].add(property_id)
         
         # Add to controller's property set if applicable
-        if controller_id != DEFAULT_NO_CONTROLLER:
-            if controller_id not in self._controller_to_properties:
-                self._controller_to_properties[controller_id] = set()
-            self._controller_to_properties[controller_id].add(property_id)
+        if controller_unique_id != DEFAULT_NO_CONTROLLER:
+            if controller_unique_id not in self._controller_to_properties:
+                self._controller_to_properties[controller_unique_id] = set()
+            self._controller_to_properties[controller_unique_id].add(property_id)
         
         return property_id
     
@@ -244,156 +251,6 @@ class ObservableManager:
         return True
     
     #MARK: - Update methods
-    
-    def update_observable_id(self, old_id, new_id):
-        """
-        Update an observable's ID and all references to it.
-        
-        Args:
-            old_id: The current observable ID
-            new_id: The new observable ID
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if old_id not in self._observables:
-            return False
-        
-        # Parse old and new IDs
-        old_components = parse_observable_id(old_id)
-        new_components = parse_observable_id(new_id)
-        
-        if not old_components or not new_components:
-            return False
-        
-        old_unique_id = old_components['unique_id']
-        new_unique_id = new_components['unique_id']
-        
-        # Get the observable object
-        observable = self._observables[old_id]
-        
-        # Update all properties referencing this observable
-        if old_unique_id in self._observable_to_properties:
-            # Make a copy to avoid modification during iteration
-            property_ids = list(self._observable_to_properties[old_unique_id])
-            
-            # Move properties to the new observable ID
-            self._observable_to_properties[new_unique_id] = set(property_ids)
-            
-            # Update each property's observable reference
-            for property_id in property_ids:
-                property_components = parse_property_id(property_id)
-                if property_components:
-                    new_property_id = create_property_id(
-                        property_components['type_code'],
-                        property_components['unique_id'],
-                        new_unique_id,  # New observable unique ID
-                        property_components['property_name'],
-                        property_components['controller_id']
-                    )
-                    
-                    # Update mappings for this property
-                    property_obj = self._properties[property_id]
-                    self._properties[new_property_id] = property_obj
-                    self._unique_id_to_property_id[property_components['unique_id']] = new_property_id
-                    self._property_objects_to_id[property_obj] = new_property_id
-                    
-                    # Update controller's property set if applicable
-                    controller_id = property_components['controller_id']
-                    if controller_id != DEFAULT_NO_CONTROLLER:
-                        if controller_id in self._controller_to_properties:
-                            self._controller_to_properties[controller_id].discard(property_id)
-                            self._controller_to_properties[controller_id].add(new_property_id)
-                    
-                    # Remove old property ID
-                    if property_id in self._properties:
-                        del self._properties[property_id]
-            
-            # Clean up old observable data
-            del self._observable_to_properties[old_unique_id]
-        
-        # Update mappings
-        self._observables[new_id] = observable
-        self._unique_id_to_observable_id[new_unique_id] = new_id
-        self._observable_objects_to_id[observable] = new_id
-        
-        # Remove old ID
-        if old_id in self._observables:
-            del self._observables[old_id]
-        if old_unique_id in self._unique_id_to_observable_id:
-            del self._unique_id_to_observable_id[old_unique_id]
-        
-        return True
-    
-    def update_property_id(self, old_id, new_id):
-        """
-        Update a property's ID and all references to it.
-        
-        Args:
-            old_id: The current property ID
-            new_id: The new property ID
-            
-        Returns:
-            bool: True if successful, False otherwise
-        """
-        if old_id not in self._properties:
-            return False
-        
-        # Parse old and new IDs
-        old_components = parse_property_id(old_id)
-        new_components = parse_property_id(new_id)
-        
-        if not old_components or not new_components:
-            return False
-        
-        old_unique_id = old_components['unique_id']
-        new_unique_id = new_components['unique_id']
-        old_observable_id = old_components['observable_unique_id']
-        new_observable_id = new_components['observable_unique_id']
-        old_controller_id = old_components['controller_id']
-        new_controller_id = new_components['controller_id']
-        
-        # Get the property object
-        property_obj = self._properties[old_id]
-        
-        # Update observable's property set
-        if old_observable_id != DEFAULT_NO_OBSERVABLE and old_observable_id in self._observable_to_properties:
-            self._observable_to_properties[old_observable_id].discard(old_id)
-            
-            # Clean up empty sets
-            if not self._observable_to_properties[old_observable_id]:
-                del self._observable_to_properties[old_observable_id]
-        
-        if new_observable_id != DEFAULT_NO_OBSERVABLE:
-            if new_observable_id not in self._observable_to_properties:
-                self._observable_to_properties[new_observable_id] = set()
-            self._observable_to_properties[new_observable_id].add(new_id)
-        
-        # Update controller's property set
-        if old_controller_id != DEFAULT_NO_CONTROLLER and old_controller_id in self._controller_to_properties:
-            self._controller_to_properties[old_controller_id].discard(old_id)
-            
-            # Clean up empty sets
-            if not self._controller_to_properties[old_controller_id]:
-                del self._controller_to_properties[old_controller_id]
-        
-        if new_controller_id != DEFAULT_NO_CONTROLLER:
-            if new_controller_id not in self._controller_to_properties:
-                self._controller_to_properties[new_controller_id] = set()
-            self._controller_to_properties[new_controller_id].add(new_id)
-        
-        # Update mappings
-        self._properties[new_id] = property_obj
-        self._unique_id_to_property_id[new_unique_id] = new_id
-        self._property_objects_to_id[property_obj] = new_id
-        
-        # Remove old ID
-        if old_id in self._properties:
-            del self._properties[old_id]
-        if old_unique_id in self._unique_id_to_property_id:
-            del self._unique_id_to_property_id[old_unique_id]
-        
-        return True
     
     def update_property_observable(self, property_id, new_observable_unique_id):
         """
@@ -603,18 +460,6 @@ class ObservableManager:
         """
         return self._observable_objects_to_id.get(observable)
     
-    def get_observable_id_by_unique_id(self, unique_id):
-        """
-        Get an observable's ID by its unique ID.
-        
-        Args:
-            unique_id: The observable's unique ID
-            
-        Returns:
-            str: The observable ID, or None if not found
-        """
-        return self._unique_id_to_observable_id.get(unique_id)
-    
     def get_property(self, property_id):
         """
         Get a property by its ID.
@@ -638,38 +483,6 @@ class ObservableManager:
             str: The property ID, or None if not found
         """
         return self._property_objects_to_id.get(property_obj)
-    
-    def get_property_id_by_unique_id(self, unique_id):
-        """
-        Get a property's ID by its unique ID.
-        
-        Args:
-            unique_id: The property's unique ID
-            
-        Returns:
-            str: The property ID, or None if not found
-        """
-        return self._unique_id_to_property_id.get(unique_id)
-    
-    def get_observable_id_from_property_id(self, property_id):
-        """
-        Get the observable ID from a property ID.
-        
-        Args:
-            property_id: The property ID
-            
-        Returns:
-            str: The observable's unique ID, or None if invalid or no observable
-        """
-        components = parse_property_id(property_id)
-        if not components:
-            return None
-        
-        observable_unique_id = components['observable_unique_id']
-        if observable_unique_id == DEFAULT_NO_OBSERVABLE:
-            return None
-            
-        return observable_unique_id
     
     def get_property_ids_by_observable_id(self, observable_unique_id):
         """
@@ -707,26 +520,6 @@ class ObservableManager:
                 properties.append(property_id)
         
         return properties
-    
-    def get_controller_id_from_property_id(self, property_id):
-        """
-        Get the controller ID from a property ID.
-        
-        Args:
-            property_id: The property ID
-            
-        Returns:
-            str: The controller's unique ID, or None if invalid or no controller
-        """
-        components = parse_property_id(property_id)
-        if not components:
-            return None
-        
-        controller_id = components['controller_id']
-        if controller_id == DEFAULT_NO_CONTROLLER:
-            return None
-            
-        return controller_id
     
     def get_property_ids_by_controller_id(self, controller_unique_id):
         """

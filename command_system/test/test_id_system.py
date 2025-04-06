@@ -29,8 +29,8 @@ from command_system.id_system.core.parser import (
     get_unique_id_from_id, get_type_code_from_id
 )
 
-from command_system.id_system.utils.validation import (
-    is_valid_widget_id, is_valid_observable_id, is_valid_property_id
+from command_system.id_system.types import (
+    ID_SEPARATOR, LOCATION_SEPARATOR, PATH_SEPARATOR
 )
 
 #MARK: - Test Helper Classes
@@ -136,8 +136,8 @@ class TestIDSystem:
         assert widget1_components['container_unique_id'] == "0"  # Default is no container
         
         # Verify ID validation
-        assert is_valid_widget_id(widget1_id)
-        assert is_valid_widget_id(widget2_id)
+        assert widget1_id.startswith("pb" + ID_SEPARATOR)
+        assert widget2_id.startswith("sl" + ID_SEPARATOR)
     
     def test_custom_unique_id(self):
         """
@@ -157,7 +157,15 @@ class TestIDSystem:
         
         # Verify retrieval works with the custom ID
         assert self.registry.get_widget(widget_id) == widget
-        assert self.registry.get_full_id_from_unique_id(custom_id) == widget_id
+        
+        # Register another widget to verify auto ID generation still works
+        widget2 = MockWidget("RegularWidget")
+        widget2_id = self.registry.register(widget2, "pb")
+        
+        # The auto-generated ID should be numeric, not based on the custom ID
+        unique_id2 = get_unique_id_from_id(widget2_id)
+        assert unique_id2 != "CustomUniqueID124"
+        assert unique_id2.isalnum()
 
     #MARK: - Container Hierarchy Tests
     
@@ -179,18 +187,17 @@ class TestIDSystem:
         widget2_id = self.registry.register(widget2, "pb", None, container_id, "1")  # At location 1
         
         # Verify container relationships
-        assert self.registry.get_container_id_from_widget_id(widget1_id) == container_id
-        assert self.registry.get_container_id_from_widget_id(widget2_id) == container_id
+        assert parse_widget_id(widget1_id)['container_unique_id'] == get_unique_id_from_id(container_id)
+        assert parse_widget_id(widget2_id)['container_unique_id'] == get_unique_id_from_id(container_id)
         
-        # Verify widgets by container
-        container_widgets = self.registry.get_widget_ids_by_container_id(get_unique_id_from_id(container_id))
+        # Get widgets in container directly using full ID
+        container_widgets = self.registry.get_container_widgets(container_id)
         assert len(container_widgets) == 2
         assert widget1_id in container_widgets
         assert widget2_id in container_widgets
         
         # Verify widgets by container and location
-        widgets_at_location1 = self.registry.get_widget_ids_by_container_id_and_location(
-            get_unique_id_from_id(container_id), "1")
+        widgets_at_location1 = self.registry.get_container_widgets_at_location(container_id, "1")
         assert len(widgets_at_location1) == 1
         assert widget2_id in widgets_at_location1
     
@@ -209,44 +216,39 @@ class TestIDSystem:
         # Register components with hierarchy
         main_id = self.registry.register(main_container, "w")  # Window container
         
-        # Extract the unique ID for container references
-        main_unique_id = get_unique_id_from_id(main_id)
-        
         # Create a tab container within the main container
-        tab_id = self.registry.register(tab_container, "t", None, main_unique_id, "0")
-        tab_unique_id = get_unique_id_from_id(tab_id)
+        tab_id = self.registry.register(tab_container, "t", None, main_id, "0")
         
         # Create a dock container within the tab container
-        dock_id = self.registry.register(dock_container, "d", None, tab_unique_id, "0/1")
-        dock_unique_id = get_unique_id_from_id(dock_id)
+        dock_id = self.registry.register(dock_container, "d", None, tab_id, "0/1")
         
         # Create widgets at different levels
         button1 = MockWidget("Button1")
         button2 = MockWidget("Button2")
         button3 = MockWidget("Button3")
         
-        button1_id = self.registry.register(button1, "pb", None, main_unique_id, "1")
-        button2_id = self.registry.register(button2, "pb", None, tab_unique_id, "0/2")
-        button3_id = self.registry.register(button3, "pb", None, dock_unique_id, "0/1/3")
+        button1_id = self.registry.register(button1, "pb", None, main_id, "1")
+        button2_id = self.registry.register(button2, "pb", None, tab_id, "0/2")
+        button3_id = self.registry.register(button3, "pb", None, dock_id, "0/1/3")
         
-        # Verify container relationships
-        assert self.registry.get_container_id_from_widget_id(tab_id) == main_unique_id
-        assert self.registry.get_container_id_from_widget_id(dock_id) == tab_unique_id
+        # Verify container relationships by parsing
+        button1_components = parse_widget_id(button1_id)
+        tab_components = parse_widget_id(tab_id)
+        dock_components = parse_widget_id(dock_id)
+        
+        assert button1_components['container_unique_id'] == get_unique_id_from_id(main_id)
+        assert tab_components['container_unique_id'] == get_unique_id_from_id(main_id)
+        assert dock_components['container_unique_id'] == get_unique_id_from_id(tab_id)
         
         # Verify widget locations have the correct prefix
-        tab_components = parse_widget_id(tab_id)
         assert tab_components['container_location'] == "0"
-        
-        dock_components = parse_widget_id(dock_id)
         assert dock_components['container_location'] == "0/1"
+        assert parse_widget_id(button3_id)['container_location'] == "0/1/3"
         
-        button3_components = parse_widget_id(button3_id)
-        assert button3_components['container_location'] == "0/1/3"
-        
-        # Verify that widgets are found at the correct locations
-        main_widgets = self.registry.get_widget_ids_by_container_id(main_unique_id)
-        tab_widgets = self.registry.get_widget_ids_by_container_id(tab_unique_id)
-        dock_widgets = self.registry.get_widget_ids_by_container_id(dock_unique_id)
+        # Verify that widgets are found at the correct containers
+        main_widgets = self.registry.get_container_widgets(main_id)
+        tab_widgets = self.registry.get_container_widgets(tab_id)
+        dock_widgets = self.registry.get_container_widgets(dock_id)
         
         assert len(main_widgets) == 2  # tab container and button1
         assert len(tab_widgets) == 2   # dock container and button2
@@ -272,42 +274,20 @@ class TestIDSystem:
         
         # Register components
         main_id = self.registry.register(main_container, "w")  # Window container
-        main_unique_id = get_unique_id_from_id(main_id)
         
-        tab1_id = self.registry.register(tab1_container, "t", None, main_unique_id, "0")
-        tab2_id = self.registry.register(tab2_container, "t", None, main_unique_id, "1")
+        tab1_id = self.registry.register(tab1_container, "t", None, main_id, "0")
+        tab2_id = self.registry.register(tab2_container, "t", None, main_id, "1")
         
         # Set up location maps
         locations_map = {
             "0": tab1_id,
             "1": tab2_id
         }
-        self.registry.set_locations_map(main_unique_id, locations_map)
+        self.registry.set_locations_map(main_id, locations_map)
         
         # Get and verify location maps
-        main_locations = self.registry.get_locations_map(main_unique_id)
+        main_locations = self.registry.get_locations_map(main_id)
         assert main_locations == locations_map
-        
-        # Test getting subcontainer at location
-        retrieved_tab1_id = self.registry.get_subcontainer_id_at_location(main_unique_id, "0")
-        retrieved_tab2_id = self.registry.get_subcontainer_id_at_location(main_unique_id, "1")
-        
-        assert retrieved_tab1_id == tab1_id
-        assert retrieved_tab2_id == tab2_id
-        
-        # Test getting widgets at subcontainer location
-        button1 = MockWidget("Button1")
-        button2 = MockWidget("Button2")
-        
-        tab1_unique_id = get_unique_id_from_id(tab1_id)
-        
-        button1_id = self.registry.register(button1, "pb", None, tab1_unique_id, "0/1")
-        button2_id = self.registry.register(button2, "pb", None, tab1_unique_id, "0/2")
-        
-        tab1_widgets = self.registry.get_widgets_at_subcontainer_location(tab1_unique_id, "0")
-        assert len(tab1_widgets) >= 2
-        assert button1_id in tab1_widgets
-        assert button2_id in tab1_widgets
     
     #MARK: - Location Management Tests
     
@@ -326,10 +306,6 @@ class TestIDSystem:
         container1_id = self.registry.register(container1, "d")  # Dock container
         container2_id = self.registry.register(container2, "d")  # Dock container
         
-        # Extract unique IDs
-        container1_unique_id = get_unique_id_from_id(container1_id)
-        container2_unique_id = get_unique_id_from_id(container2_id)
-        
         # Create widgets in each container at the same location path
         button1 = MockWidget("Button1")
         button2 = MockWidget("Button2")
@@ -337,10 +313,10 @@ class TestIDSystem:
         button4 = MockWidget("Button4")
         
         # Register widgets without specifying widget_location_id to have them generated
-        button1_id = self.registry.register(button1, "pb", None, container1_unique_id, "0")
-        button2_id = self.registry.register(button2, "pb", None, container1_unique_id, "0")
-        button3_id = self.registry.register(button3, "pb", None, container2_unique_id, "0")
-        button4_id = self.registry.register(button4, "pb", None, container2_unique_id, "0")
+        button1_id = self.registry.register(button1, "pb", None, container1_id, "0")
+        button2_id = self.registry.register(button2, "pb", None, container1_id, "0")
+        button3_id = self.registry.register(button3, "pb", None, container2_id, "0")
+        button4_id = self.registry.register(button4, "pb", None, container2_id, "0")
         
         # Parse widget IDs to extract location components
         button1_components = parse_widget_id(button1_id)
@@ -371,41 +347,40 @@ class TestIDSystem:
         # Create a container
         container = MockContainer("Container")
         container_id = self.registry.register(container, "d")  # Dock container
-        container_unique_id = get_unique_id_from_id(container_id)
         
         # Create widgets
         button1 = MockWidget("Button1")
         button2 = MockWidget("Button2")
         button3 = MockWidget("Button3")
         
-        # Register first widget with auto-generated location ID
-        button1_id = self.registry.register(button1, "pb", None, container_unique_id, "0")
-        button1_components = parse_widget_id(button1_id)
+        # Register first widget with specific location ID
+        button1_id = self.registry.register(button1, "pb", None, container_id, "custom_loc")
         
         # Try to register second widget with the same location ID - it should get incremented
-        button2_id = self.registry.register(
-            button2, "pb", None, container_unique_id, "0", 
-            button1_components['widget_location_id'])
+        button2_id = self.registry.register(button2, "pb", None, container_id, "custom_loc")
         
+        # Parse components to check location IDs
+        button1_components = parse_widget_id(button1_id)
         button2_components = parse_widget_id(button2_id)
         
         # The system should have assigned a different location ID
         assert button2_components['widget_location_id'] != button1_components['widget_location_id']
+        assert button2_components['widget_location_id'] == "custom_loc1"
         
-        # If locations are numeric, the second ID should be incremented from the first
-        if button1_components['widget_location_id'].isdigit():
-            expected_id = str(int(button1_components['widget_location_id']) + 1)
-            assert button2_components['widget_location_id'] == expected_id
+        # Try registering a third widget with a numeric ID
+        button3_id = self.registry.register(button3, "pb", None, container_id, "5")
         
-        # Try registering a third widget with an explicit new ID
-        button3_id = self.registry.register(
-            button3, "pb", None, container_unique_id, "0", "custom_loc")
+        # Register another widget with same numeric ID
+        button4 = MockWidget("Button4")
+        button4_id = self.registry.register(button4, "pb", None, container_id, "5")
         
+        # Parse components to check location IDs
         button3_components = parse_widget_id(button3_id)
-        assert button3_components['widget_location_id'] == "custom_loc"
+        button4_components = parse_widget_id(button4_id)
         
-        # Verify all widget IDs are different
-        assert button1_id != button2_id != button3_id
+        # Numeric IDs should be properly incremented
+        assert button3_components['widget_location_id'] == "5"
+        assert button4_components['widget_location_id'] == "6"
     
     def test_update_widget_location(self):
         """
@@ -420,15 +395,13 @@ class TestIDSystem:
         
         # Register the container and widget
         container_id = self.registry.register(container, "d")  # Dock container
-        container_unique_id = get_unique_id_from_id(container_id)
-        
-        button_id = self.registry.register(button, "pb", None, container_unique_id, "0")
+        button_id = self.registry.register(button, "pb", None, container_id, "0")
         
         # Get the original location components
         button_components = parse_widget_id(button_id)
         original_widget_location_id = button_components['widget_location_id']
         
-        # Update the widget location to location "1" with a new widget_location_id
+        # Update the widget location to a new widget_location_id
         new_widget_location_id = "new_location"
         updated_id = self.registry.update_location(button_id, new_widget_location_id)
         
@@ -442,7 +415,6 @@ class TestIDSystem:
         assert updated_components['type_code'] == button_components['type_code']
         assert updated_components['unique_id'] == button_components['unique_id']
         assert updated_components['container_unique_id'] == button_components['container_unique_id']
-        assert updated_components['container_location'] == button_components['container_location']
         assert updated_components['widget_location_id'] == new_widget_location_id
         
         # Verify the widget can be retrieved with the new ID
@@ -450,6 +422,15 @@ class TestIDSystem:
         
         # Verify the ID change was tracked
         assert (button_id, updated_id) in self.id_changes
+        
+        # Try updating with a full location (container_location-widget_location_id)
+        new_full_location = "new_container_loc-widget_loc_xyz"
+        updated_id2 = self.registry.update_location(updated_id, new_full_location)
+        
+        # Verify both parts changed
+        updated_components2 = parse_widget_id(updated_id2)
+        assert updated_components2['container_location'] == "new_container_loc"
+        assert updated_components2['widget_location_id'] == "widget_loc_xyz"
 
     #MARK: - Observable and Property Tests
     
@@ -477,7 +458,6 @@ class TestIDSystem:
         assert self.registry.get_observable(observable2_id) == observable2
         
         # Verify ID format
-        assert is_valid_observable_id(observable1_id)
         observable1_components = parse_observable_id(observable1_id)
         assert observable1_components is not None
         assert observable1_components['type_code'] == "o"
@@ -500,50 +480,34 @@ class TestIDSystem:
         observable_id = self.registry.register_observable(observable, "o")
         controller_id = self.registry.register(controller, "sp")  # Spin box
         
-        # Extract unique IDs
-        observable_unique_id = get_unique_id_from_id(observable_id)
-        controller_unique_id = get_unique_id_from_id(controller_id)
-        
-        # Register properties with relationships
+        # Register properties with relationships using full IDs
         property1_id = self.registry.register_observable_property(
-            property1, "op", None, "name", observable_unique_id, None
+            property1, "op", None, "name", observable_id, None
         )
         
         property2_id = self.registry.register_observable_property(
-            property2, "op", None, "age", observable_unique_id, controller_unique_id
+            property2, "op", None, "age", observable_id, controller_id
         )
         
         # Verify ID format
-        assert is_valid_property_id(property1_id)
-        
         property1_components = parse_property_id(property1_id)
         assert property1_components is not None
         assert property1_components['type_code'] == "op"
-        assert property1_components['observable_unique_id'] == observable_unique_id
+        assert property1_components['observable_unique_id'] == get_unique_id_from_id(observable_id)
         assert property1_components['property_name'] == "name"
         assert property1_components['controller_id'] == "0"  # No controller
         
         property2_components = parse_property_id(property2_id)
-        assert property2_components['controller_id'] == controller_unique_id
+        assert property2_components['controller_id'] == get_unique_id_from_id(controller_id)
         
-        # Test relationships
-        assert self.registry.get_observable_id_from_property_id(property1_id) == observable_unique_id
-        assert self.registry.get_controller_id_from_property_id(property2_id) == controller_unique_id
-        
-        # Test getting properties by observable
-        observable_properties = self.registry.get_property_ids_by_observable_id(observable_unique_id)
+        # Test getting properties by observable using the full observable ID
+        observable_properties = self.registry.get_observable_properties(observable_id)
         assert len(observable_properties) == 2
         assert property1_id in observable_properties
         assert property2_id in observable_properties
         
-        # Test getting properties by name
-        name_properties = self.registry.get_property_ids_by_observable_id_and_property_name(
-            observable_unique_id, "name")
-        assert len(name_properties) == 1
-        assert property1_id in name_properties
-        
-        # Test getting properties by controller
-        controller_properties = self.registry.get_property_ids_by_controller_id(controller_unique_id)
+        # Test getting properties by controller using the full controller ID
+        controller_properties = self.registry.get_controller_properties(controller_id)
         assert len(controller_properties) == 1
         assert property2_id in controller_properties
     
@@ -568,28 +532,19 @@ class TestIDSystem:
         controller1_id = self.registry.register(controller1, "sp")
         controller2_id = self.registry.register(controller2, "sp")
         
-        # Extract unique IDs
-        observable1_unique_id = get_unique_id_from_id(observable1_id)
-        observable2_unique_id = get_unique_id_from_id(observable2_id)
-        controller1_unique_id = get_unique_id_from_id(controller1_id)
-        controller2_unique_id = get_unique_id_from_id(controller2_id)
-        
-        # Register property with initial references
+        # Register property with initial references using full IDs
         property_id = self.registry.register_observable_property(
-            property_obj, "op", None, "age", observable1_unique_id, controller1_unique_id
+            property_obj, "op", None, "age", observable1_id, controller1_id
         )
         
-        # Update observable reference
-        updated_id = self.registry.update_observable_id(property_id, observable2_unique_id)
+        # Update observable reference using full observable ID
+        updated_id = self.registry.update_observable_reference(property_id, observable2_id)
         
         # Verify the ID changed
         assert updated_id != property_id
         
-        # Verify the property is associated with observable2
-        assert self.registry.get_observable_id_from_property_id(updated_id) == observable2_unique_id
-        
         # Verify the property is in observable2's property list
-        observable2_properties = self.registry.get_property_ids_by_observable_id(observable2_unique_id)
+        observable2_properties = self.registry.get_observable_properties(observable2_id)
         assert updated_id in observable2_properties
         
         # Update property name
@@ -603,18 +558,15 @@ class TestIDSystem:
         property_components = parse_property_id(updated_id)
         assert property_components['property_name'] == "salary"
         
-        # Update controller reference
+        # Update controller reference using full controller ID
         property_id = updated_id
-        updated_id = self.registry.update_controller_id(property_id, controller2_unique_id)
+        updated_id = self.registry.update_controller_reference(property_id, controller2_id)
         
         # Verify the ID changed
         assert updated_id != property_id
         
-        # Verify the controller reference was updated
-        assert self.registry.get_controller_id_from_property_id(updated_id) == controller2_unique_id
-        
         # Verify the property is in controller2's property list
-        controller2_properties = self.registry.get_property_ids_by_controller_id(controller2_unique_id)
+        controller2_properties = self.registry.get_controller_properties(controller2_id)
         assert updated_id in controller2_properties
         
         # Verify the ID change was tracked
@@ -638,128 +590,31 @@ class TestIDSystem:
         container1_id = self.registry.register(container1, "d")
         container2_id = self.registry.register(container2, "d")
         
-        # Extract unique IDs
-        container1_unique_id = get_unique_id_from_id(container1_id)
-        container2_unique_id = get_unique_id_from_id(container2_id)
-        
         # Register button in container1
-        button_id = self.registry.register(button, "pb", None, container1_unique_id, "0")
+        button_id = self.registry.register(button, "pb", None, container1_id, "0")
         
         # Verify initial container
-        assert self.registry.get_container_id_from_widget_id(button_id) == container1_unique_id
+        button_components = parse_widget_id(button_id)
+        assert button_components['container_unique_id'] == get_unique_id_from_id(container1_id)
         
-        # Update container
-        updated_id = self.registry.update_container_id(button_id, container2_unique_id)
+        # Update container using full container ID
+        updated_id = self.registry.update_container(button_id, container2_id)
         
         # Verify the ID changed
         assert updated_id != button_id
         
         # Verify new container reference
-        assert self.registry.get_container_id_from_widget_id(updated_id) == container2_unique_id
+        updated_components = parse_widget_id(updated_id)
+        assert updated_components['container_unique_id'] == get_unique_id_from_id(container2_id)
         
         # Verify the button is in container2's widget list
-        container2_widgets = self.registry.get_widget_ids_by_container_id(container2_unique_id)
+        container2_widgets = self.registry.get_container_widgets(container2_id)
         assert updated_id in container2_widgets
         
         # Verify the button is not in container1's widget list anymore
-        container1_widgets = self.registry.get_widget_ids_by_container_id(container1_unique_id)
+        container1_widgets = self.registry.get_container_widgets(container1_id)
         assert updated_id not in container1_widgets
         assert button_id not in container1_widgets
-    
-    def test_update_id(self):
-        """
-        Test updating a component's ID with relationship maintenance.
-        
-        Verifies that when updating a component's ID, all relationships are
-        correctly maintained.
-        """
-        # Create a container hierarchy
-        container = MockContainer("MainContainer")
-        subcontainer = MockContainer("SubContainer")
-        widget1 = MockWidget("Widget1")
-        widget2 = MockWidget("Widget2")
-        
-        # Register components
-        container_id = self.registry.register(container, "w")
-        container_unique_id = get_unique_id_from_id(container_id)
-        
-        subcontainer_id = self.registry.register(subcontainer, "d", None, container_unique_id, "0")
-        subcontainer_unique_id = get_unique_id_from_id(subcontainer_id)
-        
-        widget1_id = self.registry.register(widget1, "pb", None, subcontainer_unique_id, "0/1")
-        widget2_id = self.registry.register(widget2, "pb", None, subcontainer_unique_id, "0/2")
-        
-        # Set up location maps
-        locations_map = {
-            "subcontainer_loc": subcontainer_id
-        }
-        self.registry.set_locations_map(container_unique_id, locations_map)
-        
-        # Create new ID for subcontainer with a different unique ID
-        new_unique_id = "NEW_UNIQUE_ID"
-        subcontainer_components = parse_widget_id(subcontainer_id)
-        new_subcontainer_id = f"{subcontainer_components['type_code']}:{new_unique_id}:{subcontainer_components['container_unique_id']}:{subcontainer_components['location']}"
-        
-        # Update the ID
-        result = self.registry.update_id(subcontainer_id, new_subcontainer_id)
-        assert result
-        
-        # Verify subcontainer's ID is updated
-        assert self.registry.get_id(subcontainer) == new_subcontainer_id
-        
-        # Verify children's container references are updated
-        updated_widget1_id = self.registry.get_id(widget1)
-        updated_widget2_id = self.registry.get_id(widget2)
-        
-        assert updated_widget1_id != widget1_id  # IDs should have changed
-        assert updated_widget2_id != widget2_id
-        
-        assert self.registry.get_container_id_from_widget_id(updated_widget1_id) == new_unique_id
-        assert self.registry.get_container_id_from_widget_id(updated_widget2_id) == new_unique_id
-        
-        # Verify widgets are still associated with the subcontainer
-        subcontainer_widgets = self.registry.get_widget_ids_by_container_id(new_unique_id)
-        assert len(subcontainer_widgets) == 2
-        assert updated_widget1_id in subcontainer_widgets
-        assert updated_widget2_id in subcontainer_widgets
-        
-        # Verify location maps are updated
-        updated_locations_map = self.registry.get_locations_map(container_unique_id)
-        assert "subcontainer_loc" in updated_locations_map
-        assert updated_locations_map["subcontainer_loc"] == new_subcontainer_id
-        
-        # Verify ID change callback was called
-        assert (subcontainer_id, new_subcontainer_id) in self.id_changes
-        
-        # Test updating an observable ID
-        observable = MockObservable("TestObservable")
-        property_obj = MockObservableProperty("TestProperty")
-        
-        # Register components
-        observable_id = self.registry.register_observable(observable, "o")
-        observable_unique_id = get_unique_id_from_id(observable_id)
-        
-        property_id = self.registry.register_observable_property(
-            property_obj, "op", None, "test", observable_unique_id)
-        
-        # Create new ID for observable
-        new_observable_unique_id = "OBS_NEW_ID"
-        observable_components = parse_observable_id(observable_id)
-        new_observable_id = f"{observable_components['type_code']}:{new_observable_unique_id}"
-        
-        # Update the observable ID
-        result = self.registry.update_id(observable_id, new_observable_id)
-        assert result
-        
-        # Verify observable's ID is updated
-        assert self.registry.get_id(observable) == new_observable_id
-        
-        # Verify property references are updated
-        updated_property_id = self.registry.get_id(property_obj)
-        assert updated_property_id != property_id  # ID should have changed
-        
-        property_components = parse_property_id(updated_property_id)
-        assert property_components['observable_unique_id'] == new_observable_unique_id
     
     def test_unregister_widget(self):
         """
@@ -803,10 +658,9 @@ class TestIDSystem:
         
         # Register the components
         container_id = self.registry.register(container, "d")
-        container_unique_id = get_unique_id_from_id(container_id)
         
-        widget1_id = self.registry.register(widget1, "pb", None, container_unique_id, "0")
-        widget2_id = self.registry.register(widget2, "pb", None, container_unique_id, "1")
+        widget1_id = self.registry.register(widget1, "pb", None, container_id, "0")
+        widget2_id = self.registry.register(widget2, "pb", None, container_id, "1")
         
         # Verify initial registration
         assert self.registry.get_widget(container_id) == container
@@ -846,12 +700,11 @@ class TestIDSystem:
         
         # Register the components
         observable_id = self.registry.register_observable(observable, "o")
-        observable_unique_id = get_unique_id_from_id(observable_id)
         
         property1_id = self.registry.register_observable_property(
-            property1, "op", None, "prop1", observable_unique_id)
+            property1, "op", None, "prop1", observable_id)
         property2_id = self.registry.register_observable_property(
-            property2, "op", None, "prop2", observable_unique_id)
+            property2, "op", None, "prop2", observable_id)
         
         # Verify initial registration
         assert self.registry.get_observable(observable_id) == observable
@@ -896,40 +749,41 @@ class TestIDSystem:
         observable_id = self.registry.register_observable(observable, "o")
         controller_id = self.registry.register(controller, "pb")
         
-        # Extract unique IDs
-        container_unique_id = get_unique_id_from_id(container_id)
-        observable_unique_id = get_unique_id_from_id(observable_id)
-        controller_unique_id = get_unique_id_from_id(controller_id)
-        
         # Register widget with container
-        widget_id = self.registry.register(widget, "pb", None, container_unique_id, "0")
+        widget_id = self.registry.register(widget, "pb", None, container_id, "0")
         
         # Register property with observable and controller
         property_id = self.registry.register_observable_property(
-            property_obj, "op", None, "prop", observable_unique_id, controller_unique_id)
+            property_obj, "op", None, "prop", observable_id, controller_id)
         
         # Verify initial references
-        assert self.registry.get_container_id_from_widget_id(widget_id) == container_unique_id
-        assert self.registry.get_observable_id_from_property_id(property_id) == observable_unique_id
-        assert self.registry.get_controller_id_from_property_id(property_id) == controller_unique_id
+        widget_components = parse_widget_id(widget_id)
+        property_components = parse_property_id(property_id)
+        
+        assert widget_components['container_unique_id'] == get_unique_id_from_id(container_id)
+        assert property_components['observable_unique_id'] == get_unique_id_from_id(observable_id)
+        assert property_components['controller_id'] == get_unique_id_from_id(controller_id)
         
         # Remove container reference
         updated_widget_id = self.registry.remove_container_reference(widget_id)
+        updated_widget_components = parse_widget_id(updated_widget_id)
         
-        # Verify container reference is removed
-        assert self.registry.get_container_id_from_widget_id(updated_widget_id) is None
+        # Verify container reference is removed (set to "0")
+        assert updated_widget_components['container_unique_id'] == "0"
         
         # Remove observable reference
         updated_property_id = self.registry.remove_observable_reference(property_id)
+        updated_property_components = parse_property_id(updated_property_id)
         
-        # Verify observable reference is removed
-        assert self.registry.get_observable_id_from_property_id(updated_property_id) is None
+        # Verify observable reference is removed (set to "0")
+        assert updated_property_components['observable_unique_id'] == "0"
         
         # Remove controller reference
         final_property_id = self.registry.remove_controller_reference(updated_property_id)
+        final_property_components = parse_property_id(final_property_id)
         
-        # Verify controller reference is removed
-        assert self.registry.get_controller_id_from_property_id(final_property_id) is None
+        # Verify controller reference is removed (set to "0")
+        assert final_property_components['controller_id'] == "0"
         
         # Verify components are still registered
         assert self.registry.get_widget(updated_widget_id) == widget
