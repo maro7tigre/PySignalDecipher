@@ -19,14 +19,14 @@ Where `location` uses a composite format: `[container_location]-[widget_location
 - `unique_id`: Globally unique identifier generated using base62 encoding
 - `container_unique_id`: Unique ID of the parent container (or "0" if none)
 - `location`: Composite value with two parts:
-  - `container_location`: Path within the container hierarchy (e.g., "0", "0/1", "2/3")
+  - `container_location`: Full path within the container hierarchy (e.g., "0", "0/1", "0/1/2")
   - `widget_location_id`: Unique identifier within that specific container location
 
 Examples:
 - `pb:3a:0:0-1` - A push button with no container, at root location with widget ID "1"
 - `t:2J:0:0-0` - A tab container at the root level (project itself)
 - `pb:3a:2J:0/1-4b` - A push button in container "2J", at path "0/1" with widget location ID "4b"
-- `cb:5c:3a:2/1-7d` - A checkbox in container "3a", at nested path "2/1" with widget location ID "7d"
+- `cb:5c:3a:0/2/1-7d` - A checkbox in container "3a", at nested path "0/2/1" with widget location ID "7d"
 
 ### 2. Observable Format
 ```
@@ -68,16 +68,16 @@ Each container can have subcontainers (tabs, docks, windows, etc.) with their ow
 
 ```
 Project Container (0 at location 0)
-  ├── Container 1 (t:1A:0:0-0)
-  │     ├── Widget 1-1 (pb:3C:1A:0/0-1)
-  │     ├── Widget 1-2 (le:4D:1A:0/0-2)
-  │     └── Nested Container (d:8H:1A:0/0-3)
-  │           ├── Nested Widget 1 (pb:9I:8H:0/0/3-1)
-  │           └── Nested Widget 2 (le:10J:8H:0/0/3-2)
+  ├── Container 1 (t:1A:0:0-1)
+  │     ├── Widget 1-1 (pb:3C:1A:0/1-1)
+  │     ├── Widget 1-2 (le:4D:1A:0/1-2)
+  │     └── Nested Container (d:8H:1A:0/1-3)
+  │           ├── Nested Widget 1 (pb:9I:8H:0/1/3-1)
+  │           └── Nested Widget 2 (le:10J:8H:0/1/3-2)
   │
-  └── Container 2 (t:2B:0:0-1)
-        ├── Widget 2-1 (pb:6F:2B:0/1-1)
-        └── Widget 2-2 (le:7G:2B:0/1-2)
+  └── Container 2 (t:2B:0:0-2)
+        ├── Widget 2-1 (pb:6F:2B:0/2-1)
+        └── Widget 2-2 (le:7G:2B:0/2-2)
 ```
 
 This hierarchical approach supports arbitrarily deep nesting of containers, with each level maintaining its own location context.
@@ -85,39 +85,41 @@ This hierarchical approach supports arbitrarily deep nesting of containers, with
 ## Location System
 
 The location is a composite identifier with two parts:
-1. `container_location`: Path in the container hierarchy (e.g., "0", "0/1", "2/3")
+1. `container_location`: Full path in the container hierarchy (e.g., "0", "0/1", "0/1/3")
 2. `widget_location_id`: Unique ID within that specific container location
 
 Important behaviors:
 - The project itself is container "0" at location "0"
 - Each container location has its own ID generator
 - Widget location IDs remain stable when moving within the same container location
-- When a widget changes container, its widget_location_id may change if there's a collision
-- The container location in a widget's location string is controlled by its container
+- When a widget changes container, an attempt is made to keep its widget_location_id, generating a new one only if there's a collision
+- The container location in a widget's location string reflects the full hierarchical path of its container
 
 ## Registration and Updates
 
 ### Widget Registration
 
 When registering a widget:
-1. If a container is specified, the widget's location includes the container's location path
-2. If a location is specified without a widget_location_id, one is generated automatically
-3. If a full location is provided (with widget_location_id), it's used as-is unless there's a collision
-4. In case of collision, the system increments the widget_location_id until finding an available one
+1. If no container is specified, the widget is registered at the root container ("0") with location "0"
+2. If a container is specified but no location, a widget_location_id is generated for that container's location
+3. If a container and location are specified, the location is treated as the widget_location_id and the system checks if it's available in that container
+4. If the widget_location_id is already in use, an error is raised
 
 ### ID Updates
 
 When updating a widget's container:
 1. The container_unique_id in the widget's ID is updated
-2. The container_location part of the location is updated to match the new container
+2. The container_location is updated to reflect the new container's full path
 3. The widget_location_id remains the same unless there's a collision
-4. The widget is unregistered from the old container's location generator
-5. The widget is registered with the new container's location generator
+4. If there's a collision, a new widget_location_id is generated
+5. The widget is unregistered from the old container's location generator
+6. The widget is registered with the new container's location generator
 
 When updating a widget's location:
-1. Only the widget_location_id part changes, not the container_location
-2. If the specified widget_location_id exists, it's incremented until an available ID is found
-3. The widget is unregistered from the old location and registered at the new location
+1. Only the widget_location_id part changes
+2. The specified widget_location_id is checked for availability
+3. If the widget_location_id already exists, an error is raised
+4. The widget is unregistered from the old location and registered at the new location
 
 ## ID Registry Methods
 
@@ -154,7 +156,7 @@ The registry provides methods for managing components and their relationships:
 
 ### ID Updates
 - `update_id(old_id, new_id)` - Update any component's ID and all references to it
-- `update_container_id(widget_id, new_container_id)` - Update widget's container
+- `update_container(widget_id, new_container_id)` - Update widget's container
 - `update_location(widget_id, new_location)` - Update widget's location
 - `update_observable_id(property_id, new_observable_id)` - Update property's observable
 - `update_property_name(property_id, new_property_name)` - Update property's name
@@ -298,22 +300,22 @@ When a widget is registered or moved:
 
 1. If no widget_location_id is provided, the container's location generator creates one
 2. If a widget_location_id is provided but already exists in that location:
-   - The system will increment the ID until finding an available one
-   - For example, if IDs [0,1,2,3] exist and you try to register with ID "3"
-   - The system will try "4" and use that if available
+   - For registration: An error is raised
+   - For container updates: A new ID is generated
 
 ### ID Collisions
 
 The system handles potential collisions:
 - For unique_ids: The global generator ensures no collisions by tracking all used IDs
 - For widget_location_ids: Each container location maintains its own set of used IDs
-- When attempting to register an ID that already exists, the system increments until finding an available ID
+- When attempting to register a widget with an ID that already exists in a location, an error is raised
+- When updating a container and a collision occurs, a new widget_location_id is generated
 
 ### Container Updates
 
 When updating a widget's container:
 1. The old container's location generator removes the widget_location_id
-2. The new container's location generator registers or generates a new widget_location_id
+2. The new container's location generator either uses the same widget_location_id or generates a new one if there's a collision
 3. All container references and location paths are updated automatically
 
 ### Multiple Projects Support

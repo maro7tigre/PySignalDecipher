@@ -123,7 +123,8 @@ class ObservableManager:
                 self.unregister_property(property_id)
             
             # Clean up
-            del self._observable_to_properties[unique_id]
+            if unique_id in self._observable_to_properties:  # Check if key exists before deleting
+                del self._observable_to_properties[unique_id]
         
         # Remove from all mappings
         if observable in self._observable_objects_to_id:
@@ -164,6 +165,9 @@ class ObservableManager:
         controller_unique_id = controller_id
         if controller_id and controller_id != DEFAULT_NO_CONTROLLER and ID_SEPARATOR in controller_id:
             controller_unique_id = get_unique_id_from_id(controller_id)
+        # Fix issue 1: Ensure controller_id is set to DEFAULT_NO_CONTROLLER when none provided
+        elif not controller_id:
+            controller_unique_id = DEFAULT_NO_CONTROLLER
         
         # Create the property ID
         property_id = create_property_id(
@@ -228,7 +232,7 @@ class ObservableManager:
                 self._observable_to_properties[observable_unique_id].discard(property_id)
                 
                 # Clean up empty sets
-                if not self._observable_to_properties[observable_unique_id]:
+                if observable_unique_id in self._observable_to_properties and not self._observable_to_properties[observable_unique_id]:
                     del self._observable_to_properties[observable_unique_id]
         
         # Remove from controller's property set if applicable
@@ -237,7 +241,7 @@ class ObservableManager:
                 self._controller_to_properties[controller_id].discard(property_id)
                 
                 # Clean up empty sets
-                if not self._controller_to_properties[controller_id]:
+                if controller_id in self._controller_to_properties and not self._controller_to_properties[controller_id]:
                     del self._controller_to_properties[controller_id]
         
         # Remove from all mappings
@@ -420,7 +424,7 @@ class ObservableManager:
             self._controller_to_properties[old_controller_id].discard(property_id)
             
             # Clean up empty sets
-            if not self._controller_to_properties[old_controller_id]:
+            if old_controller_id in self._controller_to_properties and not self._controller_to_properties[old_controller_id]:
                 del self._controller_to_properties[old_controller_id]
         
         if new_controller_id != DEFAULT_NO_CONTROLLER:
