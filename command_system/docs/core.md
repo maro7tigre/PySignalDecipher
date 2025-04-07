@@ -1,6 +1,6 @@
 # Command System Documentation
 
-This document provides a concise overview of the Command System for creating observable objects and implementing undo/redo functionality in the PySignalDecipher application.
+This document provides a concise overview of the Command System for creating observable objects and implementing undo/redo functionality in PySignalDecipher applications.
 
 ## Overview
 
@@ -8,7 +8,7 @@ The Command System provides two key patterns:
 1. **Observable Pattern**: For property change notification
 2. **Command Pattern**: For encapsulating actions that can be executed, undone, and redone
 
-Both patterns are integrated with the ID System for efficient memory management and serialization support.
+Both patterns are integrated with the ID System for efficient memory management, reference tracking, and serialization support.
 
 ## Observable Pattern
 
@@ -22,7 +22,7 @@ class Person(Observable):
     age = ObservableProperty(0)
     
     def __init__(self):
-        super().__init__()
+        super().__init__()  # Important: Initialize the Observable first
         # Set initial values if needed
         self.name = "Alice"
         self.age = 30
@@ -42,26 +42,29 @@ person = Person()
 # Register observer with its object for proper ID tracking
 observer_id = person.add_property_observer("name", observer.on_name_changed, observer)
 
-person.name = "Alice"  # Triggers notification: "Name changed from  to Alice"
+# Property changes trigger notifications
+person.name = "Bob"  # Triggers notification: "Name changed from Alice to Bob"
 
 # Remove observer when no longer needed
 person.remove_property_observer("name", observer_id)
 ```
 
-You can also register observers without providing an object:
+You can also register observers without providing an observer object:
 
 ```python
 # This creates a proxy object internally
 observer_id = person.add_property_observer("name", lambda prop, old, new: print(f"{old} -> {new}"))
 ```
 
-### Getting Object IDs
+### Working with Object IDs
+
+Each observable object and property is assigned a unique ID:
 
 ```python
 # Get the observable's ID
-person_id = person.get_id()
+person_id = person.get_id()  # Returns something like "o:1A"
 
-# IDs are used for commands and lookups
+# Looking up objects by ID
 from command_system.id_system import get_id_registry
 registry = get_id_registry()
 same_person = registry.get_observable(person_id)
@@ -70,41 +73,14 @@ same_person = registry.get_observable(person_id)
 ### Property Cleanup
 
 ```python
-# Unregister a specific property
+# Property IDs are cached in the observable
 property_id = person._property_id_cache.get("name")
+
+# Unregister a specific property
 person.unregister_property(property_id)
 
 # The observable will automatically unregister itself if all properties are removed
 ```
-
-### Serialization and Deserialization
-
-Observables support property-level serialization:
-
-```python
-# Serialize a specific property
-property_id = person._property_id_cache.get("name")
-serialized_property = person.serialize_property(property_id)
-
-# Deserialize a property (updates the property value)
-person.deserialize_property(property_id, serialized_property)
-```
-
-The serialized property format includes essential information:
-
-```python
-{
-    'property_id': 'op:1A:2B:name:0',
-    'property_name': 'name',
-    'value': 'Alice',
-    'observable_id': 'o:2B'
-}
-```
-
-If the observable ID has changed during deserialization, the system will:
-1. Check for any existing observables with that ID (to detect cleanup failures)
-2. Update the observable's ID
-3. Update all property IDs to maintain the relationship
 
 ## Command Pattern
 
@@ -137,10 +113,20 @@ Change properties with automatic undo/redo support:
 from command_system.core import PropertyCommand, get_command_manager
 
 person = Person()
-person_id = person.get_id()
 
-# Create a command to change the name
-cmd = PropertyCommand(person_id, "name", "Bob")
+# Get property ID - two ways to do this:
+# 1. Directly from the observable
+property_id = person._property_id_cache.get("name")
+
+# 2. From the ID registry
+id_registry = get_id_registry()
+property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
+    person.get_id(), "name"
+)
+property_id = property_ids[0]
+
+# Create command with property_id and new value
+cmd = PropertyCommand(property_id, "Bob")
 
 # Execute the command
 manager = get_command_manager()
@@ -153,7 +139,7 @@ print(person.name)  # Output: Bob
 manager.undo()
 
 # Now person.name is back to original value
-print(person.name)  # Output: ""
+print(person.name)  # Output: Alice
 ```
 
 ### Widget Property Commands
@@ -164,7 +150,7 @@ Similar to PropertyCommand but for UI widgets:
 from command_system.core import WidgetPropertyCommand
 
 # Get the widget's ID
-widget_id = registry.get_id(my_widget)
+widget_id = id_registry.get_id(my_widget)
 
 # Create command to change widget property
 cmd = WidgetPropertyCommand(widget_id, "text", "New Label")
@@ -178,9 +164,15 @@ Group multiple commands to execute them as a unit:
 ```python
 from command_system.core import CompoundCommand
 
+# Create a compound command
 compound = CompoundCommand("Update Person")
-compound.add_command(PropertyCommand(person_id, "name", "Bob"))
-compound.add_command(PropertyCommand(person_id, "age", 30))
+
+# Add multiple commands
+property_id_name = person._property_id_cache.get("name")
+property_id_age = person._property_id_cache.get("age")
+
+compound.add_command(PropertyCommand(property_id_name, "Bob"))
+compound.add_command(PropertyCommand(property_id_age, 30))
 
 # Execute both commands as a unit
 manager.execute(compound)
@@ -196,13 +188,48 @@ Create user-level operations with descriptions:
 ```python
 from command_system.core import MacroCommand
 
+# Create a macro command with a descriptive name
 macro = MacroCommand("Create Person")
-macro.add_command(PropertyCommand(person_id, "name", "Bob"))
-macro.add_command(PropertyCommand(person_id, "age", 30))
+
+# Add commands to the macro
+property_id_name = person._property_id_cache.get("name")
+property_id_age = person._property_id_cache.get("age")
+
+macro.add_command(PropertyCommand(property_id_name, "Bob"))
+macro.add_command(PropertyCommand(property_id_age, 30))
+
+# Set a human-readable description
 macro.set_description("Create a new person named Bob")
 
 # Execute the macro
 manager.execute(macro)
+```
+
+### Serialization Commands
+
+For commands that need to capture and restore state:
+
+```python
+from command_system.core import SerializationCommand
+
+class TabChangeCommand(SerializationCommand):
+    def __init__(self, tab_widget_id, new_tab_index):
+        super().__init__(tab_widget_id)
+        self.new_tab_index = new_tab_index
+        self.old_tab_index = None
+        
+        # Capture the current state before changes
+        self.get_serialization()
+    
+    def execute(self):
+        tab_widget = get_id_registry().get_widget(self.component_id)
+        if tab_widget:
+            self.old_tab_index = tab_widget.currentIndex()
+            tab_widget.setCurrentIndex(self.new_tab_index)
+    
+    def undo(self):
+        # Restore previous state
+        self.deserialize()
 ```
 
 ## Command Manager
@@ -267,7 +294,7 @@ manager.end_init()
 
 ```python
 def on_button_clicked():
-    button_id = registry.get_id(button)
+    button_id = id_registry.get_id(button)
     
     # Create command
     cmd = MyCommand(parameter)
@@ -281,14 +308,43 @@ def on_button_clicked():
 
 ### Command Context Navigation
 
-The system will automatically navigate back to the UI context when undoing/redoing commands.
+The system will automatically navigate back to the UI context when undoing/redoing commands:
+
+```python
+# In your container widget implementation:
+def navigate_to_widget(self, widget_id):
+    """Navigate to the given widget within this container."""
+    # Implementation to focus the widget, show its tab, etc.
+    widget = get_id_registry().get_widget(widget_id)
+    if widget:
+        widget.setFocus()
+```
 
 ## Best Practices
 
-1. **Use IDs, not references**: Store IDs instead of direct object references in commands
-2. **Keep commands small**: Each command should do one specific thing
-3. **Use compound commands** for complex operations
-4. **Store context info** with commands for proper navigation during undo/redo
-5. **Clean up observers** when they're no longer needed
-6. **Unregister properties** when they're no longer needed
-7. **Check for serialization errors** to detect cleanup failures
+1. **Use IDs, not direct references**
+   - Store IDs instead of direct object references in commands
+   - Use the ID system for lookup and relationship management
+
+2. **Keep commands small and focused**
+   - Each command should do one specific thing
+   - Use compound commands for complex operations
+
+3. **Store context information**
+   - Use `set_context_info` to store navigation context with commands
+
+4. **Clean up properly**
+   - Remove observers when they're no longer needed
+   - Unregister properties when they're no longer needed
+
+5. **Use property commands for observable changes**
+   - Always use PropertyCommand for changing observable properties
+   - This ensures undo/redo works properly
+
+6. **Check ID validity**
+   - Always ensure IDs are valid before using them
+   - Handle cases where IDs might have changed
+
+7. **Handle serialization carefully**
+   - Be consistent in how you serialize and deserialize state
+   - Test serialization with undo/redo thoroughly

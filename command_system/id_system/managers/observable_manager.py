@@ -146,7 +146,7 @@ class ObservableManager:
         Register a property with the manager.
         
         Args:
-            property_obj: The property object to register
+            property_obj: The property object to register (can be None for descriptor properties)
             type_code: The property type code
             unique_id: The unique ID for the property
             observable_id: The observable ID or unique ID (default: "0")
@@ -181,7 +181,12 @@ class ObservableManager:
         # Save the ID mappings
         self._properties[property_id] = property_obj
         self._unique_id_to_property_id[unique_id] = property_id
-        self._property_objects_to_id[property_obj] = property_id
+        
+        # Only add to _property_objects_to_id if property_obj is not None
+        # This allows descriptor properties (which don't have concrete objects)
+        # to be registered without causing weak reference errors
+        if property_obj is not None:
+            self._property_objects_to_id[property_obj] = property_id
         
         # Add to observable's property set if applicable
         if observable_unique_id != DEFAULT_NO_OBSERVABLE:
@@ -245,7 +250,7 @@ class ObservableManager:
                     del self._controller_to_properties[controller_id]
         
         # Remove from all mappings
-        if property_obj in self._property_objects_to_id:
+        if property_obj is not None and property_obj in self._property_objects_to_id:
             del self._property_objects_to_id[property_obj]
         if unique_id in self._unique_id_to_property_id:
             del self._unique_id_to_property_id[unique_id]
@@ -294,7 +299,10 @@ class ObservableManager:
         property_obj = self._properties[property_id]
         self._properties[new_property_id] = property_obj
         self._unique_id_to_property_id[components['unique_id']] = new_property_id
-        self._property_objects_to_id[property_obj] = new_property_id
+        
+        # Update _property_objects_to_id only if property_obj is not None
+        if property_obj is not None:
+            self._property_objects_to_id[property_obj] = new_property_id
         
         # Update observable's property sets
         if old_observable_unique_id != DEFAULT_NO_OBSERVABLE and old_observable_unique_id in self._observable_to_properties:
@@ -353,7 +361,10 @@ class ObservableManager:
         property_obj = self._properties[property_id]
         self._properties[new_property_id] = property_obj
         self._unique_id_to_property_id[components['unique_id']] = new_property_id
-        self._property_objects_to_id[property_obj] = new_property_id
+        
+        # Update _property_objects_to_id only if property_obj is not None
+        if property_obj is not None:
+            self._property_objects_to_id[property_obj] = new_property_id
         
         # Update observable's property set
         observable_unique_id = components['observable_unique_id']
@@ -411,7 +422,10 @@ class ObservableManager:
         property_obj = self._properties[property_id]
         self._properties[new_property_id] = property_obj
         self._unique_id_to_property_id[components['unique_id']] = new_property_id
-        self._property_objects_to_id[property_obj] = new_property_id
+        
+        # Update _property_objects_to_id only if property_obj is not None
+        if property_obj is not None:
+            self._property_objects_to_id[property_obj] = new_property_id
         
         # Update observable's property set
         observable_unique_id = components['observable_unique_id']
@@ -486,7 +500,10 @@ class ObservableManager:
         Returns:
             str: The property ID, or None if not found
         """
-        return self._property_objects_to_id.get(property_obj)
+        # Only look up in _property_objects_to_id if property_obj is not None
+        if property_obj is not None:
+            return self._property_objects_to_id.get(property_obj)
+        return None
     
     def get_property_ids_by_observable_id(self, observable_unique_id):
         """

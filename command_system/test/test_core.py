@@ -17,10 +17,11 @@ if project_root not in sys.path:
 from command_system.core import (
     Observable, ObservableProperty,
     Command, CompoundCommand, PropertyCommand, MacroCommand, WidgetPropertyCommand,
-    get_command_manager
+    SerializationCommand, get_command_manager
 )
 from command_system.id_system import get_id_registry
 from command_system.id_system.types import WidgetTypeCodes, ObservableTypeCodes
+from command_system.id_system.core.parser import create_observable_id
 
 # Mock classes for testing
 class MockWidget:
@@ -228,9 +229,9 @@ class TestObservablePattern:
         original_name_id = name_property_id
         original_age_id = age_property_id
         
-        # Create new ID
+        # Create new ID using the system's ID creation method
         id_registry = get_id_registry()
-        new_id = id_registry._id_generator.generate_observable_id(ObservableTypeCodes.OBSERVABLE)
+        new_id = create_observable_id(ObservableTypeCodes.OBSERVABLE, id_registry._id_generator.generate())
         
         # Create serialized data with new ID
         serialized_name = {
@@ -280,7 +281,7 @@ class TestObservablePattern:
             person1.deserialize_property(name_property_id1, serialized_data)
         
         # Verify error message
-        assert "cleanup failure" in str(excinfo.value)
+        assert "collision" in str(excinfo.value)
     
     def test_observable_property_unregistration(self):
         """Test unregistering properties from an observable."""
@@ -379,17 +380,11 @@ class TestCommandPattern:
     
     def test_property_command(self):
         """Test property change command."""
-        # Get or generate property ID
-        id_registry = get_id_registry()
-        person_id = self.person.get_id()
-        
         # Ensure the property is registered
         self.person._ensure_property_registered("name")
         
-        # Get the property ID for the name property
-        property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
-            person_id, "name")
-        property_id = property_ids[0]
+        # Get the property ID directly from the observable's cache
+        property_id = self.person._property_id_cache.get("name")
         
         # Create command with property_id directly
         cmd = PropertyCommand(property_id, "Alice")
@@ -435,22 +430,13 @@ class TestCommandPattern:
         # Create compound command
         compound = CompoundCommand("Update Person")
         
-        # Get property IDs
-        id_registry = get_id_registry()
-        person_id = self.person.get_id()
-        
         # Ensure properties are registered
         self.person._ensure_property_registered("name")
         self.person._ensure_property_registered("age")
         
-        # Get property IDs
-        name_property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
-            person_id, "name")
-        age_property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
-            person_id, "age")
-            
-        name_property_id = name_property_ids[0]
-        age_property_id = age_property_ids[0]
+        # Get property IDs directly from the observable's cache
+        name_property_id = self.person._property_id_cache.get("name")
+        age_property_id = self.person._property_id_cache.get("age")
         
         # Add subcommands with property IDs
         compound.add_command(PropertyCommand(name_property_id, "Alice"))
@@ -476,22 +462,13 @@ class TestCommandPattern:
         macro = MacroCommand("Create Person")
         macro.set_description("Create a new person named Alice")
         
-        # Get property IDs
-        id_registry = get_id_registry()
-        person_id = self.person.get_id()
-        
         # Ensure properties are registered
         self.person._ensure_property_registered("name")
         self.person._ensure_property_registered("age")
         
-        # Get property IDs
-        name_property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
-            person_id, "name")
-        age_property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
-            person_id, "age")
-            
-        name_property_id = name_property_ids[0]
-        age_property_id = age_property_ids[0]
+        # Get property IDs directly from the observable's cache
+        name_property_id = self.person._property_id_cache.get("name")
+        age_property_id = self.person._property_id_cache.get("age")
         
         # Add subcommands with property IDs
         macro.add_command(PropertyCommand(name_property_id, "Alice"))
@@ -605,6 +582,39 @@ class TestCommandPattern:
         assert cmd1.executed
         assert cmd2.executed
         assert not self.manager.can_undo()
+
+    def test_serialization_command(self):
+        """Test serialization command basics."""
+        # Create a simple custom serialization command
+        class TestSerializationCommand(SerializationCommand):
+            def __init__(self, widget_id):
+                super().__init__(widget_id)
+                self.original_text = None
+                self.new_text = "Serialization Test"
+            
+            def execute(self):
+                widget = get_id_registry().get_widget(self.component_id)
+                if widget:
+                    self.original_text = widget.text
+                    widget.text = self.new_text
+            
+            def undo(self):
+                widget = get_id_registry().get_widget(self.component_id)
+                if widget:
+                    widget.text = self.original_text
+        
+        # Create and execute the command
+        cmd = TestSerializationCommand(self.widget.id)
+        self.manager.execute(cmd)
+        
+        # Verify widget property changed
+        assert self.widget.text == "Serialization Test"
+        
+        # Undo
+        self.manager.undo()
+        
+        # Verify widget property restored
+        assert self.widget.text == ""
 
 
 if __name__ == "__main__":
