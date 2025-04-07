@@ -8,10 +8,9 @@ from typing import Any, Optional
 from PySide6.QtWidgets import QLineEdit
 from PySide6.QtCore import Signal, Slot
 
-from command_system.id_system import TypeCodes
+from command_system.id_system import WidgetTypeCodes
 from .base_widget import BaseCommandWidget, CommandTriggerMode
 
-# MARK: - Command Line Edit
 class CommandLineEdit(QLineEdit, BaseCommandWidget):
     """
     A command-system integrated line edit widget.
@@ -31,15 +30,17 @@ class CommandLineEdit(QLineEdit, BaseCommandWidget):
             parent: Qt parent widget
             text: Initial text
         """
-        # Initialize both parent classes
+        # Initialize QLineEdit first
         QLineEdit.__init__(self, text, parent)
-        BaseCommandWidget.initiate_widget(self, TypeCodes.LINE_EDIT, container_id, location)
+        
+        # Initialize the command widget functionality
+        BaseCommandWidget.initiate_widget(self, WidgetTypeCodes.LINE_EDIT, container_id, location)
         
         # Connect signals for value changes
         self.textChanged.connect(self._handle_text_changed)
         self.editingFinished.connect(self._handle_editing_finished)
         
-        # Default to edit finished trigger mode
+        # Default to edit finished trigger mode for better user experience
         self.set_command_trigger_mode(CommandTriggerMode.ON_EDIT_FINISHED)
     
     # MARK: - Property Implementation

@@ -306,7 +306,7 @@ class CommandManager:
         # Get the container 
         id_registry = get_id_registry()
         container_id = id_registry.get_container_id_from_widget_id(trigger_widget_id)
-        if not container_id:
+        if not container_id or container_id == "0":
             trigger_widget = id_registry.get_widget(trigger_widget_id)
             trigger_widget.setFocus()
             return True

@@ -338,6 +338,18 @@ class IDRegistry:
             
         return self._widget_manager.get_widget_ids_by_container_id_and_location(
             container_unique_id, location)
+        
+    def get_container_id_from_widget_id(self, widget_id):
+        """
+        Get the container ID from a widget ID.
+        
+        Args:
+            widget_id: The widget ID
+            
+        Returns:
+            str: The container's unique ID, or None if not found or invalid
+        """
+        return self._widget_manager.get_container_id_from_widget_id(widget_id)
     
     def set_locations_map(self, container_id, locations_map):
         """

@@ -5,14 +5,12 @@ This module provides a base implementation for all command-enabled widgets,
 handling ID registration, property binding, and command generation.
 """
 from enum import Enum
-from typing import Any, Optional, Callable, Dict, Union, TypeVar, Generic
+from typing import Any, Optional, Callable, Dict, Union
 from PySide6.QtCore import QTimer
 
-from command_system.id_system import get_id_registry, TypeCodes, extract_property_name, extract_location, subscribe_to_id, unsubscribe_from_id
-from command_system.core import Command, WidgetPropertyCommand, PropertyCommand, get_command_manager
-
-# Type for observable targets
-T = TypeVar('T')
+from command_system.id_system import get_id_registry, TypeCodes
+from command_system.id_system.core.parser import get_unique_id_from_id
+from command_system.core import PropertyCommand, get_command_manager
 
 # MARK: - Command Trigger Mode
 class CommandTriggerMode(Enum):
@@ -52,7 +50,7 @@ class BaseCommandWidget:
         self.widget_id = id_registry.register(self, type_code, None, container_id, location)
         
         # Controlled properties tracking
-        self._controlled_properties: Dict[str, str] = {}  # Widget property -> Observable property ID
+        self._controlled_properties: Dict[str, str] = {}  # Widget property -> Property ID
         
         # Value change handling
         self._command_trigger_mode = CommandTriggerMode.IMMEDIATE
@@ -87,9 +85,12 @@ class BaseCommandWidget:
             new_container_id: New container ID or None
         """
         id_registry = get_id_registry()
-        if id_registry.update_container_id(self.widget_id, new_container_id):
-            # Update our stored widget ID
-            self.widget_id = id_registry.get_id(self)
+        if new_container_id is not None:
+            # Update container in the ID system
+            updated_id = id_registry.update_container(self.widget_id, new_container_id)
+            if updated_id != self.widget_id:
+                # Update our stored widget ID if it changed
+                self.widget_id = updated_id
         return self.widget_id
     
     # MARK: - Property Binding
@@ -114,28 +115,22 @@ class BaseCommandWidget:
         if not hasattr(observable, property_name):
             raise ValueError(f"Observable does not have property '{property_name}'")
         
-        # Register observable property with this widget as controller
+        # Get property IDs associated with this observable and property name
         property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
             observable_id, property_name)
         
         if property_ids:
-            # Check if we're already bound to this property
-            for prop_id in property_ids:
-                controller_id = id_registry.get_controller_id_from_property_id(prop_id)
-                if controller_id == self.widget_id:
-                    raise ValueError(f"Property '{property_name}' already bound to this widget")
-            
-            # Property already registered, update controller
+            # Property already exists, update controller reference
             property_id = property_ids[0]
-            id_registry.update_controller_id(property_id, self.widget_id)
+            id_registry.update_controller_reference(property_id, self.widget_id)
         else:
-            # Property not yet registered with this property name
             # This shouldn't happen with ObservableProperty attributes
+            # They should be registered when the Observable is initialized
             raise ValueError(f"Property '{property_name}' not registered with observable")
         
         # Store the controlled property mapping
         self._controlled_properties[widget_property] = property_id
-        subscribe_to_id(property_id, self.refresh_controlled_properties)
+        
         # Set up observer for property changes
         observer_id = observable.add_property_observer(
             property_name, 
@@ -171,21 +166,6 @@ class BaseCommandWidget:
         
         # Remove from our tracking
         del self._controlled_properties[widget_property]
-
-    def refresh_controlled_properties(self, old_id, new_id):
-        """
-        Refresh the controlled properties when the widget ID changes.
-
-        Args:
-            old_id: Old widget ID
-            new_id: New widget ID
-        """
-        for widget, id in self._controlled_properties.items():
-            if id == old_id:
-                if new_id is None:
-                    del self._controlled_properties[widget]
-                else:
-                    self._controlled_properties[widget] = new_id
     
     # MARK: - Property Change Handling
     def _on_observed_property_changed(self, widget_property: str, old_value: Any, new_value: Any):
@@ -288,7 +268,7 @@ class BaseCommandWidget:
         # Get the property ID
         property_id = self._controlled_properties[widget_property]
         
-        # Create and execute the command directly with property ID
+        # Create and execute the command
         command = PropertyCommand(property_id, new_value)
         command.set_trigger_widget(self.widget_id)
         
@@ -298,27 +278,11 @@ class BaseCommandWidget:
         # Update last known value
         self._last_values[widget_property] = new_value
     
-    def update_controlled_property(self, widget_property: str, new_value: Any):
-        """
-        Programmatically update a controlled property.
-        
-        Args:
-            widget_property: Name of the widget property
-            new_value: New value for the property
-        """
-        # First update the widget itself
-        self._update_widget_property(widget_property, new_value)
-        
-        # Then create and execute a command if property is bound
-        if widget_property in self._controlled_properties:
-            self._create_and_execute_property_command(widget_property, new_value)
-    
     # MARK: - Resource Management
     def unregister_widget(self) -> None:
         """Unregister this widget from the ID system"""
         id_registry = get_id_registry()
         id_registry.unregister(self.widget_id)
-        # TODO: Unregister any links in the command system as well
     
     # MARK: - Serialization
     def get_serialization(self):
@@ -330,7 +294,6 @@ class BaseCommandWidget:
         """
         result = {
             'id': self.widget_id,
-            'location': extract_location(self.widget_id),
             'properties': {}
         }
         
@@ -343,10 +306,9 @@ class BaseCommandWidget:
                 observable = id_registry.get_observable(observable_id)
                 if observable and hasattr(observable, 'serialize_property'):
                     serialized_property = observable.serialize_property(property_id)
-                    result['properties'][property_id] = serialized_property
+                    result['properties'][widget_property] = serialized_property
         
         return result
-        # TODO: Add serialize_property method to Observable class
     
     def deserialize(self, data):
         """
@@ -358,40 +320,24 @@ class BaseCommandWidget:
         Returns:
             True if successful
         """
-        # Update widget ID if needed
-        self.restore_widget(data)
+        id_registry = get_id_registry()
         
-    def restore_widget(self, data):
-        """
-        Restore this widget's state from serialized data.
-        
-        Args:
-            data: Dictionary containing widget state
-            
-        Returns:
-            True if successful
-        """
         # Update widget ID if needed
         if data['id'] != self.widget_id:
-            id_registry = get_id_registry()
-            # Register with the specified ID
-            id_registry.update_id(self.widget_id, data['id'])
-            self.widget_id = id_registry.get_id(self)
+            # Register with the specified ID - this will update our ID
+            id_registry.unregister(self.widget_id)
+            self.widget_id = id_registry.register(self, self.type_code, get_unique_id_from_id(data['id']))
         
-        
-        
-        # Restore controlled properties
-        for _, property_id in self._controlled_properties.items():
-            #TODO: a better tracking of controlled properties observables
-            observable_id = id_registry.get_observable_id_from_property_id(property_id)
-            print(observable_id)
-            observable = id_registry.get_observable(observable_id)
-            
-            current_property_name = extract_property_name(property_id)
-            for _, serialized_property in data['properties'].items():
-                if serialized_property['property_name'] == current_property_name:
-                    observable.deserialize_property(property_id, serialized_property)
-                    break
-            
+        # Restore properties
+        if 'properties' in data:
+            for widget_property, serialized_property in data['properties'].items():
+                if widget_property in self._controlled_properties:
+                    property_id = self._controlled_properties[widget_property]
+                    observable_id = id_registry.get_observable_id_from_property_id(property_id)
+                    
+                    if observable_id:
+                        observable = id_registry.get_observable(observable_id)
+                        if observable and hasattr(observable, 'deserialize_property'):
+                            observable.deserialize_property(property_id, serialized_property)
         
         return True
