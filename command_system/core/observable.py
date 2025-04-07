@@ -338,31 +338,6 @@ class Observable:
             String ID for this object
         """
         return self._id
-    
-    def _notify_property_changed(self, property_name: str, old_value: Any, new_value: Any) -> None:
-        """
-        Notify observers of property change.
-        
-        Args:
-            property_name: Name of the property that changed
-            old_value: Previous value of the property
-            new_value: New value of the property
-        """
-        if self._is_updating:
-            return  # Skip notification if we're already processing an update
-            
-        # Get property ID
-        property_id = self._property_id_cache.get(property_name)
-        if not property_id:
-            return
-            
-        if property_id in self._property_observers:
-            try:
-                self._is_updating = True
-                for callback in self._property_observers[property_id].values():
-                    callback(property_name, old_value, new_value)
-            finally:
-                self._is_updating = False
         
     def get_generation(self) -> int:
         """
@@ -512,7 +487,7 @@ class Observable:
         if not property_name or not observable_id:
             return False
         
-        # Check if this observables ID has changed
+        # Check if this observable's ID has changed
         if self._id != observable_id:
             id_registry = get_id_registry()
             
@@ -520,13 +495,31 @@ class Observable:
             existing_observable = id_registry.get_observable(observable_id)
             if existing_observable and existing_observable is not self:
                 raise ValueError(f"Observable ID collision: {observable_id} (potential cleanup failure)")
-                
-            # Update our ID - this will trigger ID change notification
+            
+            # Save old ID for notification
             old_id = self._id
+            
+            # Store property names and IDs before the update
+            old_property_ids = {}
+            for prop_name in self._property_id_cache:
+                old_property_ids[prop_name] = self._property_id_cache[prop_name]
+            
+            # Update our ID
             self._id = observable_id
             
-            # Manually update ID in registry since we bypassed normal update
+            # Update property IDs in registry to reference the new observable ID
+            for prop_name, old_prop_id in old_property_ids.items():
+                # Update observable reference for this property in the registry
+                new_prop_id = id_registry.update_observable_reference(old_prop_id, observable_id)
+                # Update our cache
+                self._property_id_cache[prop_name] = new_prop_id
+            
+            # Manually notify subscribers about the ID change
             id_registry._subscription_manager.notify(old_id, observable_id)
+            
+            # Unsubscribe from old ID and subscribe to new ID
+            unsubscribe_from_id(old_id, self._on_id_changed)
+            subscribe_to_id(observable_id, self._on_id_changed)
         
         # Update the property if it exists
         if hasattr(self, property_name):
