@@ -339,6 +339,23 @@ class IDRegistry:
         return self._widget_manager.get_widget_ids_by_container_id_and_location(
             container_unique_id, location)
         
+    def get_widgets_by_container_id(self, container_id):
+        """
+        Get all widgets in a container.
+
+        Args:
+            container_id: The container's ID
+
+        Returns:
+            list: A list of widget IDs in the container
+        """
+        # Extract container unique ID if full ID provided
+        container_unique_id = container_id
+        if ID_SEPARATOR in container_id:
+            container_unique_id = get_unique_id_from_id(container_id)
+
+        return self._widget_manager.get_widget_ids_by_container_id(container_unique_id)
+        
     def get_container_id_from_widget_id(self, widget_id):
         """
         Get the container ID from a widget ID.

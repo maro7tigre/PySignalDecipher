@@ -8,15 +8,19 @@ for automatic undo/redo support, property binding, and serialization.
 from .base_widget import BaseCommandWidget, CommandTriggerMode
 from .line_edit import CommandLineEdit
 
-# Also create the containers package
-#from .containers.base_container import BaseCommandContainer
+# Import container classes
+from .containers.base_container import BaseCommandContainer
+from .containers.tab_widget import CommandTabWidget
 
 __all__ = [
     # Base classes
     'BaseCommandWidget',
     'CommandTriggerMode',
-    #'BaseCommandContainer',
+    'BaseCommandContainer',
     
     # Widgets
     'CommandLineEdit',
+    
+    # Containers
+    'CommandTabWidget',
 ]

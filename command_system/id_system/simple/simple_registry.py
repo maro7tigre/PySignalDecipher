@@ -24,132 +24,88 @@ def get_simple_id_registry():
 
 class SimpleIDRegistry:
     """
-    A simplified ID registry for creating and tracking consistent IDs.
+    A simplified ID registry for creating unique IDs.
     
-    This class provides a way to create and track consistent IDs for components
+    This class provides a way to create unique IDs for components
     that don't require the full hierarchy of the main ID system.
     """
     
     def __init__(self):
         """Initialize the simple ID registry."""
-        # Maps names to ID strings
-        self._name_to_id = {}
-        
-        # Maps ID strings to names
-        self._id_to_name = {}
+        # Set of registered IDs
+        self._registered_ids = set()
         
         # Counters for auto-generated IDs by type code
         self._type_counters = {}
     
-    def register(self, name, type_code, custom_id=None):
+    def register(self, type_code, custom_id=None):
         """
-        Register a name with the registry.
+        Register and generate a unique ID.
         
         Args:
-            name: The name to register
             type_code: The type code for the component
             custom_id: An optional custom ID to use (default: None, will be generated)
             
         Returns:
             str: The generated or custom ID
         """
-        # Check if name is already registered
-        if name in self._name_to_id:
-            return self._name_to_id[name]
-        
         # Use custom ID if provided, or generate a new one
         if custom_id:
             id_str = custom_id
+            
+            # Check for ID collisions
+            if id_str in self._registered_ids:
+                # If custom ID collides, append a suffix
+                suffix = 1
+                while f"{id_str}_{suffix}" in self._registered_ids:
+                    suffix += 1
+                id_str = f"{id_str}_{suffix}"
         else:
             # Initialize counter for this type if needed
             if type_code not in self._type_counters:
                 self._type_counters[type_code] = 0
             
-            # Increment counter and create ID
-            self._type_counters[type_code] += 1
-            id_str = f"{type_code}:{self._type_counters[type_code]}"
-        
-        # Check for ID collisions
-        if id_str in self._id_to_name:
-            # If custom ID collides, append a suffix
-            if custom_id:
-                suffix = 1
-                while f"{id_str}_{suffix}" in self._id_to_name:
-                    suffix += 1
-                id_str = f"{id_str}_{suffix}"
-            # If generated ID collides, increment counter and try again
-            else:
+            # Generate ID and ensure it's unique
+            while True:
+                # Increment counter and create ID
                 self._type_counters[type_code] += 1
                 id_str = f"{type_code}:{self._type_counters[type_code]}"
+                
+                # Check if this ID is already registered
+                if id_str not in self._registered_ids:
+                    break
         
-        # Register the name and ID
-        self._name_to_id[name] = id_str
-        self._id_to_name[id_str] = name
+        # Register the ID
+        self._registered_ids.add(id_str)
         
         return id_str
     
-    def unregister(self, name_or_id):
+    def unregister(self, id_str):
         """
-        Unregister a name or ID from the registry.
+        Unregister an ID from the registry.
         
         Args:
-            name_or_id: The name or ID to unregister
+            id_str: The ID to unregister
             
         Returns:
             bool: True if successful, False otherwise
         """
-        # Check if it's a name
-        if name_or_id in self._name_to_id:
-            id_str = self._name_to_id[name_or_id]
-            del self._name_to_id[name_or_id]
-            del self._id_to_name[id_str]
+        if id_str in self._registered_ids:
+            self._registered_ids.remove(id_str)
             return True
-        
-        # Check if it's an ID
-        if name_or_id in self._id_to_name:
-            name = self._id_to_name[name_or_id]
-            del self._id_to_name[name_or_id]
-            del self._name_to_id[name]
-            return True
-        
-        # Not found
         return False
     
-    def get_id(self, name):
+    def is_registered(self, id_str):
         """
-        Get the ID for a registered name.
+        Check if an ID is registered.
         
         Args:
-            name: The registered name
-            
-        Returns:
-            str: The ID for the name, or None if not found
-        """
-        return self._name_to_id.get(name)
-    
-    def get_name(self, id_str):
-        """
-        Get the name for a registered ID.
-        
-        Args:
-            id_str: The registered ID
-            
-        Returns:
-            str: The name for the ID, or None if not found
-        """
-        return self._id_to_name.get(id_str)
-    
-    def is_registered(self, name_or_id):
-        """
-        Check if a name or ID is registered.
-        
-        Args:
-            name_or_id: The name or ID to check
+            id_str: The ID to check
             
         Returns:
             bool: True if registered, False otherwise
         """
-        return name_or_id in self._name_to_id or name_or_id in self._id_to_name
+        return id_str in self._registered_ids
     
     def get_all_ids(self):
         """
@@ -158,28 +114,9 @@ class SimpleIDRegistry:
         Returns:
             list: A list of all registered IDs
         """
-        return list(self._id_to_name.keys())
-    
-    def get_all_names(self):
-        """
-        Get all registered names.
-        
-        Returns:
-            list: A list of all registered names
-        """
-        return list(self._name_to_id.keys())
-    
-    def get_all_mappings(self):
-        """
-        Get all name-to-ID mappings.
-        
-        Returns:
-            dict: A dictionary mapping names to IDs
-        """
-        return self._name_to_id.copy()
+        return list(self._registered_ids)
     
     def clear(self):
         """Clear all registrations."""
-        self._name_to_id.clear()
-        self._id_to_name.clear()
+        self._registered_ids.clear()
         self._type_counters.clear()
