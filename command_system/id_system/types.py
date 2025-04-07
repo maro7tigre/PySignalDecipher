@@ -2,50 +2,162 @@
 Type codes and constants for the ID system.
 
 This module defines the various type codes used to identify different
-types of components in the ID system.
+types of components in the ID system with a flexible interface for both
+internal and external use.
 """
 
-#MARK: - Container Type Codes
+#MARK: - Container Type Definitions
+class ContainerTypeCodes:
+    """Container type code definitions."""
+    TAB = 't'
+    DOCK = 'd'
+    WINDOW = 'w'
+    CUSTOM = 'x'
+    
+    @classmethod
+    def get_all_codes(cls):
+        """Get a tuple of all defined container type codes."""
+        return (cls.TAB, cls.DOCK, cls.WINDOW, cls.CUSTOM)
+    
+    @classmethod
+    def is_valid_code(cls, code):
+        """Check if a code is a valid container type code."""
+        return code in cls.get_all_codes()
 
-CONTAINER_TYPE_CODES = {
-    't': 'Tab Container',
-    'd': 'Dock Container',
-    'w': 'Window Container',
-    'x': 'Custom Container',
-}
 
-#MARK: - Widget Type Codes
+#MARK: - Widget Type Definitions
+class WidgetTypeCodes:
+    """Widget type code definitions."""
+    LINE_EDIT = 'le'
+    CHECK_BOX = 'cb'
+    PUSH_BUTTON = 'pb'
+    RADIO_BUTTON = 'rb'
+    COMBO_BOX = 'co'
+    SLIDER = 'sl'
+    SPIN_BOX = 'sp'
+    TEXT_EDIT = 'te'
+    LIST_WIDGET = 'lw'
+    TREE_WIDGET = 'tw'
+    TABLE_WIDGET = 'tb'
+    CUSTOM_WIDGET = 'cw'
+    
+    @classmethod
+    def get_all_codes(cls):
+        """Get a tuple of all defined widget type codes."""
+        return (
+            cls.LINE_EDIT, cls.CHECK_BOX, cls.PUSH_BUTTON, cls.RADIO_BUTTON,
+            cls.COMBO_BOX, cls.SLIDER, cls.SPIN_BOX, cls.TEXT_EDIT,
+            cls.LIST_WIDGET, cls.TREE_WIDGET, cls.TABLE_WIDGET, cls.CUSTOM_WIDGET
+        )
+    
+    @classmethod
+    def is_valid_code(cls, code):
+        """Check if a code is a valid widget type code."""
+        return code in cls.get_all_codes()
 
-WIDGET_TYPE_CODES = {
-    # Command widgets
-    'le': 'Line Edit Widget',
-    'cb': 'Check Box Widget',
-    'pb': 'Push Button',
-    'rb': 'Radio Button',
-    'co': 'Combo Box',
-    'sl': 'Slider',
-    'sp': 'Spin Box',
-    'te': 'Text Edit',
-    'lw': 'List Widget',
-    'tw': 'Tree Widget',
-    'tb': 'Table Widget',
-    'cw': 'Custom Widget',
-}
 
-# Combined type codes for all widget types (including containers)
-ALL_WIDGET_TYPE_CODES = {**CONTAINER_TYPE_CODES, **WIDGET_TYPE_CODES}
+#MARK: - Observable Type Definitions
+class ObservableTypeCodes:
+    """Observable type code definitions."""
+    OBSERVABLE = 'o'
+    
+    @classmethod
+    def get_all_codes(cls):
+        """Get a tuple of all defined observable type codes."""
+        return (cls.OBSERVABLE,)
+    
+    @classmethod
+    def is_valid_code(cls, code):
+        """Check if a code is a valid observable type code."""
+        return code in cls.get_all_codes()
 
-#MARK: - Observable Type Codes
 
-OBSERVABLE_TYPE_CODES = {
-    'o': 'Observable',
-}
+#MARK: - Property Type Definitions
+class PropertyTypeCodes:
+    """Property type code definitions."""
+    OBSERVABLE_PROPERTY = 'op'
+    
+    @classmethod
+    def get_all_codes(cls):
+        """Get a tuple of all defined property type codes."""
+        return (cls.OBSERVABLE_PROPERTY,)
+    
+    @classmethod
+    def is_valid_code(cls, code):
+        """Check if a code is a valid property type code."""
+        return code in cls.get_all_codes()
 
-#MARK: - Property Type Codes
 
-PROPERTY_TYPE_CODES = {
-    'op': 'Observable Property',
-}
+#MARK: - Combined Type Codes
+class TypeCodes:
+    """Combined type code definitions and utilities."""
+    
+    @classmethod
+    def get_all_widget_codes(cls):
+        """Get a tuple of all widget type codes (including containers)."""
+        return ContainerTypeCodes.get_all_codes() + WidgetTypeCodes.get_all_codes()
+    
+    @classmethod
+    def get_all_codes(cls):
+        """Get a tuple of all defined type codes."""
+        return (ContainerTypeCodes.get_all_codes() + 
+                WidgetTypeCodes.get_all_codes() + 
+                ObservableTypeCodes.get_all_codes() + 
+                PropertyTypeCodes.get_all_codes())
+    
+    @classmethod
+    def is_valid_code(cls, code):
+        """Check if a code is a valid type code."""
+        return (ContainerTypeCodes.is_valid_code(code) or
+                WidgetTypeCodes.is_valid_code(code) or
+                ObservableTypeCodes.is_valid_code(code) or
+                PropertyTypeCodes.is_valid_code(code))
+    
+    @classmethod
+    def get_type_category(cls, code):
+        """
+        Get the category of a type code.
+        
+        Returns:
+            str: 'container', 'widget', 'observable', 'property', or 'unknown'
+        """
+        if ContainerTypeCodes.is_valid_code(code):
+            return 'container'
+        elif WidgetTypeCodes.is_valid_code(code):
+            return 'widget'
+        elif ObservableTypeCodes.is_valid_code(code):
+            return 'observable'
+        elif PropertyTypeCodes.is_valid_code(code):
+            return 'property'
+        else:
+            return 'unknown'
+    
+    @classmethod
+    def is_valid_all_widgets(cls, code):
+        """Check if all codes are valid widget type codes."""
+        return code in cls.get_all_widget_codes()
+    
+    @classmethod
+    def is_valid_widgets(cls, code):
+        """Check if all codes are valid widget type codes."""
+        return code in WidgetTypeCodes.get_all_codes()
+    
+    @classmethod
+    def is_valid_containers(cls, code):
+        """Check if all codes are valid container type codes."""
+        return code in ContainerTypeCodes.get_all_codes()
+    
+    @classmethod
+    def is_valid_observers(cls, code):
+        """Check if all codes are valid observable type codes."""
+        return code in ObservableTypeCodes.get_all_codes()
+    
+    @classmethod
+    def is_valid_properties(cls, code):
+        """Check if all codes are valid property type codes."""
+        return code in PropertyTypeCodes.get_all_codes()
+    
+
 
 #MARK: - Default values
 

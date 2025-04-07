@@ -19,7 +19,6 @@ if project_root not in sys.path:
 
 from command_system.id_system import (
     IDRegistry, get_id_registry,
-    WIDGET_TYPE_CODES, CONTAINER_TYPE_CODES, OBSERVABLE_TYPE_CODES, PROPERTY_TYPE_CODES,
     subscribe_to_id, unsubscribe_from_id, clear_subscriptions,
     SimpleIDRegistry, get_simple_id_registry,
     IDRegistrationError

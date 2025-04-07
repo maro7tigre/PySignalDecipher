@@ -29,11 +29,9 @@ from command_system.id_system.types import (
     DEFAULT_NO_OBSERVABLE,
     DEFAULT_NO_CONTROLLER,
     DEFAULT_NO_PROPERTY_NAME,
-    CONTAINER_TYPE_CODES,
-    WIDGET_TYPE_CODES,
-    ALL_WIDGET_TYPE_CODES,
-    OBSERVABLE_TYPE_CODES,
-    PROPERTY_TYPE_CODES,
+    ObservableTypeCodes,
+    TypeCodes,
+    PropertyTypeCodes,
     ID_SEPARATOR
 )
 
@@ -227,16 +225,15 @@ class IDRegistry:
             bool: True if successful, False otherwise
         """
         # Determine component type from ID
-        if component_id.startswith(tuple(ALL_WIDGET_TYPE_CODES)):
+        if component_id.startswith(tuple(TypeCodes.get_all_widget_codes())):
             # Widget/Container
             return self._widget_manager.unregister_widget(component_id)
-        elif component_id.startswith(tuple(OBSERVABLE_TYPE_CODES)):
+        elif component_id.startswith(tuple(ObservableTypeCodes.get_all_codes())):
             # Observable
             return self._observable_manager.unregister_observable(component_id)
-        elif component_id.startswith(tuple(PROPERTY_TYPE_CODES)):
+        elif component_id.startswith(tuple(PropertyTypeCodes.get_all_codes())):
             # Property
             return self._observable_manager.unregister_property(component_id)
-        
         return False
     
     #MARK: - ID retrieval methods
@@ -409,6 +406,24 @@ class IDRegistry:
             controller_unique_id = get_unique_id_from_id(controller_id)
             
         return self._observable_manager.get_property_ids_by_controller_id(controller_unique_id)
+    
+    def get_property_ids_by_observable_id_and_property_name(self, observable_id, property_name):
+        """
+        Get all property IDs for a given observable and property name.
+
+        Args:
+            observable_id: The observable's ID
+            property_name: The property name
+
+        Returns:
+            list: A list of property IDs for the observable and property name
+        """
+        # Extract observable unique ID if full ID provided
+        observable_unique_id = observable_id
+        if ID_SEPARATOR in observable_id:
+            observable_unique_id = get_unique_id_from_id(observable_id)
+
+        return self._observable_manager.get_property_ids_by_observable_id_and_property_name(observable_unique_id, property_name)
     
     #MARK: - ID update methods
     

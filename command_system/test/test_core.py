@@ -19,7 +19,8 @@ from command_system.core import (
     Command, CompoundCommand, PropertyCommand, MacroCommand, WidgetPropertyCommand,
     get_command_manager
 )
-from command_system.id_system import get_id_registry, TypeCodes
+from command_system.id_system import get_id_registry
+from command_system.id_system.types import WidgetTypeCodes, ObservableTypeCodes
 
 # Mock classes for testing
 class MockWidget:
@@ -29,7 +30,7 @@ class MockWidget:
         self.visible = True
         
         # Register with ID system
-        self.id = get_id_registry().register(self, TypeCodes.CUSTOM_WIDGET)
+        self.id = get_id_registry().register(self, WidgetTypeCodes.CUSTOM_WIDGET)
         
     def __repr__(self):
         return f"MockWidget({self.name})"
@@ -229,7 +230,7 @@ class TestObservablePattern:
         
         # Create new ID
         id_registry = get_id_registry()
-        new_id = id_registry._id_generator.generate_observable_id(TypeCodes.OBSERVABLE)
+        new_id = id_registry._id_generator.generate_observable_id(ObservableTypeCodes.OBSERVABLE)
         
         # Create serialized data with new ID
         serialized_name = {

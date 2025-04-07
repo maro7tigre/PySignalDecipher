@@ -22,7 +22,10 @@ class Person(Observable):
     age = ObservableProperty(0)
     
     def __init__(self):
-        super().__init__()  # No parent
+        super().__init__()
+        # Set initial values if needed
+        self.name = "Alice"
+        self.age = 30
 ```
 
 ### Property Change Tracking

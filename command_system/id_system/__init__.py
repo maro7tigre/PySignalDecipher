@@ -25,10 +25,11 @@ from command_system.id_system.managers.subscription_manager import (
 
 # Export type codes for public use
 from command_system.id_system.types import (
-    WIDGET_TYPE_CODES,
-    CONTAINER_TYPE_CODES,
-    OBSERVABLE_TYPE_CODES,
-    PROPERTY_TYPE_CODES,
+    ContainerTypeCodes,
+    WidgetTypeCodes,
+    ObservableTypeCodes,
+    PropertyTypeCodes,
+    TypeCodes
 )
 
 __all__ = [

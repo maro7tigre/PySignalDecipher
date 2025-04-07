@@ -15,7 +15,7 @@ from command_system.id_system.core.parser import (
 from command_system.id_system.types import (
     DEFAULT_ROOT_CONTAINER_ID,
     DEFAULT_ROOT_LOCATION,
-    CONTAINER_TYPE_CODES,
+    ContainerTypeCodes,
     ID_SEPARATOR,
     PATH_SEPARATOR,
     LOCATION_SEPARATOR,
@@ -140,7 +140,7 @@ class WidgetManager:
         self._container_to_widgets[container_unique_id].add(widget_id)
         
         # If this widget is a container, initialize its widgets set and location generator
-        if type_code in CONTAINER_TYPE_CODES:
+        if ContainerTypeCodes.is_valid_code(type_code):
             self._container_to_widgets[unique_id] = set()
             self._container_location_generators[unique_id] = {}
             self._container_locations_map[unique_id] = {}

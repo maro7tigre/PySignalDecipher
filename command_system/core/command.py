@@ -6,7 +6,13 @@ for action encapsulation and history tracking using the ID system.
 """
 from abc import ABC, abstractmethod
 from typing import List, Any, Optional, TypeVar, Dict, Union
-from ..id_system import get_id_registry, TypeCodes, extract_property_name
+from ..id_system import (
+    get_id_registry,
+)
+from ..id_system.core.parser import (
+    parse_property_id,
+    get_unique_id_from_id
+)
 
 # Type for command targets
 T = TypeVar('T')
@@ -145,49 +151,57 @@ class PropertyCommand(Command):
         self.property_id = property_id
         self.new_value = new_value
         
-        # Get the target object and property name to store the old value
+        # Parse the property ID to extract target information
         id_registry = get_id_registry()
-        target_id = id_registry.get_observable_id_from_property_id(property_id)
-        property_name = extract_property_name(property_id)
+        property_components = parse_property_id(property_id)
         
-        self.target_id = target_id
-        self.property_name = property_name
-        
-        if target_id:
-            target = id_registry.get_observable(target_id)
-            if target:
-                self.old_value = getattr(target, property_name)
+        if property_components:
+            self.observable_id = id_registry.get_observable_id_from_property_id(property_id)
+            self.property_name = property_components['property_name']
+            
+            # Store the old value if we can get it
+            if self.observable_id:
+                target = id_registry.get_observable(self.observable_id)
+                if target and hasattr(target, self.property_name):
+                    self.old_value = getattr(target, self.property_name)
+                else:
+                    self.old_value = None
             else:
                 self.old_value = None
         else:
+            # Fallback for invalid property ID
+            self.observable_id = None
+            self.property_name = None
             self.old_value = None
         
     def execute(self) -> None:
         """Execute the command by setting the new property value."""
         id_registry = get_id_registry()
-        target_id = self.target_id
         
+        # Try to get the target observable
+        target_id = self.observable_id
         if not target_id:
             # Try to get it again in case relationships changed
             target_id = id_registry.get_observable_id_from_property_id(self.property_id)
             
         if target_id:
             target = id_registry.get_observable(target_id)
-            if target:
+            if target and hasattr(target, self.property_name):
                 setattr(target, self.property_name, self.new_value)
         
     def undo(self) -> None:
         """Undo the command by restoring the old property value."""
         id_registry = get_id_registry()
-        target_id = self.target_id
         
+        # Try to get the target observable
+        target_id = self.observable_id
         if not target_id:
             # Try to get it again in case relationships changed
             target_id = id_registry.get_observable_id_from_property_id(self.property_id)
             
         if target_id:
             target = id_registry.get_observable(target_id)
-            if target:
+            if target and hasattr(target, self.property_name):
                 setattr(target, self.property_name, self.old_value)
 
 # MARK: - MacroCommand
@@ -248,7 +262,7 @@ class WidgetPropertyCommand(Command):
         
         # Get the widget to store the old value
         widget = get_id_registry().get_widget(widget_id)
-        if widget:
+        if widget and hasattr(widget, property_name):
             self.old_value = getattr(widget, property_name)
         else:
             self.old_value = None
@@ -256,13 +270,13 @@ class WidgetPropertyCommand(Command):
     def execute(self) -> None:
         """Execute the command by setting the new property value."""
         widget = get_id_registry().get_widget(self.widget_id)
-        if widget:
+        if widget and hasattr(widget, self.property_name):
             setattr(widget, self.property_name, self.new_value)
         
     def undo(self) -> None:
         """Undo the command by restoring the old property value."""
         widget = get_id_registry().get_widget(self.widget_id)
-        if widget:
+        if widget and hasattr(widget, self.property_name):
             setattr(widget, self.property_name, self.old_value)
             
 # MARK:  serialization Command

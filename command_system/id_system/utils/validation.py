@@ -5,10 +5,7 @@ This module contains utility functions for validating ID strings and components.
 """
 
 from command_system.id_system.types import (
-    ALL_WIDGET_TYPE_CODES,
-    CONTAINER_TYPE_CODES,
-    OBSERVABLE_TYPE_CODES,
-    PROPERTY_TYPE_CODES,
+    TypeCodes,
     RESERVED_CHARS,
 )
 from command_system.id_system.core.parser import (
@@ -35,7 +32,7 @@ def is_valid_widget_id(id_string):
         return False
     
     # Check type code
-    if components['type_code'] not in ALL_WIDGET_TYPE_CODES:
+    if not components['type_code'] in TypeCodes.get_all_widget_codes():
         return False
     
     # Check container location
@@ -60,7 +57,7 @@ def is_valid_observable_id(id_string):
         return False
     
     # Check type code
-    if components['type_code'] not in OBSERVABLE_TYPE_CODES:
+    if not TypeCodes.is_valid_observers(components['type_code']):
         return False
     
     return True
@@ -81,7 +78,7 @@ def is_valid_property_id(id_string):
         return False
     
     # Check type code
-    if components['type_code'] not in PROPERTY_TYPE_CODES:
+    if not TypeCodes.is_valid_properties(components['type_code']):
         return False
     
     return True
@@ -102,17 +99,15 @@ def is_valid_type_code(type_code, component_type=None):
         bool: True if the type code is valid, False otherwise
     """
     if component_type == "widget":
-        return type_code in ALL_WIDGET_TYPE_CODES
+        return TypeCodes.is_valid_all_widgets(type_code)
     elif component_type == "container":
-        return type_code in CONTAINER_TYPE_CODES
+        return TypeCodes.is_valid_containers(type_code)
     elif component_type == "observable":
-        return type_code in OBSERVABLE_TYPE_CODES
+        return TypeCodes.is_valid_observers(type_code)
     elif component_type == "property":
-        return type_code in PROPERTY_TYPE_CODES
+        return TypeCodes.is_valid_properties(type_code)
     else:
-        return (type_code in ALL_WIDGET_TYPE_CODES or
-                type_code in OBSERVABLE_TYPE_CODES or
-                type_code in PROPERTY_TYPE_CODES)
+        return TypeCodes.is_valid_code(type_code)
 
 
 def is_valid_unique_id(unique_id):
