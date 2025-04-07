@@ -407,6 +407,18 @@ class IDRegistry:
             
         return self._observable_manager.get_property_ids_by_controller_id(controller_unique_id)
     
+    def get_observable_id_from_property_id(self, property_id):
+        """
+        Get the observable ID associated with a property ID.
+        
+        Args:
+            property_id: The property ID
+            
+        Returns:
+            str: The observable ID, or None if not found or invalid property ID
+        """
+        return self._observable_manager.get_observable_id_from_property_id(property_id)
+    
     def get_property_ids_by_observable_id_and_property_name(self, observable_id, property_name):
         """
         Get all property IDs for a given observable and property name.

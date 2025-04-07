@@ -542,6 +542,36 @@ class ObservableManager:
         
         return properties
     
+    def get_observable_id_from_property_id(self, property_id):
+        """
+        Get the observable ID associated with a property ID.
+        
+        Args:
+            property_id: The property ID
+            
+        Returns:
+            str: The observable ID, or None if not found or invalid property ID
+        """
+        # Parse the property ID
+        components = parse_property_id(property_id)
+        if not components:
+            return None
+            
+        # Get the observable unique ID from the components
+        observable_unique_id = components['observable_unique_id']
+        
+        # If it's a default/null value, return None
+        if observable_unique_id == DEFAULT_NO_OBSERVABLE:
+            return None
+            
+        # Look up the full observable ID by unique ID
+        for observable_id, observable in self._observables.items():
+            if get_unique_id_from_id(observable_id) == observable_unique_id:
+                return observable_id
+                
+        # If not found, create an observable ID from the unique ID
+        return None
+    
     def get_property_ids_by_controller_id(self, controller_unique_id):
         """
         Get all property IDs for a specific controller.
