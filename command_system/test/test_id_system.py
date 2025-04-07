@@ -953,8 +953,8 @@ class TestIDSystem:
         """
         Test the SimpleIDRegistry functionality.
         
-        Verifies that the SimpleIDRegistry works correctly for basic
-        name-to-ID mapping without the full hierarchy.
+        Verifies that the SimpleIDRegistry works correctly for generating
+        and tracking unique IDs without name mappings.
         """
         # Get a new SimpleIDRegistry instance
         simple_registry = get_simple_id_registry()
@@ -962,10 +962,10 @@ class TestIDSystem:
         # Clear it to ensure we start fresh
         simple_registry.clear()
         
-        # Register some names with type codes
-        button_id = simple_registry.register("main_button", "pb")
-        slider_id = simple_registry.register("volume_slider", "sl")
-        custom_id = simple_registry.register("special_widget", "cw", "cw:special")
+        # Register some IDs with type codes
+        button_id = simple_registry.register("pb")
+        slider_id = simple_registry.register("sl")
+        custom_id = simple_registry.register("cw", "cw:special")
         
         # Verify auto-generated IDs follow the pattern "type_code:number"
         assert button_id.startswith("pb:")
@@ -974,43 +974,47 @@ class TestIDSystem:
         # Verify custom ID is used as provided
         assert custom_id == "cw:special"
         
-        # Verify ID lookup by name
-        assert simple_registry.get_id("main_button") == button_id
-        assert simple_registry.get_id("volume_slider") == slider_id
-        assert simple_registry.get_id("special_widget") == custom_id
-        
-        # Verify name lookup by ID
-        assert simple_registry.get_name(button_id) == "main_button"
-        assert simple_registry.get_name(slider_id) == "volume_slider"
-        assert simple_registry.get_name(custom_id) == "special_widget"
-        
         # Verify registration check
-        assert simple_registry.is_registered("main_button")
         assert simple_registry.is_registered(button_id)
-        assert simple_registry.is_registered("special_widget")
-        assert simple_registry.is_registered("cw:special")
-        assert not simple_registry.is_registered("unknown_name")
-        
-        # Unregister by name
-        result = simple_registry.unregister("main_button")
-        assert result
-        assert not simple_registry.is_registered("main_button")
-        assert not simple_registry.is_registered(button_id)
+        assert simple_registry.is_registered(slider_id)
+        assert simple_registry.is_registered(custom_id)
+        assert not simple_registry.is_registered("unknown_id")
         
         # Unregister by ID
+        result = simple_registry.unregister(button_id)
+        assert result
+        assert not simple_registry.is_registered(button_id)
+        
         result = simple_registry.unregister(slider_id)
         assert result
-        assert not simple_registry.is_registered("volume_slider")
         assert not simple_registry.is_registered(slider_id)
         
         # Get all registrations
         assert len(simple_registry.get_all_ids()) == 1
         assert custom_id in simple_registry.get_all_ids()
-        assert "special_widget" in simple_registry.get_all_names()
+        
+        # Test ID collision handling with custom IDs
+        collision_id = simple_registry.register("cw", "cw:special")
+        assert collision_id == "cw:special_1"  # Should append _1 to avoid collision
+        assert simple_registry.is_registered(collision_id)
+        
+        # Test automatic ID generation ensures uniqueness
+        # First, unregister all IDs
+        simple_registry.clear()
+        
+        # Register an ID and manually add a potential collision
+        id1 = simple_registry.register("test")
+        simple_registry._registered_ids.add("test:2")  # Manually add a potential collision
+        
+        # The next ID should skip the collision
+        id2 = simple_registry.register("test")
+        assert id2 != "test:2"
+        assert id2 == "test:3"  # Should be the next available number
         
         # Clear registry
         simple_registry.clear()
         assert len(simple_registry.get_all_ids()) == 0
+
 
 
 if __name__ == "__main__":

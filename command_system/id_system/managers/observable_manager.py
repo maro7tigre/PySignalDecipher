@@ -452,6 +452,37 @@ class ObservableManager:
         
         return new_property_id
     
+    def update_properties_for_controller(self, old_controller_id, new_controller_id):
+        """
+        Update all properties referring to a controller when its ID changes.
+        
+        This method should be called when a widget's ID changes, to update
+        all properties it controls.
+        
+        Args:
+            old_controller_id: The controller's old unique ID
+            new_controller_id: The controller's new unique ID
+            
+        Returns:
+            list: A list of (old_property_id, new_property_id) tuples
+        """
+        if old_controller_id == new_controller_id:
+            return []
+        
+        updates = []
+        
+        # Get all properties controlled by old_controller_id
+        if old_controller_id in self._controller_to_properties:
+            # Make a copy to avoid modification during iteration
+            property_ids = list(self._controller_to_properties[old_controller_id])
+            
+            # Update each property
+            for property_id in property_ids:
+                new_property_id = self.update_property_controller(property_id, new_controller_id)
+                updates.append((property_id, new_property_id))
+        
+        return updates
+    
     #MARK: - Query methods
     
     def get_observable(self, observable_id):
@@ -586,6 +617,30 @@ class ObservableManager:
             return []
         
         return list(self._controller_to_properties[controller_unique_id])
+    
+    def get_controller_id_from_property_id(self, property_id):
+        """
+        Get the controller unique ID associated with a property ID.
+        
+        Args:
+            property_id: The property ID
+            
+        Returns:
+            str: The controller unique ID, or None if not found or invalid property ID
+        """
+        # Parse the property ID
+        components = parse_property_id(property_id)
+        if not components:
+            return None
+            
+        # Get the controller ID from the components
+        controller_id = components['controller_id']
+        
+        # If it's a default/null value, return None
+        if controller_id == DEFAULT_NO_CONTROLLER:
+            return None
+            
+        return controller_id
     
     #MARK: - Helper methods
     

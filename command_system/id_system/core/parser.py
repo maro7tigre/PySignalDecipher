@@ -54,7 +54,7 @@ def parse_widget_id(id_string):
             'container_location': container_location,
             'widget_location_id': widget_location_id
         }
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, TypeError):
         return None
 
 
@@ -82,7 +82,7 @@ def parse_observable_id(id_string):
             'type_code': type_code,
             'unique_id': unique_id
         }
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, TypeError):
         return None
 
 
@@ -113,7 +113,7 @@ def parse_property_id(id_string):
             'property_name': property_name,
             'controller_id': controller_id
         }
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, TypeError):
         return None
 
 
@@ -204,7 +204,7 @@ def get_unique_id_from_id(id_string):
         if len(parts) >= 2:
             return parts[1]
         return None
-    except (ValueError, AttributeError, IndexError):
+    except (ValueError, AttributeError, IndexError, TypeError):
         return None
 
 
@@ -224,7 +224,7 @@ def get_type_code_from_id(id_string):
         if parts:
             return parts[0]
         return None
-    except (ValueError, AttributeError, IndexError):
+    except (ValueError, AttributeError, IndexError, TypeError):
         return None
 
 
@@ -243,7 +243,7 @@ def parse_location(location_string):
         if len(parts) == 2:
             return parts[0], parts[1]
         return None, None
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, TypeError):
         return None, None
 
 
@@ -279,3 +279,103 @@ def is_subcontainer_location(parent_loc, child_loc):
     # Otherwise, check if child starts with parent and has one more level
     return (child_loc.startswith(parent_loc + PATH_SEPARATOR) and 
             child_loc.count(PATH_SEPARATOR) == parent_loc.count(PATH_SEPARATOR) + 1)
+
+
+def get_parent_container_location(container_location):
+    """
+    Get the parent container location of a given container location.
+    
+    Args:
+        container_location: The container location to get the parent of
+        
+    Returns:
+        str: The parent container location, or "0" if at root
+    """
+    if container_location == "0":
+        return "0"  # Root has no parent
+        
+    # Find the last path separator
+    last_separator_index = container_location.rfind(PATH_SEPARATOR)
+    if last_separator_index == -1:
+        return "0"  # Top-level container, parent is root
+        
+    # Return everything before the last separator
+    return container_location[:last_separator_index]
+
+
+def get_container_path_components(container_location):
+    """
+    Split a container location path into its component segments.
+    
+    Args:
+        container_location: The container location path
+        
+    Returns:
+        list: The component segments of the path
+    """
+    if container_location == "0":
+        return ["0"]
+        
+    return container_location.split(PATH_SEPARATOR)
+
+
+def join_container_path(components):
+    """
+    Join container path components into a single path.
+    
+    Args:
+        components: List of path components
+        
+    Returns:
+        str: The joined container path
+    """
+    if not components:
+        return "0"
+        
+    if len(components) == 1 and components[0] == "0":
+        return "0"
+        
+    return PATH_SEPARATOR.join(components)
+
+
+def get_full_container_path(container_location, container_widget_location_id):
+    """
+    Create a full container path by combining a container's location with its widget location ID.
+    
+    This is used to get the container_location for widgets that will be placed
+    inside this container.
+    
+    Args:
+        container_location: The container's container_location
+        container_widget_location_id: The container's widget_location_id
+        
+    Returns:
+        str: The full container path
+    """
+    if container_location == "0":
+        return f"0{PATH_SEPARATOR}{container_widget_location_id}"
+    else:
+        return f"{container_location}{PATH_SEPARATOR}{container_widget_location_id}"
+
+
+def replace_container_path_prefix(path, old_prefix, new_prefix):
+    """
+    Replace the prefix of a container path.
+    
+    This is used when updating container locations to maintain the hierarchy.
+    
+    Args:
+        path: The full container path
+        old_prefix: The old prefix to replace
+        new_prefix: The new prefix to use
+        
+    Returns:
+        str: The updated container path
+    """
+    if path == old_prefix:
+        return new_prefix
+        
+    if path.startswith(old_prefix + PATH_SEPARATOR):
+        return new_prefix + path[len(old_prefix):]
+        
+    return path  # Path doesn't start with the prefix, return unchanged

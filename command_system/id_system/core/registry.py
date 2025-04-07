@@ -491,8 +491,12 @@ class IDRegistry:
             old_id = widget_id
             new_id = self._widget_manager.update_widget_container(widget_id, new_container_unique_id)
             
-            # Notify subscribers if ID changed
+            # If the widget is a controller, update its controlled properties
             if old_id != new_id:
+                old_unique_id = get_unique_id_from_id(old_id)
+                self._update_controller_properties(old_unique_id, old_unique_id)
+                
+                # Notify subscribers
                 self._subscription_manager.notify(old_id, new_id)
                 
                 # Call the ID changed callback if set
@@ -522,8 +526,12 @@ class IDRegistry:
             old_id = widget_id
             new_id = self._widget_manager.update_widget_location(widget_id, new_location)
             
-            # Notify subscribers if ID changed
+            # If the widget is a controller, update its controlled properties
             if old_id != new_id:
+                old_unique_id = get_unique_id_from_id(old_id)
+                self._update_controller_properties(old_unique_id, old_unique_id)
+                
+                # Notify subscribers
                 self._subscription_manager.notify(old_id, new_id)
                 
                 # Call the ID changed callback if set
@@ -733,6 +741,26 @@ class IDRegistry:
     
     #MARK: - Internal methods
     
+    def _update_controller_properties(self, old_controller_id, new_controller_id):
+        """
+        Update all properties controlled by a widget when its ID changes.
+        
+        Args:
+            old_controller_id: The old controller unique ID
+            new_controller_id: The new controller unique ID
+        """
+        # Use new method in ObservableManager to update all properties
+        property_updates = self._observable_manager.update_properties_for_controller(
+            old_controller_id, new_controller_id)
+        
+        # Notify subscribers of all property ID changes
+        for old_prop_id, new_prop_id in property_updates:
+            self._subscription_manager.notify(old_prop_id, new_prop_id)
+            
+            # Call the ID changed callback if set
+            if self._on_id_changed:
+                self._on_id_changed(old_prop_id, new_prop_id)
+    
     def _on_widget_unregister(self, widget_id, widget):
         """
         Internal callback for widget unregistration.
@@ -744,6 +772,15 @@ class IDRegistry:
         # Get the unique ID
         unique_id = get_unique_id_from_id(widget_id)
         if unique_id:
+            # Update any properties this widget controls
+            if unique_id in self._observable_manager._controller_to_properties:
+                # Make a copy of the properties
+                property_ids = list(self._observable_manager._controller_to_properties[unique_id])
+                
+                # Remove the controller reference from each property
+                for property_id in property_ids:
+                    self.remove_controller_reference(property_id)
+            
             # Unregister from ID generator
             self._id_generator.unregister(unique_id)
     

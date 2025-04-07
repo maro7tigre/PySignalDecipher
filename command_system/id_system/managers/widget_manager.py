@@ -11,6 +11,7 @@ from command_system.id_system.core.parser import (
     parse_widget_id,
     create_widget_id,
     get_unique_id_from_id,
+    parse_location,
 )
 from command_system.id_system.types import (
     DEFAULT_ROOT_CONTAINER_ID,
@@ -84,25 +85,7 @@ class WidgetManager:
             container_unique_id = get_unique_id_from_id(container_id)
             
         # Determine container location and widget location ID based on container
-        if container_unique_id == DEFAULT_ROOT_CONTAINER_ID:
-            # For root container (no container)
-            container_location = DEFAULT_ROOT_LOCATION
-        else:
-            # Get the container's location from its ID
-            container_widget_id = self._unique_id_to_widget_id.get(container_unique_id)
-            if container_widget_id:
-                container_components = parse_widget_id(container_widget_id)
-                if container_components:
-                    # Use the container's full path
-                    container_loc = container_components['container_location']
-                    container_widget_loc = container_components['widget_location_id']
-                    
-                    # Construct the proper path including the parent's location
-                    container_location = f"{container_loc}{PATH_SEPARATOR}{container_widget_loc}"
-                else:
-                    container_location = DEFAULT_ROOT_LOCATION
-            else:
-                container_location = DEFAULT_ROOT_LOCATION
+        container_location = self._get_container_location(container_unique_id)
         
         # Get the location generator for this container path
         location_gen = self._get_location_generator(container_unique_id, container_location)
@@ -177,7 +160,7 @@ class WidgetManager:
         if self._on_widget_unregister:
             self._on_widget_unregister(widget_id, widget)
         
-        # If it's a container, handle its children
+        # If it's a container, handle its children first
         if unique_id in self._container_to_widgets:
             # Make a copy to avoid modification during iteration
             child_widgets = list(self._container_to_widgets[unique_id])
@@ -201,6 +184,15 @@ class WidgetManager:
         if container_unique_id in self._container_location_generators and container_location in self._container_location_generators[container_unique_id]:
             location_gen = self._container_location_generators[container_unique_id][container_location]
             location_gen.unregister(widget_location_id)
+            
+            # Clean up empty location generators
+            if not location_gen._used_ids:
+                del self._container_location_generators[container_unique_id][container_location]
+                if not self._container_location_generators[container_unique_id]:
+                    del self._container_location_generators[container_unique_id]
+        
+        # If this widget is in any container's locations map, remove it
+        self._remove_from_locations_maps(widget_id)
         
         # Remove from all mappings
         if widget in self._widget_objects_to_id:
@@ -239,36 +231,33 @@ class WidgetManager:
         old_container_id = components['container_unique_id']
         old_container_location = components['container_location']
         widget_location_id = components['widget_location_id']
+        unique_id = components['unique_id']
+        type_code = components['type_code']
         
         # If the container hasn't changed, no update needed
         if old_container_id == new_container_id:
             return widget_id
         
+        # Check if this is a container with children
+        is_container = ContainerTypeCodes.is_valid_code(type_code)
+        
         # Unregister from old location generator
         if old_container_id in self._container_location_generators and old_container_location in self._container_location_generators[old_container_id]:
             old_location_gen = self._container_location_generators[old_container_id][old_container_location]
             old_location_gen.unregister(widget_location_id)
+            
+            # Clean up empty location generators
+            if not old_location_gen._used_ids:
+                del self._container_location_generators[old_container_id][old_container_location]
+                if not self._container_location_generators[old_container_id]:
+                    del self._container_location_generators[old_container_id]
+        
+        # Remove from old container's widget set
+        if old_container_id in self._container_to_widgets:
+            self._container_to_widgets[old_container_id].discard(widget_id)
         
         # Determine the new container location based on container
-        if new_container_id == DEFAULT_ROOT_CONTAINER_ID:
-            # For root container (no container)
-            new_container_location = DEFAULT_ROOT_LOCATION
-        else:
-            # Get the container's location from its ID
-            container_widget_id = self._unique_id_to_widget_id.get(new_container_id)
-            if container_widget_id:
-                container_components = parse_widget_id(container_widget_id)
-                if container_components:
-                    # Use the container's full path
-                    container_loc = container_components['container_location']
-                    container_widget_loc = container_components['widget_location_id']
-                    
-                    # Construct the proper path including the parent's location
-                    new_container_location = f"{container_loc}{PATH_SEPARATOR}{container_widget_loc}"
-                else:
-                    new_container_location = DEFAULT_ROOT_LOCATION
-            else:
-                new_container_location = DEFAULT_ROOT_LOCATION
+        new_container_location = self._get_container_location(new_container_id)
         
         # Get the location generator for the new container path
         new_location_gen = self._get_location_generator(new_container_id, new_container_location)
@@ -284,8 +273,8 @@ class WidgetManager:
         
         # Create the updated widget ID
         new_widget_id = create_widget_id(
-            components['type_code'],
-            components['unique_id'],
+            type_code,
+            unique_id,
             new_container_id,
             new_container_location,
             final_widget_location_id
@@ -294,12 +283,8 @@ class WidgetManager:
         # Update the mappings
         widget = self._widgets[widget_id]
         self._widgets[new_widget_id] = widget
-        self._unique_id_to_widget_id[components['unique_id']] = new_widget_id
+        self._unique_id_to_widget_id[unique_id] = new_widget_id
         self._widget_objects_to_id[widget] = new_widget_id
-        
-        # Remove from old container's widget set
-        if old_container_id in self._container_to_widgets:
-            self._container_to_widgets[old_container_id].discard(widget_id)
         
         # Add to new container's widget set
         if new_container_id not in self._container_to_widgets:
@@ -309,6 +294,13 @@ class WidgetManager:
         # Clean up old widget ID
         if widget_id in self._widgets:
             del self._widgets[widget_id]
+        
+        # If it's a container, update all its children's container locations
+        if is_container and unique_id in self._container_to_widgets:
+            self._update_children_container_locations(unique_id, old_container_location, new_container_location)
+            
+        # Update any locations map entries that reference this widget
+        self._update_locations_map_references(widget_id, new_widget_id)
         
         return new_widget_id
     
@@ -334,6 +326,8 @@ class WidgetManager:
         if not components:
             return widget_id
         
+        type_code = components['type_code']
+        unique_id = components['unique_id']
         container_unique_id = components['container_unique_id']
         container_location = components['container_location']
         old_widget_location_id = components['widget_location_id']
@@ -341,6 +335,9 @@ class WidgetManager:
         # If the widget_location_id hasn't changed, return original ID
         if new_location == old_widget_location_id:
             return widget_id
+        
+        # Check if this is a container with children
+        is_container = ContainerTypeCodes.is_valid_code(type_code)
         
         # Get the location generator
         location_gen = self._get_location_generator(container_unique_id, container_location)
@@ -357,8 +354,8 @@ class WidgetManager:
         
         # Create the updated widget ID
         new_widget_id = create_widget_id(
-            components['type_code'],
-            components['unique_id'],
+            type_code,
+            unique_id,
             container_unique_id,
             container_location,
             new_location
@@ -367,13 +364,22 @@ class WidgetManager:
         # Update the mappings
         widget = self._widgets[widget_id]
         self._widgets[new_widget_id] = widget
-        self._unique_id_to_widget_id[components['unique_id']] = new_widget_id
+        self._unique_id_to_widget_id[unique_id] = new_widget_id
         self._widget_objects_to_id[widget] = new_widget_id
         
         # Update container's widget set
         if container_unique_id in self._container_to_widgets:
             self._container_to_widgets[container_unique_id].discard(widget_id)
             self._container_to_widgets[container_unique_id].add(new_widget_id)
+        
+        # If it's a container, update all its children's container locations
+        if is_container and unique_id in self._container_to_widgets:
+            old_full_path = f"{container_location}/{old_widget_location_id}"
+            new_full_path = f"{container_location}/{new_location}"
+            self._update_children_container_locations(unique_id, old_full_path, new_full_path)
+        
+        # Update any locations map entries that reference this widget
+        self._update_locations_map_references(widget_id, new_widget_id)
         
         # Clean up old widget ID
         if widget_id in self._widgets:
@@ -561,6 +567,119 @@ class WidgetManager:
             self._container_location_generators[container_id][container_location] = LocationIDGenerator()
         
         return self._container_location_generators[container_id][container_location]
+    
+    def _get_container_location(self, container_id):
+        """
+        Get the container's location path.
+        
+        Args:
+            container_id: The container's unique ID
+            
+        Returns:
+            str: The container's location path, or "0" if root or container not found
+        """
+        if container_id == DEFAULT_ROOT_CONTAINER_ID:
+            return DEFAULT_ROOT_LOCATION
+        
+        # Get the container's widget ID
+        container_widget_id = self._unique_id_to_widget_id.get(container_id)
+        if not container_widget_id:
+            return DEFAULT_ROOT_LOCATION
+        
+        # Parse the container's widget ID
+        container_components = parse_widget_id(container_widget_id)
+        if not container_components:
+            return DEFAULT_ROOT_LOCATION
+        
+        # Construct path from container's location and location ID
+        container_loc = container_components['container_location']
+        container_widget_loc = container_components['widget_location_id']
+        
+        # Return the full path
+        return f"{container_loc}/{container_widget_loc}"
+    
+    def _update_children_container_locations(self, container_unique_id, old_path, new_path):
+        """
+        Update the container_location of all widgets in a container.
+        
+        This is called when a container's location changes, to update all
+        child widget IDs accordingly.
+        
+        Args:
+            container_unique_id: The container's unique ID
+            old_path: The container's old location path
+            new_path: The container's new location path
+        """
+        if container_unique_id not in self._container_to_widgets:
+            return
+        
+        # Get all children (make a copy because we'll modify during iteration)
+        child_widget_ids = list(self._container_to_widgets[container_unique_id])
+        
+        for child_id in child_widget_ids:
+            components = parse_widget_id(child_id)
+            if not components:
+                continue
+            
+            child_type_code = components['type_code']
+            child_unique_id = components['unique_id']
+            child_widget_location_id = components['widget_location_id']
+            
+            # Update child's ID with new container location
+            new_child_id = create_widget_id(
+                child_type_code,
+                child_unique_id,
+                container_unique_id,
+                new_path,
+                child_widget_location_id
+            )
+            
+            # Update mappings
+            child_widget = self._widgets[child_id]
+            self._widgets[new_child_id] = child_widget
+            self._unique_id_to_widget_id[child_unique_id] = new_child_id
+            self._widget_objects_to_id[child_widget] = new_child_id
+            
+            # Update container's widget set
+            self._container_to_widgets[container_unique_id].discard(child_id)
+            self._container_to_widgets[container_unique_id].add(new_child_id)
+            
+            # Update any locations map entries
+            self._update_locations_map_references(child_id, new_child_id)
+            
+            # Clean up old ID
+            del self._widgets[child_id]
+            
+            # If this child is a container, recursively update its children
+            if ContainerTypeCodes.is_valid_code(child_type_code) and child_unique_id in self._container_to_widgets:
+                old_child_path = f"{old_path}/{child_widget_location_id}"
+                new_child_path = f"{new_path}/{child_widget_location_id}"
+                self._update_children_container_locations(child_unique_id, old_child_path, new_child_path)
+    
+    def _update_locations_map_references(self, old_widget_id, new_widget_id):
+        """
+        Update any locations map entries that reference a widget ID.
+        
+        Args:
+            old_widget_id: The old widget ID to replace
+            new_widget_id: The new widget ID to use
+        """
+        for container_id, locations_map in self._container_locations_map.items():
+            for location, widget_id in locations_map.items():
+                if widget_id == old_widget_id:
+                    locations_map[location] = new_widget_id
+    
+    def _remove_from_locations_maps(self, widget_id):
+        """
+        Remove a widget ID from all locations maps.
+        
+        Args:
+            widget_id: The widget ID to remove
+        """
+        for container_id, locations_map in list(self._container_locations_map.items()):
+            for location, ref_widget_id in list(locations_map.items()):
+                if ref_widget_id == widget_id:
+                    del locations_map[location]
     
     def set_on_widget_unregister(self, callback):
         """
