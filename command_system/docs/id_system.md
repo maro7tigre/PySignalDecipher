@@ -188,15 +188,15 @@ from command_system.id_system import get_simple_id_registry
 registry = get_simple_id_registry()
 
 # Register a name with a type code
-widget_id = registry.register("welcome_tab", "wt")   # "wt:1"
+widget_id = registry.register("welcome_tab", ContainerTypeCodes.TAB)   # "t:1"
 form_id = registry.register("main_form", "fm")       # "fm:1"
 
 # Register with a custom ID
-custom_id = registry.register("custom_widget", "wt", "wt:custom")
+custom_id = registry.register("custom_widget", ContainerTypeCodes.TAB, "t:custom")
 
 # Look up IDs and names
-id_str = registry.get_id("welcome_tab")      # "wt:1"
-name = registry.get_name("wt:1")             # "welcome_tab"
+id_str = registry.get_id("welcome_tab")      # "t:1"
+name = registry.get_name("t:1")             # "welcome_tab"
 
 # Check registration and unregister
 is_reg = registry.is_registered("welcome_tab")   # True
@@ -222,6 +222,7 @@ subscribe_to_id("pb:3a:2J:0/2-4b", on_widget_id_changed)
 ```
 
 ## Type Codes Reference
+The ID system uses distinct type codes for different component types. These are organized into categories and can be accessed through class constants:
 
 | Component Type | Code |
 |-------------|------|
@@ -246,6 +247,71 @@ subscribe_to_id("pb:3a:2J:0/2-4b", on_widget_id_changed)
 | **Observables** |  |
 | Observable | o |
 | Observable Property | op |
+
+
+
+### Container Type Codes
+These codes represent container components that can hold other widgets:
+
+```python
+from command_system.id_system.types import ContainerTypeCodes
+
+ContainerTypeCodes.TAB       # 't' - Tab Container
+ContainerTypeCodes.DOCK      # 'd' - Dock Container
+ContainerTypeCodes.WINDOW    # 'w' - Window Container
+ContainerTypeCodes.CUSTOM    # 'x' - Custom Container
+```
+
+### Widget Type Codes
+These codes represent UI widgets:
+
+```python
+from command_system.id_system.types import WidgetTypeCodes
+
+WidgetTypeCodes.LINE_EDIT     # 'le' - Line Edit Widget
+WidgetTypeCodes.CHECK_BOX     # 'cb' - Check Box Widget
+WidgetTypeCodes.PUSH_BUTTON   # 'pb' - Push Button
+WidgetTypeCodes.RADIO_BUTTON  # 'rb' - Radio Button
+WidgetTypeCodes.COMBO_BOX     # 'co' - Combo Box
+WidgetTypeCodes.SLIDER        # 'sl' - Slider
+WidgetTypeCodes.SPIN_BOX      # 'sp' - Spin Box
+WidgetTypeCodes.TEXT_EDIT     # 'te' - Text Edit
+WidgetTypeCodes.LIST_WIDGET   # 'lw' - List Widget
+WidgetTypeCodes.TREE_WIDGET   # 'tw' - Tree Widget
+WidgetTypeCodes.TABLE_WIDGET  # 'tb' - Table Widget
+WidgetTypeCodes.CUSTOM_WIDGET # 'cw' - Custom Widget
+```
+
+### Observable and Property Type Codes
+These codes represent observable objects and their properties:
+
+```python
+from command_system.id_system.types import ObservableTypeCodes, PropertyTypeCodes
+
+ObservableTypeCodes.OBSERVABLE           # 'o' - Observable
+PropertyTypeCodes.OBSERVABLE_PROPERTY    # 'op' - Observable Property
+```
+
+### Working with Type Codes
+You can use utility methods to work with type codes:
+
+```python
+from command_system.id_system.types import TypeCodes
+
+# Get all widget codes including containers
+all_widget_codes = TypeCodes.get_all_widget_codes()
+
+# Check what category a code belongs to
+TypeCodes.get_type_category('pb')  # 'widget'
+TypeCodes.get_type_category('o')   # 'observable'
+
+# Check if a code is valid
+TypeCodes.is_valid_widgets('pb')       # True
+TypeCodes.is_valid_containers('t')     # True
+TypeCodes.is_valid_observers('o')      # True
+TypeCodes.is_valid_properties('op')    # True
+TypeCodes.is_valid_all_widgets('pb')   # True
+```
 
 ## Implementation Details
 
@@ -336,24 +402,24 @@ The ID system follows a pyramid architecture for maximum simplicity and maintain
                        └─────────────────────────┘
                                    │
                  ┌─────────────────┴─────────────────┐
-                 │        Registry Facade Layer       │
-                 │  (Complex operations using lower   │
-                 │        level functionality)        │
+                 │        Registry Facade Layer      │
+                 │  (Complex operations using lower  │
+                 │        level functionality)       │
                  └─────────────────┬─────────────────┘
                                    │
        ┌───────────────────────────┼───────────────────────────┐
        │                           │                           │
-┌──────┴──────┐            ┌──────┴──────┐            ┌──────┴──────┐
+┌──────┴──────┐            ┌───────┴─────┐            ┌────────┴─────┐
 │   Widget    │            │ Observable  │            │ Subscription │
 │   Manager   │            │   Manager   │            │   Manager    │
-└──────┬──────┘            └──────┬──────┘            └──────┬──────┘
+└──────┬──────┘            └───────┬─────┘            └────────┬─────┘
        │                           │                           │
        └───────────────────────────┼───────────────────────────┘
                                    │
                  ┌─────────────────┴─────────────────┐
                  │       Core Utilities Layer        │
                  │   (ID parsing, generation, etc.)  │
-                 └─────────────────────────────────────┘
+                 └───────────────────────────────────┘
 ```
 
 This pyramid structure provides several benefits:
