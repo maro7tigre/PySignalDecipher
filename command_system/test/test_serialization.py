@@ -301,8 +301,6 @@ class TestIDSystemSerialization:
             test_id = self.registry.register(test_widget, "pb", f"test_{loc_id}", new_container_id, loc_id)
             test_components = parse_widget_id(test_id)
             assert test_components['widget_location_id'] == loc_id
-            
-        # This should succeed without collisions since the location generator was reset
     
     def test_container_with_custom_location_ids(self):
         """
@@ -473,6 +471,182 @@ class TestIDSystemSerialization:
         
         # Verify it starts with an empty locations map
         assert self.registry.get_locations_map(new_main_id) == {}
+
+    #MARK: - Enhanced Cleanup and Update Tests
+
+    def test_widget_location_update_registry_cleanup(self):
+        """
+        Test that when a widget's location is updated, the old location ID is properly
+        unregistered from the generator and the new one is registered.
+        """
+        # Create container and widget
+        container = MockContainer("Container")
+        widget = MockWidget("Widget")
+        
+        # Register components
+        container_id = self.registry.register(container, "d", "cont")
+        widget_id = self.registry.register(widget, "pb", "wid", container_id, "loc1")
+        
+        # Update widget location
+        updated_id = self.registry.update_location(widget_id, "loc2")
+        
+        # Verify the update
+        components = parse_widget_id(updated_id)
+        assert components['widget_location_id'] == "loc2"
+        
+        # Try to register a new widget with the old location ID
+        new_widget = MockWidget("NewWidget")
+        new_id = self.registry.register(new_widget, "pb", "new_wid", container_id, "loc1")
+        
+        # Verify the old location ID was freed and can be reused
+        components = parse_widget_id(new_id)
+        assert components['widget_location_id'] == "loc1"
+        
+        # Try to register another widget with the new location ID - should fail
+        another_widget = MockWidget("AnotherWidget")
+        with pytest.raises(IDRegistrationError):
+            self.registry.register(another_widget, "pb", "another_wid", container_id, "loc2")
+    
+    def test_widget_container_update_registry_cleanup(self):
+        """
+        Test that when a widget's container is updated, the location ID is properly
+        unregistered from the old container and registered with the new one.
+        """
+        # Create two containers and a widget
+        container1 = MockContainer("Container1")
+        container2 = MockContainer("Container2")
+        widget = MockWidget("Widget")
+        
+        # Register components
+        container1_id = self.registry.register(container1, "d", "cont1")
+        container2_id = self.registry.register(container2, "d", "cont2")
+        widget_id = self.registry.register(widget, "pb", "wid", container1_id, "loc1")
+        
+        # Update widget's container
+        updated_id = self.registry.update_container(widget_id, container2_id)
+        
+        # Verify the update
+        components = parse_widget_id(updated_id)
+        assert components['container_unique_id'] == "cont2"
+        assert components['widget_location_id'] == "loc1"  # Location ID should be preserved
+        
+        # Try to register a new widget in the first container with the same location ID
+        new_widget = MockWidget("NewWidget")
+        new_id = self.registry.register(new_widget, "pb", "new_wid", container1_id, "loc1")
+        
+        # Verify the location ID was freed in the first container
+        components = parse_widget_id(new_id)
+        assert components['widget_location_id'] == "loc1"
+        
+        # Try to register another widget in the second container with the same location ID - should fail
+        another_widget = MockWidget("AnotherWidget")
+        with pytest.raises(IDRegistrationError):
+            self.registry.register(another_widget, "pb", "another_wid", container2_id, "loc1")
+    
+    def test_container_location_generators_cleanup(self):
+        """
+        Test that the _container_location_generators mapping is properly cleaned up
+        when containers are unregistered.
+        """
+        # Create and register a container
+        container = MockContainer("Container")
+        container_id = self.registry.register(container, "d", "cont")
+        
+        # Parse the container ID to get components
+        container_components = parse_widget_id(container_id)
+        
+        # Get the container location path
+        container_location = container_components['container_location']
+        container_location_id = container_components['widget_location_id']
+        full_container_path = f"{container_location}/{container_location_id}"
+        
+        # Add a widget to ensure the location generator is created
+        widget = MockWidget("Widget")
+        self.registry.register(widget, "pb", "wid", container_id)
+        
+        # Verify the container's location has an entry in the location generators dictionary
+        assert full_container_path in self.registry._widget_manager._container_location_generators
+        
+        # Unregister the container
+        self.registry.unregister(container_id)
+        
+        # Verify the container's location is removed from the location generators dictionary
+        assert full_container_path not in self.registry._widget_manager._container_location_generators
+        
+        # Register a new container with the same ID
+        new_container = MockContainer("NewContainer")
+        new_container_id = self.registry.register(new_container, "d", "cont")
+        
+        # Parse the new container ID
+        new_container_components = parse_widget_id(new_container_id)
+        
+        # Get the new container location path
+        new_container_location = new_container_components['container_location']
+        new_container_location_id = new_container_components['widget_location_id']
+        new_full_container_path = f"{new_container_location}/{new_container_location_id}"
+        
+        # Add a widget to ensure the location generator is created
+        new_widget = MockWidget("NewWidget")
+        self.registry.register(new_widget, "pb", "new_wid", new_container_id)
+        
+        # Verify a new entry is created for the container's location
+        assert new_full_container_path in self.registry._widget_manager._container_location_generators
+    
+    def test_nested_cleanup_and_recreation(self):
+        """
+        Test that when a complex container hierarchy is unregistered and recreated,
+        all location generators are properly cleaned up at all levels.
+        """
+        # Create a nested container hierarchy
+        root = MockContainer("Root")
+        mid = MockContainer("Middle")
+        leaf = MockContainer("Leaf")
+        
+        # Register the hierarchy
+        root_id = self.registry.register(root, "d", "root")
+        mid_id = self.registry.register(mid, "d", "mid", root_id, "midloc")
+        leaf_id = self.registry.register(leaf, "d", "leaf", mid_id, "leafloc")
+        
+        # Add widgets at each level with specific location IDs
+        root_widget = MockWidget("RootWidget")
+        mid_widget = MockWidget("MidWidget")
+        leaf_widget = MockWidget("LeafWidget")
+        
+        root_widget_id = self.registry.register(root_widget, "pb", "rwid", root_id, "rwloc")
+        mid_widget_id = self.registry.register(mid_widget, "pb", "mwid", mid_id, "mwloc")
+        leaf_widget_id = self.registry.register(leaf_widget, "pb", "lwid", leaf_id, "lwloc")
+        
+        # Store unique IDs and location IDs for later verification
+        root_unique_id = get_unique_id_from_id(root_id)
+        mid_unique_id = get_unique_id_from_id(mid_id)
+        leaf_unique_id = get_unique_id_from_id(leaf_id)
+        
+        # Unregister the entire hierarchy by unregistering the root
+        self.registry.unregister(root_id)
+        
+        # Recreate the hierarchy with the same IDs
+        new_root = MockContainer("NewRoot")
+        new_mid = MockContainer("NewMiddle")
+        new_leaf = MockContainer("NewLeaf")
+        
+        new_root_id = self.registry.register(new_root, "d", "root")
+        new_mid_id = self.registry.register(new_mid, "d", "mid", new_root_id, "midloc")
+        new_leaf_id = self.registry.register(new_leaf, "d", "leaf", new_mid_id, "leafloc")
+        
+        # Add new widgets with the same location IDs
+        new_root_widget = MockWidget("NewRootWidget")
+        new_mid_widget = MockWidget("NewMidWidget")
+        new_leaf_widget = MockWidget("NewLeafWidget")
+        
+        new_root_widget_id = self.registry.register(new_root_widget, "pb", "new_rwid", new_root_id, "rwloc")
+        new_mid_widget_id = self.registry.register(new_mid_widget, "pb", "new_mwid", new_mid_id, "mwloc")
+        new_leaf_widget_id = self.registry.register(new_leaf_widget, "pb", "new_lwid", new_leaf_id, "lwloc")
+        
+        # Verify the location IDs were successfully reused at all levels
+        assert parse_widget_id(new_root_widget_id)['widget_location_id'] == "rwloc"
+        assert parse_widget_id(new_mid_widget_id)['widget_location_id'] == "mwloc"
+        assert parse_widget_id(new_leaf_widget_id)['widget_location_id'] == "lwloc"
+
 
 if __name__ == "__main__":
     # Run the tests directly if this script is executed

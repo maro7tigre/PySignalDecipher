@@ -57,7 +57,9 @@ class WidgetManager:
         # Maps container unique IDs to sets of widget IDs contained by them
         self._container_to_widgets = {}
         
-        # Maps container unique IDs to location generators
+        # Maps container locations to location generators
+        # Using container_location as the key simplifies the structure
+        # and makes cleanup easier
         self._container_location_generators = {}
         
         # Maps container unique IDs to location maps (subcontainer location to widget ID)
@@ -92,7 +94,7 @@ class WidgetManager:
         container_location = self._get_container_location(container_unique_id)
         
         # Get the location generator for this container path
-        location_gen = self._get_location_generator(container_unique_id, container_location)
+        location_gen = self._get_location_generator(container_location)
         
         # Determine widget_location_id
         widget_location_id = location
@@ -129,7 +131,6 @@ class WidgetManager:
         # If this widget is a container, initialize its widgets set and location generator
         if ContainerTypeCodes.is_valid_code(type_code):
             self._container_to_widgets[unique_id] = set()
-            self._container_location_generators[unique_id] = {}
             self._container_locations_map[unique_id] = {}
         
         return widget_id
@@ -174,25 +175,21 @@ class WidgetManager:
             # Clean up container data
             if unique_id in self._container_to_widgets:
                 del self._container_to_widgets[unique_id]
-            if unique_id in self._container_location_generators:
-                del self._container_location_generators[unique_id]
             if unique_id in self._container_locations_map:
                 del self._container_locations_map[unique_id]
+                
+            # Clean up any location generators for this container's locations
+            full_container_path = f"{container_location}/{widget_location_id}"
+            self._cleanup_container_location_generators(full_container_path)
         
         # Remove from container's widgets set
         if container_unique_id in self._container_to_widgets:
             self._container_to_widgets[container_unique_id].discard(widget_id)
         
         # Unregister from location generator
-        if container_unique_id in self._container_location_generators and container_location in self._container_location_generators[container_unique_id]:
-            location_gen = self._container_location_generators[container_unique_id][container_location]
+        if container_location in self._container_location_generators:
+            location_gen = self._container_location_generators[container_location]
             location_gen.unregister(widget_location_id)
-            
-            # Clean up empty location generators
-            if not location_gen._used_ids:
-                del self._container_location_generators[container_unique_id][container_location]
-                if not self._container_location_generators[container_unique_id]:
-                    del self._container_location_generators[container_unique_id]
         
         # If this widget is in any container's locations map, remove it
         self._remove_from_locations_maps(widget_id)
@@ -245,15 +242,9 @@ class WidgetManager:
         is_container = ContainerTypeCodes.is_valid_code(type_code)
         
         # Unregister from old location generator
-        if old_container_id in self._container_location_generators and old_container_location in self._container_location_generators[old_container_id]:
-            old_location_gen = self._container_location_generators[old_container_id][old_container_location]
+        if old_container_location in self._container_location_generators:
+            old_location_gen = self._container_location_generators[old_container_location]
             old_location_gen.unregister(widget_location_id)
-            
-            # Clean up empty location generators
-            if not old_location_gen._used_ids:
-                del self._container_location_generators[old_container_id][old_container_location]
-                if not self._container_location_generators[old_container_id]:
-                    del self._container_location_generators[old_container_id]
         
         # Remove from old container's widget set
         if old_container_id in self._container_to_widgets:
@@ -263,7 +254,7 @@ class WidgetManager:
         new_container_location = self._get_container_location(new_container_id)
         
         # Get the location generator for the new container path
-        new_location_gen = self._get_location_generator(new_container_id, new_container_location)
+        new_location_gen = self._get_location_generator(new_container_location)
         
         # Check if the widget_location_id is available in the new container
         if new_location_gen.is_registered(widget_location_id):
@@ -300,7 +291,9 @@ class WidgetManager:
         
         # If it's a container, update all its children's container locations
         if is_container and unique_id in self._container_to_widgets:
-            self._update_children_container_locations(unique_id, old_container_location, new_container_location)
+            old_full_path = f"{old_container_location}/{widget_location_id}"
+            new_full_path = f"{new_container_location}/{final_widget_location_id}"
+            self._update_children_container_locations(unique_id, old_full_path, new_full_path)
             
         # Update any locations map entries that reference this widget
         self._update_locations_map_references(widget_id, new_widget_id)
@@ -343,7 +336,7 @@ class WidgetManager:
         is_container = ContainerTypeCodes.is_valid_code(type_code)
         
         # Get the location generator
-        location_gen = self._get_location_generator(container_unique_id, container_location)
+        location_gen = self._get_location_generator(container_location)
         
         # Unregister from old location
         location_gen.unregister(old_widget_location_id)
@@ -552,24 +545,20 @@ class WidgetManager:
     
     #MARK: - Helper methods
     
-    def _get_location_generator(self, container_id, container_location):
+    def _get_location_generator(self, container_location):
         """
         Get or create a location generator for a specific container location.
         
         Args:
-            container_id: The container's unique ID
             container_location: The container location
             
         Returns:
             LocationIDGenerator: The location generator
         """
-        if container_id not in self._container_location_generators:
-            self._container_location_generators[container_id] = {}
+        if container_location not in self._container_location_generators:
+            self._container_location_generators[container_location] = LocationIDGenerator()
         
-        if container_location not in self._container_location_generators[container_id]:
-            self._container_location_generators[container_id][container_location] = LocationIDGenerator()
-        
-        return self._container_location_generators[container_id][container_location]
+        return self._container_location_generators[container_location]
     
     def _get_container_location(self, container_id):
         """
@@ -683,6 +672,26 @@ class WidgetManager:
             for location, ref_widget_id in list(locations_map.items()):
                 if ref_widget_id == widget_id:
                     del locations_map[location]
+    
+    def _cleanup_container_location_generators(self, container_path):
+        """
+        Clean up all location generators for a container and its children.
+        
+        This is called when a container is unregistered to ensure all
+        its location generators are removed.
+        
+        Args:
+            container_path: The container's full path
+        """
+        # Remove the exact container path generator
+        if container_path in self._container_location_generators:
+            del self._container_location_generators[container_path]
+        
+        # Also remove any child paths (starting with container_path/)
+        prefix = container_path + "/"
+        for path in list(self._container_location_generators.keys()):
+            if path.startswith(prefix):
+                del self._container_location_generators[path]
     
     def clear(self):
         """Clear all widget registrations."""
