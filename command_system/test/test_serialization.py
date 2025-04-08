@@ -256,7 +256,7 @@ class TestIDSystemSerialization:
         # Create and register a container
         container1 = MockContainer("Container1")
         container_id = self.registry.register(container1, "d", "cont")
-        
+
         # Register widgets to populate location generator
         widget1 = MockWidget("Widget1")
         widget2 = MockWidget("Widget2")
@@ -265,7 +265,7 @@ class TestIDSystemSerialization:
         widget1_id = self.registry.register(widget1, "pb", "w1", container_id)
         widget2_id = self.registry.register(widget2, "pb", "w2", container_id)
         widget3_id = self.registry.register(widget3, "pb", "w3", container_id)
-        
+
         # Parse widget IDs to get their location IDs
         widget1_components = parse_widget_id(widget1_id)
         widget2_components = parse_widget_id(widget2_id)
@@ -284,16 +284,18 @@ class TestIDSystemSerialization:
         # Create and register a new container with the same ID
         container2 = MockContainer("Container2")
         new_container_id = self.registry.register(container2, "d", "cont")
-        
+
         # Register a new widget - should get the first location ID again
         new_widget = MockWidget("NewWidget")
         new_widget_id = self.registry.register(new_widget, "pb", "new_w", new_container_id)
-        
+
         # Parse the new widget ID
         new_widget_components = parse_widget_id(new_widget_id)
         
         # The location ID should be "1" again, not "4"
         assert new_widget_components['widget_location_id'] == "1"
+        
+        self.registry.unregister(new_widget_id)
         
         # Try to register widgets with the same location IDs as before
         for loc_id in location_ids:
@@ -502,10 +504,11 @@ class TestIDSystemSerialization:
         components = parse_widget_id(new_id)
         assert components['widget_location_id'] == "loc1"
         
-        # Try to register another widget with the new location ID - should fail
+        # Try to register another widget with the new location ID - should get a different location ID
         another_widget = MockWidget("AnotherWidget")
-        with pytest.raises(IDRegistrationError):
-            self.registry.register(another_widget, "pb", "another_wid", container_id, "loc2")
+        another_id = self.registry.register(another_widget, "pb", "another_wid", container_id, "loc2")
+        another_components = parse_widget_id(another_id)
+        assert another_components['widget_location_id'] != "loc2"  # Should be different
     
     def test_widget_container_update_registry_cleanup(self):
         """
@@ -538,10 +541,11 @@ class TestIDSystemSerialization:
         components = parse_widget_id(new_id)
         assert components['widget_location_id'] == "loc1"
         
-        # Try to register another widget in the second container with the same location ID - should fail
+        # Try to register another widget in the second container with the same location ID - should get a different ID
         another_widget = MockWidget("AnotherWidget")
-        with pytest.raises(IDRegistrationError):
-            self.registry.register(another_widget, "pb", "another_wid", container2_id, "loc1")
+        another_id = self.registry.register(another_widget, "pb", "another_wid", container2_id, "loc1")
+        another_components = parse_widget_id(another_id)
+        assert another_components['widget_location_id'] != "loc1"  # Should be different
     
     def test_container_location_generators_cleanup(self):
         """

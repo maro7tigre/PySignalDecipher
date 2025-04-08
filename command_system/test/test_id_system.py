@@ -261,9 +261,10 @@ class TestIDSystem:
         assert button1_components is not None
         assert button1_components['widget_location_id'] == "custom_loc"
         
-        # Try to register button2 with same location ID - should raise error
-        with pytest.raises(IDRegistrationError):
-            self.registry.register(button2, "pb", None, container_id, "custom_loc")
+        # Try to register button2 with same location ID - should use a different location ID
+        button2_id = self.registry.register(button2, "pb", None, container_id, "custom_loc")
+        button2_components = parse_widget_id(button2_id)
+        assert button2_components['widget_location_id'] != "custom_loc"  # Should be different
     
     def test_update_container(self):
         """

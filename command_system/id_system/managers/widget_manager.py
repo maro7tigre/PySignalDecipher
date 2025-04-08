@@ -104,7 +104,8 @@ class WidgetManager:
         else:
             # Check if the widget_location_id is available
             if location_gen.is_registered(widget_location_id):
-                raise IDRegistrationError(f"Widget location ID '{widget_location_id}' already exists in container location '{container_location}'")
+                print(f"Widget location ID '{widget_location_id}' already exists in container location '{container_location}'")
+                widget_location_id = location_gen.generate()
             
             # Register the widget location ID
             location_gen.register(widget_location_id)
