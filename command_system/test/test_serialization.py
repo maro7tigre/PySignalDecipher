@@ -229,19 +229,8 @@ class TestIDSystemSerialization:
         # Verify initial registration
         assert self.registry.get_observable_property(property1_id) == property1
         assert self.registry.get_observable_property(property2_id) == property2
-        
-        # Unregister the container
-        print(f"property widgert Before unregistering :{self.registry.get_observable_property(property1_id)}")
-        print(f"widget Before unregistering :{self.registry.get_widget(widget1_id)}")
-        print(f"container Before unregistering :{self.registry.get_widget(container_id)}")
-        print(f"proprty id Before unregistering :{self.registry.get_id(self.registry.get_observable_property(property1_id))}")
-        #print(self.registry.unregister(property1_id))
-        print(self.registry.unregister(container_id))
-        print(f"proprty id After unregistering :{self.registry.get_id(self.registry.get_observable_property(property1_id))}")
-        print(f"container After unregistering :{self.registry.get_widget(container_id)}")
-        print(f"widget ufter unregistering :{self.registry.get_widget(widget1_id)}")
-        print(f"proeprty widget After unregistering :{self.registry.get_observable_property(property1_id)}")
-        
+
+        assert self.registry.unregister(container_id)
         
         # Verify properties are unregistered
         assert self.registry.get_observable_property(property1_id) is None
@@ -487,4 +476,4 @@ class TestIDSystemSerialization:
 
 if __name__ == "__main__":
     # Run the tests directly if this script is executed
-    pytest.main(["-s", __file__])
+    pytest.main(["-v", __file__])

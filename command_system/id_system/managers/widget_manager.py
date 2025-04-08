@@ -144,7 +144,6 @@ class WidgetManager:
         Returns:
             bool: True if successful, False otherwise
         """
-        print(f"Unregistering widget with ID: {widget_id}")
         if widget_id not in self._widgets:
             return False
         

@@ -282,6 +282,8 @@ class IDRegistry:
         Returns:
             str: The component ID, or None if not found
         """
+        if component is None:
+            return None
         # Try to find in widget manager
         widget_id = self._widget_manager.get_widget_id(component)
         if widget_id:
@@ -937,12 +939,10 @@ class IDRegistry:
             widget: The unregistered widget object
         """
         # Get the unique ID
-        print(f"Widget unregistered: {widget_id}")
         unique_id = get_unique_id_from_id(widget_id)
         if unique_id:
             # First, check if this widget controls any properties
             property_ids = self._observable_manager.get_property_ids_by_controller_id(unique_id)
-            print(f"Properties controlled by widget: {property_ids}")
             # If there are properties, unregister each one
             for property_id in list(property_ids):  # Use list() to create a copy
                 self.unregister(property_id)
