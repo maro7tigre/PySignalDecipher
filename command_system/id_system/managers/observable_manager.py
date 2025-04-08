@@ -30,8 +30,10 @@ class ObservableManager:
     observables, properties, and their relationships with widgets.
     """
     
-    def __init__(self):
+    def __init__(self, registry):
         """Initialize the observable manager."""
+        self.registry = registry
+        
         # Maps observable IDs to observable objects
         self._observables = {}
         
@@ -56,10 +58,6 @@ class ObservableManager:
         # Maps controller unique IDs to sets of property IDs controlled by them
         self._controller_to_properties = {}
         
-        # Callbacks for unregistration
-        self._on_observable_unregister = None
-        self._on_property_unregister = None
-    
     #MARK: - Observable registration methods
     
     def register_observable(self, observable, type_code, unique_id):
@@ -111,8 +109,7 @@ class ObservableManager:
         observable = self._observables[observable_id]
         
         # Call the unregister callback if set
-        if self._on_observable_unregister:
-            self._on_observable_unregister(observable_id, observable)
+        self.registry._on_observable_unregister(observable_id, observable)
         
         # Handle associated properties
         if unique_id in self._observable_to_properties:
@@ -228,8 +225,7 @@ class ObservableManager:
         property_obj = self._properties[property_id]
         
         # Call the unregister callback if set
-        if self._on_property_unregister:
-            self._on_property_unregister(property_id, property_obj)
+        self.registry._on_property_unregister(property_id, property_obj)
         
         # Remove from observable's property set if applicable
         if observable_unique_id != DEFAULT_NO_OBSERVABLE:

@@ -103,10 +103,10 @@ class TestIDSystemSerialization:
         def on_id_changed(old_id, new_id):
             self.id_changes.append((old_id, new_id))
         
-        self.registry.set_on_widget_unregister(on_widget_unregister)
-        self.registry.set_on_observable_unregister(on_observable_unregister)
-        self.registry.set_on_property_unregister(on_property_unregister)
-        self.registry.set_on_id_changed(on_id_changed)
+        self.registry.add_widget_unregister_callback(on_widget_unregister)
+        self.registry.add_observable_unregister_callback(on_observable_unregister)
+        self.registry.add_property_unregister_callback(on_property_unregister)
+        self.registry.add_id_changed_callback(on_id_changed)
     
     def test_container_id_update_propagation(self):
         """

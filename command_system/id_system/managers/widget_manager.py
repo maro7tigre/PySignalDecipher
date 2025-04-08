@@ -37,8 +37,14 @@ class WidgetManager:
     """
     
     def __init__(self, registry):
-        """Initialize the widget manager."""
+        """
+        Initialize the widget manager.
+        
+        Args:
+            registry: The parent IDRegistry
+        """
         self.registry = registry
+        
         # Maps widget IDs to widget objects
         self._widgets = {}
         
@@ -56,9 +62,6 @@ class WidgetManager:
         
         # Maps container unique IDs to location maps (subcontainer location to widget ID)
         self._container_locations_map = {}
-        
-        # Callback for widget unregistration
-        self._on_widget_unregister = None
     
     #MARK: - Registration methods
     
@@ -158,9 +161,8 @@ class WidgetManager:
         # Get the widget object
         widget = self._widgets[widget_id]
         
-        # Call the unregister callback if set
-        if self._on_widget_unregister:
-            self._on_widget_unregister(widget_id, widget)
+        # Call the registry's widget unregister callback
+        self.registry._on_widget_unregister(widget_id, widget)
         
         # If it's a container, handle its children first
         if unique_id in self._container_to_widgets:
@@ -682,15 +684,6 @@ class WidgetManager:
             for location, ref_widget_id in list(locations_map.items()):
                 if ref_widget_id == widget_id:
                     del locations_map[location]
-    
-    def set_on_widget_unregister(self, callback):
-        """
-        Set the callback for widget unregistration.
-        
-        Args:
-            callback: The callback function that takes widget_id and widget as arguments
-        """
-        self._on_widget_unregister = callback
     
     def clear(self):
         """Clear all widget registrations."""

@@ -66,20 +66,18 @@ class IDRegistry:
         # The unique ID generator
         self._id_generator = UniqueIDGenerator()
         
+        # Callback lists for different events
+        self._widget_unregister_callbacks = []
+        self._observable_unregister_callbacks = []
+        self._property_unregister_callbacks = []
+        self._id_changed_callbacks = []
+        
         # Managers for different component types
         self._widget_manager = WidgetManager(self)
         self._observable_manager = ObservableManager(self)
         
         # Get the subscription manager
         self._subscription_manager = get_subscription_manager()
-        
-        # Set up unregister callbacks
-        self._widget_manager.set_on_widget_unregister(self._on_widget_unregister)
-        self._observable_manager.set_on_observable_unregister(self._on_observable_unregister)
-        self._observable_manager.set_on_property_unregister(self._on_property_unregister)
-        
-        # Callback for ID changes
-        self._on_id_changed = None
     
     #MARK: - Registration methods
     
@@ -499,9 +497,8 @@ class IDRegistry:
                 # Notify subscribers
                 self._subscription_manager.notify(old_id, new_id)
                 
-                # Call the ID changed callback if set
-                if self._on_id_changed:
-                    self._on_id_changed(old_id, new_id)
+                # Notify ID changed callbacks
+                self._notify_id_changed_callbacks(old_id, new_id)
             
             return new_id
         except IDRegistrationError as e:
@@ -534,9 +531,8 @@ class IDRegistry:
                 # Notify subscribers
                 self._subscription_manager.notify(old_id, new_id)
                 
-                # Call the ID changed callback if set
-                if self._on_id_changed:
-                    self._on_id_changed(old_id, new_id)
+                # Notify ID changed callbacks
+                self._notify_id_changed_callbacks(old_id, new_id)
             
             return new_id
         except IDRegistrationError as e:
@@ -566,9 +562,8 @@ class IDRegistry:
         if old_id != new_id:
             self._subscription_manager.notify(old_id, new_id)
             
-            # Call the ID changed callback if set
-            if self._on_id_changed:
-                self._on_id_changed(old_id, new_id)
+            # Notify ID changed callbacks
+            self._notify_id_changed_callbacks(old_id, new_id)
         
         return new_id
     
@@ -590,9 +585,8 @@ class IDRegistry:
         if old_id != new_id:
             self._subscription_manager.notify(old_id, new_id)
             
-            # Call the ID changed callback if set
-            if self._on_id_changed:
-                self._on_id_changed(old_id, new_id)
+            # Notify ID changed callbacks
+            self._notify_id_changed_callbacks(old_id, new_id)
         
         return new_id
     
@@ -619,9 +613,8 @@ class IDRegistry:
         if old_id != new_id:
             self._subscription_manager.notify(old_id, new_id)
             
-            # Call the ID changed callback if set
-            if self._on_id_changed:
-                self._on_id_changed(old_id, new_id)
+            # Notify ID changed callbacks
+            self._notify_id_changed_callbacks(old_id, new_id)
         
         return new_id
     
@@ -703,41 +696,216 @@ class IDRegistry:
     
     #MARK: - Callback methods
     
-    def set_on_widget_unregister(self, callback):
+    def add_widget_unregister_callback(self, callback):
         """
-        Set the callback for widget unregistration.
+        Add a callback for widget unregistration.
         
         Args:
             callback: The callback function that takes widget_id and widget as arguments
+            
+        Returns:
+            bool: True if addition was successful, False if callback already exists
         """
-        self._widget_manager.set_on_widget_unregister(callback)
+        if callback not in self._widget_unregister_callbacks:
+            self._widget_unregister_callbacks.append(callback)
+            return True
+        return False
     
-    def set_on_observable_unregister(self, callback):
+    def remove_widget_unregister_callback(self, callback):
         """
-        Set the callback for observable unregistration.
+        Remove a callback for widget unregistration.
+        
+        Args:
+            callback: The callback function to remove
+            
+        Returns:
+            bool: True if removal was successful, False if callback not found
+        """
+        if callback in self._widget_unregister_callbacks:
+            self._widget_unregister_callbacks.remove(callback)
+            return True
+        return False
+    
+    def add_observable_unregister_callback(self, callback):
+        """
+        Add a callback for observable unregistration.
         
         Args:
             callback: The callback function that takes observable_id and observable as arguments
+            
+        Returns:
+            bool: True if addition was successful, False if callback already exists
         """
-        self._observable_manager.set_on_observable_unregister(callback)
+        if callback not in self._observable_unregister_callbacks:
+            self._observable_unregister_callbacks.append(callback)
+            return True
+        return False
     
-    def set_on_property_unregister(self, callback):
+    def remove_observable_unregister_callback(self, callback):
         """
-        Set the callback for property unregistration.
+        Remove a callback for observable unregistration.
+        
+        Args:
+            callback: The callback function to remove
+            
+        Returns:
+            bool: True if removal was successful, False if callback not found
+        """
+        if callback in self._observable_unregister_callbacks:
+            self._observable_unregister_callbacks.remove(callback)
+            return True
+        return False
+    
+    def add_property_unregister_callback(self, callback):
+        """
+        Add a callback for property unregistration.
         
         Args:
             callback: The callback function that takes property_id and property as arguments
+            
+        Returns:
+            bool: True if addition was successful, False if callback already exists
         """
-        self._observable_manager.set_on_property_unregister(callback)
+        if callback not in self._property_unregister_callbacks:
+            self._property_unregister_callbacks.append(callback)
+            return True
+        return False
     
-    def set_on_id_changed(self, callback):
+    def remove_property_unregister_callback(self, callback):
         """
-        Set the callback for ID changes.
+        Remove a callback for property unregistration.
+        
+        Args:
+            callback: The callback function to remove
+            
+        Returns:
+            bool: True if removal was successful, False if callback not found
+        """
+        if callback in self._property_unregister_callbacks:
+            self._property_unregister_callbacks.remove(callback)
+            return True
+        return False
+    
+    def add_id_changed_callback(self, callback):
+        """
+        Add a callback for ID changes.
         
         Args:
             callback: The callback function that takes old_id and new_id as arguments
+            
+        Returns:
+            bool: True if addition was successful, False if callback already exists
         """
-        self._on_id_changed = callback
+        if callback not in self._id_changed_callbacks:
+            self._id_changed_callbacks.append(callback)
+            return True
+        return False
+    
+    def remove_id_changed_callback(self, callback):
+        """
+        Remove a callback for ID changes.
+        
+        Args:
+            callback: The callback function to remove
+            
+        Returns:
+            bool: True if removal was successful, False if callback not found
+        """
+        if callback in self._id_changed_callbacks:
+            self._id_changed_callbacks.remove(callback)
+            return True
+        return False
+    
+    def clear_widget_unregister_callbacks(self):
+        """
+        Clear all widget unregister callbacks.
+        """
+        self._widget_unregister_callbacks.clear()
+    
+    def clear_observable_unregister_callbacks(self):
+        """
+        Clear all observable unregister callbacks.
+        """
+        self._observable_unregister_callbacks.clear()
+    
+    def clear_property_unregister_callbacks(self):
+        """
+        Clear all property unregister callbacks.
+        """
+        self._property_unregister_callbacks.clear()
+    
+    def clear_id_changed_callbacks(self):
+        """
+        Clear all ID changed callbacks.
+        """
+        self._id_changed_callbacks.clear()
+    
+    def clear_all_callbacks(self):
+        """
+        Clear all callbacks.
+        """
+        self.clear_widget_unregister_callbacks()
+        self.clear_observable_unregister_callbacks()
+        self.clear_property_unregister_callbacks()
+        self.clear_id_changed_callbacks()
+    
+    #MARK: - Internal callback notification methods
+    
+    def _notify_widget_unregister_callbacks(self, widget_id, widget):
+        """
+        Notify all registered widget unregister callbacks.
+        
+        Args:
+            widget_id: The ID of the unregistered widget
+            widget: The unregistered widget object
+        """
+        for callback in self._widget_unregister_callbacks:
+            try:
+                callback(widget_id, widget)
+            except Exception as e:
+                print(f"Error in widget unregister callback: {e}")
+    
+    def _notify_observable_unregister_callbacks(self, observable_id, observable):
+        """
+        Notify all registered observable unregister callbacks.
+        
+        Args:
+            observable_id: The ID of the unregistered observable
+            observable: The unregistered observable object
+        """
+        for callback in self._observable_unregister_callbacks:
+            try:
+                callback(observable_id, observable)
+            except Exception as e:
+                print(f"Error in observable unregister callback: {e}")
+    
+    def _notify_property_unregister_callbacks(self, property_id, property_obj):
+        """
+        Notify all registered property unregister callbacks.
+        
+        Args:
+            property_id: The ID of the unregistered property
+            property_obj: The unregistered property object
+        """
+        for callback in self._property_unregister_callbacks:
+            try:
+                callback(property_id, property_obj)
+            except Exception as e:
+                print(f"Error in property unregister callback: {e}")
+    
+    def _notify_id_changed_callbacks(self, old_id, new_id):
+        """
+        Notify all registered ID changed callbacks.
+        
+        Args:
+            old_id: The old component ID
+            new_id: The new component ID
+        """
+        for callback in self._id_changed_callbacks:
+            try:
+                callback(old_id, new_id)
+            except Exception as e:
+                print(f"Error in ID changed callback: {e}")
     
     #MARK: - Internal methods
     
@@ -757,9 +925,8 @@ class IDRegistry:
         for old_prop_id, new_prop_id in property_updates:
             self._subscription_manager.notify(old_prop_id, new_prop_id)
             
-            # Call the ID changed callback if set
-            if self._on_id_changed:
-                self._on_id_changed(old_prop_id, new_prop_id)
+            # Notify ID changed callbacks
+            self._notify_id_changed_callbacks(old_prop_id, new_prop_id)
     
     def _on_widget_unregister(self, widget_id, widget):
         """
@@ -782,6 +949,9 @@ class IDRegistry:
             
             # Unregister from ID generator
             self._id_generator.unregister(unique_id)
+        
+        # Notify all widget unregister callbacks
+        self._notify_widget_unregister_callbacks(widget_id, widget)
     
     def _on_observable_unregister(self, observable_id, observable):
         """
@@ -796,6 +966,9 @@ class IDRegistry:
         if unique_id:
             # Unregister from ID generator
             self._id_generator.unregister(unique_id)
+        
+        # Notify all observable unregister callbacks
+        self._notify_observable_unregister_callbacks(observable_id, observable)
     
     def _on_property_unregister(self, property_id, property_obj):
         """
@@ -810,6 +983,9 @@ class IDRegistry:
         if unique_id:
             # Unregister from ID generator
             self._id_generator.unregister(unique_id)
+        
+        # Notify all property unregister callbacks
+        self._notify_property_unregister_callbacks(property_id, property_obj)
     
     #MARK: - Cleanup method
     
@@ -818,6 +994,9 @@ class IDRegistry:
         self._widget_manager.clear()
         self._observable_manager.clear()
         self._subscription_manager.clear()
+        
+        # Clear all callbacks
+        self.clear_all_callbacks()
         
         # Reset ID generator
         self._id_generator = UniqueIDGenerator()
