@@ -159,51 +159,45 @@ class TestIDSystemSerialization:
     
     def test_controlled_property_id_updates(self):
         """
-        Test that when a widget's ID changes, all properties it controls have
-        their controller references updated correctly.
+        Test that property IDs with controller references don't change when controller location changes.
+        
+        When a controller widget's location changes, its unique ID remains the same,
+        so the property ID should also remain unchanged.
         """
         # Create components
-        controller = MockWidget("Controller")
         observable = MockObservable("Observable")
-        property1 = MockObservableProperty("Property1")
-        property2 = MockObservableProperty("Property2")
+        controller = MockWidget("Controller")
+        property_obj = MockObservableProperty("Property")
         
-        # Register components with custom IDs
-        controller_id = self.registry.register(controller, "pb", "ctrl")
-        observable_id = self.registry.register_observable(observable, "o", "obs")
+        # Register components
+        observable_id = self.registry.register_observable(observable, "o")
+        controller_id = self.registry.register(controller, "pb")
         
-        # Register properties controlled by the widget
-        property1_id = self.registry.register_observable_property(
-            property1, "op", "prop1", "name", observable_id, controller_id
-        )
-        property2_id = self.registry.register_observable_property(
-            property2, "op", "prop2", "age", observable_id, controller_id
-        )
+        # Register property with observable and controller
+        property_id = self.registry.register_observable_property(
+            property_obj, "op", None, "prop", observable_id, controller_id)
         
-        # Update the controller's ID
+        # Get the controller's unique ID
+        controller_unique_id = get_unique_id_from_id(controller_id)
+        
+        # Update the controller's location
         updated_controller_id = self.registry.update_location(controller_id, "new_loc")
         
-        # Verify the properties' controller references are updated
-        property1_updated = self.registry.get_id(property1)
-        property2_updated = self.registry.get_id(property2)
+        # Verify controller's full ID changed
+        assert updated_controller_id != controller_id
         
-        # Properties should have their IDs updated automatically
-        assert property1_updated != property1_id
-        assert property2_updated != property2_id
+        # Verify controller's unique ID did NOT change
+        assert get_unique_id_from_id(updated_controller_id) == controller_unique_id
         
-        # Check the controller references in the updated property IDs
-        property1_components = parse_property_id(property1_updated)
-        property2_components = parse_property_id(property2_updated)
+        # Get current property ID from registry
+        current_property_id = self.registry.get_id(property_obj)
         
-        # The controller unique ID remains the same
-        assert property1_components['controller_id'] == "ctrl"
-        assert property2_components['controller_id'] == "ctrl"
+        # Verify property ID remained unchanged since it references the controller's unique ID
+        assert current_property_id == property_id
         
-        # Verify that we can still get properties by controller ID
-        controller_properties = self.registry.get_controller_properties(updated_controller_id)
-        assert len(controller_properties) == 2
-        assert property1_updated in controller_properties
-        assert property2_updated in controller_properties
+        # Verify the property still references the same controller unique ID
+        property_components = parse_property_id(property_id)
+        assert property_components['controller_id'] == controller_unique_id
     
     def test_container_unregister_cascade_to_properties(self):
         """
@@ -237,7 +231,17 @@ class TestIDSystemSerialization:
         assert self.registry.get_observable_property(property2_id) == property2
         
         # Unregister the container
-        self.registry.unregister(container_id)
+        print(f"property widgert Before unregistering :{self.registry.get_observable_property(property1_id)}")
+        print(f"widget Before unregistering :{self.registry.get_widget(widget1_id)}")
+        print(f"container Before unregistering :{self.registry.get_widget(container_id)}")
+        print(f"proprty id Before unregistering :{self.registry.get_id(self.registry.get_observable_property(property1_id))}")
+        #print(self.registry.unregister(property1_id))
+        print(self.registry.unregister(container_id))
+        print(f"proprty id After unregistering :{self.registry.get_id(self.registry.get_observable_property(property1_id))}")
+        print(f"container After unregistering :{self.registry.get_widget(container_id)}")
+        print(f"widget ufter unregistering :{self.registry.get_widget(widget1_id)}")
+        print(f"proeprty widget After unregistering :{self.registry.get_observable_property(property1_id)}")
+        
         
         # Verify properties are unregistered
         assert self.registry.get_observable_property(property1_id) is None
@@ -483,4 +487,4 @@ class TestIDSystemSerialization:
 
 if __name__ == "__main__":
     # Run the tests directly if this script is executed
-    pytest.main(["-v", __file__])
+    pytest.main(["-s", __file__])

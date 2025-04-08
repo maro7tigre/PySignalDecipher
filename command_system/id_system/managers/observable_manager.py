@@ -208,7 +208,7 @@ class ObservableManager:
         
         Args:
             property_id: The ID of the property to unregister
-            
+                
         Returns:
             bool: True if successful, False otherwise
         """
@@ -236,9 +236,17 @@ class ObservableManager:
             if observable_unique_id in self._observable_to_properties:
                 self._observable_to_properties[observable_unique_id].discard(property_id)
                 
-                # Clean up empty sets
-                if observable_unique_id in self._observable_to_properties and not self._observable_to_properties[observable_unique_id]:
+                # Check if this was the last property for this observable
+                if not self._observable_to_properties[observable_unique_id]:
+                    # Clean up empty set
                     del self._observable_to_properties[observable_unique_id]
+                    
+                    # Find the observable_id from the unique_id
+                    for obs_id in list(self._observables.keys()):
+                        if get_unique_id_from_id(obs_id) == observable_unique_id:
+                            # Unregister the observable
+                            self.unregister_observable(obs_id)
+                            break
         
         # Remove from controller's property set if applicable
         if controller_id != DEFAULT_NO_CONTROLLER:

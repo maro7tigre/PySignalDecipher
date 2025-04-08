@@ -67,8 +67,8 @@ class IDRegistry:
         self._id_generator = UniqueIDGenerator()
         
         # Managers for different component types
-        self._widget_manager = WidgetManager()
-        self._observable_manager = ObservableManager()
+        self._widget_manager = WidgetManager(self)
+        self._observable_manager = ObservableManager(self)
         
         # Get the subscription manager
         self._subscription_manager = get_subscription_manager()
@@ -770,16 +770,15 @@ class IDRegistry:
             widget: The unregistered widget object
         """
         # Get the unique ID
+        print(f"Widget unregistered: {widget_id}")
         unique_id = get_unique_id_from_id(widget_id)
         if unique_id:
-            # Update any properties this widget controls
-            if unique_id in self._observable_manager._controller_to_properties:
-                # Make a copy of the properties
-                property_ids = list(self._observable_manager._controller_to_properties[unique_id])
-                
-                # Remove the controller reference from each property
-                for property_id in property_ids:
-                    self.remove_controller_reference(property_id)
+            # First, check if this widget controls any properties
+            property_ids = self._observable_manager.get_property_ids_by_controller_id(unique_id)
+            print(f"Properties controlled by widget: {property_ids}")
+            # If there are properties, unregister each one
+            for property_id in list(property_ids):  # Use list() to create a copy
+                self.unregister(property_id)
             
             # Unregister from ID generator
             self._id_generator.unregister(unique_id)

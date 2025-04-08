@@ -36,8 +36,9 @@ class WidgetManager:
     widgets and their relationships with containers.
     """
     
-    def __init__(self):
+    def __init__(self, registry):
         """Initialize the widget manager."""
+        self.registry = registry
         # Maps widget IDs to widget objects
         self._widgets = {}
         
@@ -140,6 +141,7 @@ class WidgetManager:
         Returns:
             bool: True if successful, False otherwise
         """
+        print(f"Unregistering widget with ID: {widget_id}")
         if widget_id not in self._widgets:
             return False
         

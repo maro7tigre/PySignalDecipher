@@ -437,8 +437,8 @@ class TestIDSystem:
         observable2 = MockObservable("DataModel2")
         
         # Register observables
-        observable1_id = self.registry.register_observable(observable1, "o")
-        observable2_id = self.registry.register_observable(observable2, "o")
+        observable1_id = self.registry.register_observable(observable1, "ob")
+        observable2_id = self.registry.register_observable(observable2, "ob")
         
         # Verify registration
         assert self.registry.get_id(observable1) == observable1_id
@@ -451,7 +451,7 @@ class TestIDSystem:
         # Verify ID format
         observable1_components = parse_observable_id(observable1_id)
         assert observable1_components is not None
-        assert observable1_components['type_code'] == "o"
+        assert observable1_components['type_code'] == "ob"
     
     def test_observable_property_registration(self):
         """
@@ -468,7 +468,7 @@ class TestIDSystem:
         controller = MockWidget("AgeSpinner")
         
         # Register components
-        observable_id = self.registry.register_observable(observable, "o")
+        observable_id = self.registry.register_observable(observable, "ob")
         controller_id = self.registry.register(controller, "sp")  # Spin box
         
         # Register properties with relationships using full IDs
@@ -518,8 +518,8 @@ class TestIDSystem:
         property_obj = MockObservableProperty("Property")
         
         # Register components
-        observable1_id = self.registry.register_observable(observable1, "o")
-        observable2_id = self.registry.register_observable(observable2, "o")
+        observable1_id = self.registry.register_observable(observable1, "ob")
+        observable2_id = self.registry.register_observable(observable2, "ob")
         controller1_id = self.registry.register(controller1, "sp")
         controller2_id = self.registry.register(controller2, "sp")
         
@@ -648,7 +648,7 @@ class TestIDSystem:
         property2 = MockObservableProperty("Property2")
         
         # Register the components
-        observable_id = self.registry.register_observable(observable, "o")
+        observable_id = self.registry.register_observable(observable, "ob")
         
         property1_id = self.registry.register_observable_property(
             property1, "op", None, "prop1", observable_id)
@@ -695,7 +695,7 @@ class TestIDSystem:
         
         # Register components
         container_id = self.registry.register(container, "d")
-        observable_id = self.registry.register_observable(observable, "o")
+        observable_id = self.registry.register_observable(observable, "ob")
         controller_id = self.registry.register(controller, "pb")
         
         # Register widget with container

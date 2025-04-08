@@ -59,7 +59,7 @@ class WidgetTypeCodes:
 #MARK: - Observable Type Definitions
 class ObservableTypeCodes:
     """Observable type code definitions."""
-    OBSERVABLE = 'o'
+    OBSERVABLE = 'ob'
     
     @classmethod
     def get_all_codes(cls):
