@@ -137,9 +137,6 @@ class TestIDSystemRelationships:
         
         # Verify container query methods
         container_widgets = self.registry.get_container_widgets(container_id)
-        print(container_widgets)
-        print(widget1_id, widget2_id, container_id)
-        print(self.registry.get_container_id_from_widget_id(widget1_id))
         
         assert len(container_widgets) == 2
         assert widget1_id in container_widgets
@@ -527,8 +524,8 @@ class TestIDSystemRelationships:
         assert property3_id in controller2_properties
         
         # Test getting controller from property
-        assert self.registry.get_controller_id_from_property_id(property1_id) == get_unique_id_from_id(controller1_id)
-        assert self.registry.get_controller_id_from_property_id(property3_id) == get_unique_id_from_id(controller2_id)
+        assert self.registry.get_controller_id_from_property_id(property1_id) == controller1_id
+        assert self.registry.get_controller_id_from_property_id(property3_id) == controller2_id
     
     def test_controller_unregister_effect_on_properties(self):
         """Test effect of controller unregistration on properties."""

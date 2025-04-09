@@ -381,8 +381,9 @@ class IDRegistry:
         container_unique_id = container_id
         if ID_SEPARATOR in container_id:
             container_unique_id = get_unique_id_from_id(container_id)
-            
-        return self._widget_manager.get_locations_map(container_unique_id)
+        
+        # Use get_widgets_by_container_id to get a flat list of widget IDs
+        return self._widget_manager.get_widget_ids_by_container_id(container_unique_id)
     
     #MARK: - Observable relationship methods
     
