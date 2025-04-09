@@ -383,6 +383,166 @@ class WidgetManager:
             del self._widgets[widget_id]
         
         return new_widget_id
+
+    def update_widget_id(self, old_widget_id, new_widget_id):
+        """
+        Update a widget's ID with a completely new ID.
+        
+        This is a more direct approach than calling update_container or update_location
+        and allows changing multiple aspects of the ID at once.
+        
+        Args:
+            old_widget_id: The current widget ID
+            new_widget_id: The new widget ID
+            
+        Returns:
+            tuple: (success, actual_new_id, error_message) where:
+                - success: Boolean indicating whether the update was successful
+                - actual_new_id: The actual new ID after the update (may be different from requested)
+                - error_message: Description of any error that occurred (None if successful)
+        """
+        if old_widget_id not in self._widgets:
+            return False, old_widget_id, "Widget not found"
+        
+        # Parse both IDs
+        old_components = parse_widget_id(old_widget_id)
+        new_components = parse_widget_id(new_widget_id)
+        
+        if not old_components or not new_components:
+            return False, old_widget_id, "Invalid widget ID format"
+        
+        # Make sure type codes match
+        if old_components['type_code'] != new_components['type_code']:
+            return False, old_widget_id, "Cannot change widget type code"
+        
+        # Get the widget object
+        widget = self._widgets[old_widget_id]
+        
+        # Check if the unique ID is changing
+        old_unique_id = old_components['unique_id']
+        new_unique_id = new_components['unique_id']
+        
+        if old_unique_id != new_unique_id:
+            # Make sure the new unique ID isn't already used
+            if new_unique_id in self._unique_id_to_widget_id and self._unique_id_to_widget_id[new_unique_id] != old_widget_id:
+                return False, old_widget_id, f"Unique ID '{new_unique_id}' is already in use"
+        
+        # Check if container is changing
+        old_container_id = old_components['container_unique_id']
+        new_container_id = new_components['container_unique_id']
+        
+        # Handle container change if necessary
+        if old_container_id != new_container_id:
+            # Verify the new container exists
+            if new_container_id != DEFAULT_ROOT_CONTAINER_ID and new_container_id not in self._container_to_widgets:
+                return False, old_widget_id, f"Container with ID '{new_container_id}' does not exist"
+            
+            # If we're changing container and there's already a widget with same unique ID, fail
+            if old_unique_id != new_unique_id and new_unique_id in self._unique_id_to_widget_id:
+                return False, old_widget_id, f"Cannot update unique ID to '{new_unique_id}': already in use"
+                
+            # Update container references
+            if old_container_id in self._container_to_widgets:
+                self._container_to_widgets[old_container_id].discard(old_widget_id)
+            
+            if new_container_id not in self._container_to_widgets:
+                self._container_to_widgets[new_container_id] = set()
+        
+        # Handle location changes
+        old_container_location = old_components['container_location']
+        new_container_location = new_components['container_location']
+        old_widget_location_id = old_components['widget_location_id']
+        new_widget_location_id = new_components['widget_location_id']
+        
+        # If container location changing, unregister from old location generator
+        if old_container_location != new_container_location:
+            if old_container_location in self._container_location_generators:
+                old_location_gen = self._container_location_generators[old_container_location]
+                old_location_gen.unregister(old_widget_location_id)
+            
+            # Get or create the new location generator
+            new_location_gen = self._get_location_generator(new_container_location)
+            
+            # Check if the widget_location_id is available in the new container
+            if new_location_gen.is_registered(new_widget_location_id):
+                # Generate a new widget_location_id
+                final_widget_location_id = new_location_gen.generate()
+            else:
+                final_widget_location_id = new_widget_location_id
+                # Register the widget location ID
+                new_location_gen.register(final_widget_location_id)
+        else:
+            # Same container location, just updating widget_location_id
+            if old_widget_location_id != new_widget_location_id:
+                location_gen = self._get_location_generator(old_container_location)
+                
+                # Unregister old location ID
+                location_gen.unregister(old_widget_location_id)
+                
+                # Check if new location ID is available
+                if location_gen.is_registered(new_widget_location_id):
+                    return False, old_widget_id, f"Widget location ID '{new_widget_location_id}' already exists in container location '{old_container_location}'"
+                
+                # Register new location ID
+                location_gen.register(new_widget_location_id)
+                final_widget_location_id = new_widget_location_id
+            else:
+                final_widget_location_id = old_widget_location_id
+        
+        # Create the final widget ID
+        final_widget_id = create_widget_id(
+            old_components['type_code'],  # Type code remains the same
+            new_unique_id,
+            new_container_id,
+            new_container_location,
+            final_widget_location_id
+        )
+        
+        # If this is the same as the original ID, nothing to do
+        if final_widget_id == old_widget_id:
+            return True, old_widget_id, None
+        
+        # Update mappings
+        self._widgets[final_widget_id] = widget
+        self._unique_id_to_widget_id[new_unique_id] = final_widget_id
+        self._widget_objects_to_id[widget] = final_widget_id
+        
+        # Update container's widget set
+        if new_container_id in self._container_to_widgets:
+            self._container_to_widgets[new_container_id].add(final_widget_id)
+        
+        # If this is a container, update all its children's container locations
+        is_container = ContainerTypeCodes.is_valid_code(old_components['type_code'])
+        if is_container and old_unique_id in self._container_to_widgets:
+            # Update internal container mappings if unique ID changed
+            if old_unique_id != new_unique_id:
+                # Transfer container's widget set
+                self._container_to_widgets[new_unique_id] = self._container_to_widgets[old_unique_id]
+                del self._container_to_widgets[old_unique_id]
+                
+                # Transfer container's locations map
+                if old_unique_id in self._container_locations_map:
+                    self._container_locations_map[new_unique_id] = self._container_locations_map[old_unique_id]
+                    del self._container_locations_map[old_unique_id]
+            
+            # Update child container locations if path changed
+            if old_container_location != new_container_location or old_widget_location_id != final_widget_location_id:
+                old_full_path = f"{old_container_location}/{old_widget_location_id}"
+                new_full_path = f"{new_container_location}/{final_widget_location_id}"
+                self._update_children_container_locations(new_unique_id, old_full_path, new_full_path)
+        
+        # Update any locations map entries that reference this widget
+        self._update_locations_map_references(old_widget_id, final_widget_id)
+        
+        # Clean up old widget ID
+        if old_widget_id in self._widgets:
+            del self._widgets[old_widget_id]
+        
+        # Remove old unique ID from mappings if changed
+        if old_unique_id != new_unique_id and old_unique_id in self._unique_id_to_widget_id:
+            del self._unique_id_to_widget_id[old_unique_id]
+        
+        return True, final_widget_id, None
     
     #MARK: - Container location methods
     

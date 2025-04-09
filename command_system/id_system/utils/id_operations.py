@@ -42,7 +42,7 @@ def increment_widget_location_id(location_id):
     if match:
         prefix, number = match.groups()
         return f"{prefix}{int(number) + 1}"
-    
+        
     # Otherwise, just append "1"
     return f"{location_id}1"
 
@@ -268,80 +268,132 @@ def update_id_type_code(id_str, new_type_code):
     return ':'.join(parts)
 
 
-#MARK: - Validation utilities
-
-def is_valid_widget_id_components(type_code, unique_id, container_unique_id, container_location, widget_location_id):
+def update_id_unique_id(id_str, new_unique_id):
     """
-    Validate all components of a widget ID.
+    Update the unique ID portion of any ID string.
     
     Args:
-        type_code: The widget type code
-        unique_id: The unique ID
-        container_unique_id: The container unique ID
-        container_location: The container location
-        widget_location_id: The widget location ID
+        id_str: The current ID string
+        new_unique_id: The new unique ID
         
     Returns:
-        bool: True if all components are valid, False otherwise
+        str: The updated ID string
     """
-    # Type code and unique ID must not be empty
-    if not type_code or not unique_id:
-        return False
+    # First determine the ID type by trying to parse it
+    widget_components = parse_widget_id(id_str)
+    if widget_components:
+        return create_widget_id(
+            widget_components['type_code'],
+            new_unique_id,
+            widget_components['container_unique_id'],
+            widget_components['container_location'],
+            widget_components['widget_location_id']
+        )
     
-    # Container unique ID can be "0" but not empty
-    if container_unique_id is None:
-        return False
+    observable_components = parse_observable_id(id_str)
+    if observable_components:
+        return create_observable_id(
+            observable_components['type_code'],
+            new_unique_id
+        )
     
-    # Container location must be valid
-    if not is_valid_container_location(container_location):
-        return False
+    property_components = parse_property_id(id_str)
+    if property_components:
+        return create_property_id(
+            property_components['type_code'],
+            new_unique_id,
+            property_components['observable_unique_id'],
+            property_components['property_name'],
+            property_components['controller_id']
+        )
     
-    # Widget location ID must be valid
-    if not is_valid_widget_location_id(widget_location_id):
-        return False
+    # If none of the parsers could handle it, just do a simple replacement
+    parts = id_str.split(':')
+    if len(parts) > 1:
+        parts[1] = new_unique_id
+        return ':'.join(parts)
     
-    return True
+    return id_str
 
 
-def is_valid_observable_id_components(type_code, unique_id):
+#MARK: - Direct ID update utilities for all component types
+
+def update_id(old_id, new_id):
     """
-    Validate all components of an observable ID.
+    Create an updated ID based on the differences between old and new IDs.
+    This function preserves the original structure while applying only the
+    changes specified in the new ID.
     
     Args:
-        type_code: The observable type code
-        unique_id: The unique ID
+        old_id: The current ID string
+        new_id: The new ID string to extract changes from
         
     Returns:
-        bool: True if all components are valid, False otherwise
+        tuple: (success, updated_id, error_message) where:
+           - success is a boolean indicating if the update is valid
+           - updated_id is the resulting ID after applying changes
+           - error_message is None if successful or a string describing the issue
     """
-    # Type code and unique ID must not be empty
-    return bool(type_code and unique_id)
-
-
-def is_valid_property_id_components(type_code, unique_id, observable_unique_id, property_name, controller_id):
-    """
-    Validate all components of a property ID.
+    # First check if both IDs are of the same type
+    old_type = None
+    new_type = None
     
-    Args:
-        type_code: The property type code
-        unique_id: The unique ID
-        observable_unique_id: The observable unique ID
-        property_name: The property name
-        controller_id: The controller ID
+    # Try to parse as widget
+    old_widget = parse_widget_id(old_id)
+    new_widget = parse_widget_id(new_id)
+    
+    if old_widget and new_widget:
+        # Widget ID update
+        if old_widget['type_code'] != new_widget['type_code']:
+            return False, old_id, "Cannot change widget type"
         
-    Returns:
-        bool: True if all components are valid, False otherwise
-    """
-    # Type code and unique ID must not be empty
-    if not type_code or not unique_id:
-        return False
+        # Create the updated widget ID
+        updated_id = create_widget_id(
+            old_widget['type_code'],
+            new_widget['unique_id'] if new_widget['unique_id'] != old_widget['unique_id'] else old_widget['unique_id'],
+            new_widget['container_unique_id'] if new_widget['container_unique_id'] != old_widget['container_unique_id'] else old_widget['container_unique_id'],
+            new_widget['container_location'] if new_widget['container_location'] != old_widget['container_location'] else old_widget['container_location'],
+            new_widget['widget_location_id'] if new_widget['widget_location_id'] != old_widget['widget_location_id'] else old_widget['widget_location_id']
+        )
+        
+        return True, updated_id, None
     
-    # Observable unique ID and controller ID can be "0" but not None
-    if observable_unique_id is None or controller_id is None:
-        return False
+    # Try to parse as observable
+    old_observable = parse_observable_id(old_id)
+    new_observable = parse_observable_id(new_id)
     
-    # Property name must not be empty
-    if not property_name:
-        return False
+    if old_observable and new_observable:
+        # Observable ID update
+        if old_observable['type_code'] != new_observable['type_code']:
+            return False, old_id, "Cannot change observable type"
+        
+        # Create the updated observable ID
+        updated_id = create_observable_id(
+            old_observable['type_code'],
+            new_observable['unique_id'] if new_observable['unique_id'] != old_observable['unique_id'] else old_observable['unique_id']
+        )
+        
+        return True, updated_id, None
     
-    return True
+    # Try to parse as property
+    old_property = parse_property_id(old_id)
+    new_property = parse_property_id(new_id)
+    
+    if old_property and new_property:
+        # Property ID update
+        if old_property['type_code'] != new_property['type_code']:
+            return False, old_id, "Cannot change property type"
+        
+        # Create the updated property ID
+        updated_id = create_property_id(
+            old_property['type_code'],
+            new_property['unique_id'] if new_property['unique_id'] != old_property['unique_id'] else old_property['unique_id'],
+            new_property['observable_unique_id'] if new_property['observable_unique_id'] != old_property['observable_unique_id'] else old_property['observable_unique_id'],
+            new_property['property_name'] if new_property['property_name'] != old_property['property_name'] else old_property['property_name'],
+            new_property['controller_id'] if new_property['controller_id'] != old_property['controller_id'] else old_property['controller_id']
+        )
+        
+        return True, updated_id, None
+    
+    # IDs not of the same type or one/both are invalid
+    return False, old_id, "Cannot update ID: incompatible ID formats"

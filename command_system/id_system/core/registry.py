@@ -13,7 +13,8 @@ from command_system.id_system.core.parser import (
     get_unique_id_from_id,
     create_widget_id,
     create_observable_id,
-    create_property_id
+    create_property_id,
+    get_type_code_from_id
 )
 from command_system.id_system.managers.widget_manager import WidgetManager, IDRegistrationError
 from command_system.id_system.managers.observable_manager import ObservableManager
@@ -34,6 +35,8 @@ from command_system.id_system.types import (
     PropertyTypeCodes,
     ID_SEPARATOR
 )
+from command_system.id_system.utils.validation import validate_id_type_consistency
+from command_system.id_system.utils.id_operations import update_id as util_update_id
 
 # Global ID registry instance
 _id_registry = None
@@ -318,86 +321,6 @@ class IDRegistry:
         if ID_SEPARATOR in container_id:
             container_unique_id = get_unique_id_from_id(container_id)
             
-        return self._widget_manager.get_widget_ids_by_container_id(container_unique_id)
-    
-    def get_container_widgets_at_location(self, container_id, location):
-        """
-        Get all widgets at a specific location in a container.
-        
-        Args:
-            container_id: The container's ID
-            location: The container location
-            
-        Returns:
-            list: A list of widget IDs at the specified location
-        """
-        # Extract container unique ID if full ID provided
-        container_unique_id = container_id
-        if ID_SEPARATOR in container_id:
-            container_unique_id = get_unique_id_from_id(container_id)
-            
-        return self._widget_manager.get_widget_ids_by_container_id_and_location(
-            container_unique_id, location)
-        
-    def get_widgets_by_container_id(self, container_id):
-        """
-        Get all widgets in a container.
-
-        Args:
-            container_id: The container's ID
-
-        Returns:
-            list: A list of widget IDs in the container
-        """
-        # Extract container unique ID if full ID provided
-        container_unique_id = container_id
-        if ID_SEPARATOR in container_id:
-            container_unique_id = get_unique_id_from_id(container_id)
-
-        return self._widget_manager.get_widget_ids_by_container_id(container_unique_id)
-        
-    def get_container_id_from_widget_id(self, widget_id):
-        """
-        Get the container ID from a widget ID.
-        
-        Args:
-            widget_id: The widget ID
-            
-        Returns:
-            str: The container's unique ID, or None if not found or invalid
-        """
-        return self._widget_manager.get_container_id_from_widget_id(widget_id)
-    
-    def set_locations_map(self, container_id, locations_map):
-        """
-        Set the container's locations map.
-        
-        Args:
-            container_id: The container's ID
-            locations_map: A dictionary mapping subcontainer locations to widget IDs
-        """
-        # Extract container unique ID if full ID provided
-        container_unique_id = container_id
-        if ID_SEPARATOR in container_id:
-            container_unique_id = get_unique_id_from_id(container_id)
-            
-        self._widget_manager.set_locations_map(container_unique_id, locations_map)
-    
-    def get_locations_map(self, container_id):
-        """
-        Get the container's locations map.
-        
-        Args:
-            container_id: The container's ID
-            
-        Returns:
-            dict: A dictionary mapping subcontainer locations to widget IDs
-        """
-        # Extract container unique ID if full ID provided
-        container_unique_id = container_id
-        if ID_SEPARATOR in container_id:
-            container_unique_id = get_unique_id_from_id(container_id)
-            
         return self._widget_manager.get_locations_map(container_unique_id)
     
     #MARK: - Observable relationship methods
@@ -467,6 +390,69 @@ class IDRegistry:
         return self._observable_manager.get_property_ids_by_observable_id_and_property_name(observable_unique_id, property_name)
     
     #MARK: - ID update methods
+    
+    def update_id(self, old_id, new_id):
+        """
+        Update any component's ID with a new ID.
+        
+        This method determines the component type and delegates to the appropriate
+        manager to handle the update. It ensures type consistency and validates
+        the updated ID.
+        
+        Args:
+            old_id: The current ID string
+            new_id: The new ID string to use
+            
+        Returns:
+            tuple: (success, updated_id, error_message) where:
+                - success is a boolean indicating if the update was successful
+                - updated_id is the resulting ID after applying the update
+                - error_message is None if successful or a string describing the issue
+        """
+        # First check for basic type consistency
+        is_consistent, error_message = validate_id_type_consistency(old_id, new_id)
+        if not is_consistent:
+            return False, old_id, error_message
+        
+        # Determine component type from ID prefix
+        type_code = get_type_code_from_id(old_id)
+        
+        # Delegate to the appropriate manager based on component type
+        if type_code in TypeCodes.get_all_widget_codes():
+            # Widget/Container ID update
+            success, updated_id, error = self._widget_manager.update_widget_id(old_id, new_id)
+            
+            # If successful, notify ID subscribers
+            if success and updated_id != old_id:
+                self._subscription_manager.notify(old_id, updated_id)
+                self._notify_id_changed_callbacks(old_id, updated_id)
+                
+            return success, updated_id, error
+            
+        elif type_code in ObservableTypeCodes.get_all_codes():
+            # Observable ID update
+            success, updated_id, error = self._observable_manager.update_observable_id(old_id, new_id)
+            
+            # If successful, notify ID subscribers
+            if success and updated_id != old_id:
+                self._subscription_manager.notify(old_id, updated_id)
+                self._notify_id_changed_callbacks(old_id, updated_id)
+                
+            return success, updated_id, error
+            
+        elif type_code in PropertyTypeCodes.get_all_codes():
+            # Property ID update
+            success, updated_id, error = self._observable_manager.update_property_id(old_id, new_id)
+            
+            # If successful, notify ID subscribers
+            if success and updated_id != old_id:
+                self._subscription_manager.notify(old_id, updated_id)
+                self._notify_id_changed_callbacks(old_id, updated_id)
+                
+            return success, updated_id, error
+        
+        # Unknown component type
+        return False, old_id, f"Unknown component type: {type_code}"
     
     def update_container(self, widget_id, new_container_id):
         """
@@ -1000,3 +986,83 @@ class IDRegistry:
         
         # Reset ID generator
         self._id_generator = UniqueIDGenerator()
+    
+    def get_container_widgets_at_location(self, container_id, location):
+        """
+        Get all widgets at a specific location in a container.
+        
+        Args:
+            container_id: The container's ID
+            location: The container location
+            
+        Returns:
+            list: A list of widget IDs at the specified location
+        """
+        # Extract container unique ID if full ID provided
+        container_unique_id = container_id
+        if ID_SEPARATOR in container_id:
+            container_unique_id = get_unique_id_from_id(container_id)
+            
+        return self._widget_manager.get_widget_ids_by_container_id_and_location(
+            container_unique_id, location)
+        
+    def get_widgets_by_container_id(self, container_id):
+        """
+        Get all widgets in a container.
+
+        Args:
+            container_id: The container's ID
+
+        Returns:
+            list: A list of widget IDs in the container
+        """
+        # Extract container unique ID if full ID provided
+        container_unique_id = container_id
+        if ID_SEPARATOR in container_id:
+            container_unique_id = get_unique_id_from_id(container_id)
+
+        return self._widget_manager.get_widget_ids_by_container_id(container_unique_id)
+        
+    def get_container_id_from_widget_id(self, widget_id):
+        """
+        Get the container ID from a widget ID.
+        
+        Args:
+            widget_id: The widget ID
+            
+        Returns:
+            str: The container's unique ID, or None if not found or invalid
+        """
+        return self._widget_manager.get_container_id_from_widget_id(widget_id)
+    
+    def set_locations_map(self, container_id, locations_map):
+        """
+        Set the container's locations map.
+        
+        Args:
+            container_id: The container's ID
+            locations_map: A dictionary mapping subcontainer locations to widget IDs
+        """
+        # Extract container unique ID if full ID provided
+        container_unique_id = container_id
+        if ID_SEPARATOR in container_id:
+            container_unique_id = get_unique_id_from_id(container_id)
+            
+        self._widget_manager.set_locations_map(container_unique_id, locations_map)
+    
+    def get_locations_map(self, container_id):
+        """
+        Get the container's locations map.
+        
+        Args:
+            container_id: The container's ID
+            
+        Returns:
+            dict: A dictionary mapping subcontainer locations to widget IDs
+        """
+        # Extract container unique ID if full ID provided
+        container_unique_id = container_id
+        if ID_SEPARATOR in container_id:
+            container_unique_id = get_unique_id_from_id(container_id)
+            
+        return self._widget_manager.get_locations_map(container_unique_id)

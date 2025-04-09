@@ -34,7 +34,7 @@ Examples:
 ```
 
 Example:
-- `o:4C` - An observable with unique ID "4C"
+- `ob:4C` - An observable with unique ID "4C"
 
 ### 3. Observable Property Format
 ```
@@ -103,7 +103,7 @@ When registering a widget:
 1. If no container is specified, the widget is registered at the root container ("0") with location "0"
 2. If a container is specified but no location, a widget_location_id is generated for that container's location
 3. If a container and location are specified, the location is treated as the widget_location_id and the system checks if it's available in that container
-4. If the widget_location_id is already in use, an error is raised
+4. If the widget_location_id is already in use, a new one is automatically generated
 
 ### ID Updates
 
@@ -155,22 +155,30 @@ The registry provides methods for managing components and their relationships:
 - `get_property_ids_by_controller_id(controller_unique_id)`
 
 ### ID Updates
-- `update_id(old_id, new_id)` - Update any component's ID and all references to it
 - `update_container(widget_id, new_container_id)` - Update widget's container
 - `update_location(widget_id, new_location)` - Update widget's location
-- `update_observable_id(property_id, new_observable_id)` - Update property's observable
+- `update_observable_reference(property_id, new_observable_id)` - Update property's observable
 - `update_property_name(property_id, new_property_name)` - Update property's name
-- `update_controller_id(property_id, new_controller_id)` - Update property's controller
+- `update_controller_reference(property_id, new_controller_id)` - Update property's controller
 - `remove_container_reference(widget_id)` - Remove container reference
 - `remove_observable_reference(property_id)` - Remove observable reference
 - `remove_controller_reference(property_id)` - Remove controller reference
 
 ### Unregistration
-- `unregister(component_id, replacement_id=None)` - Unregister a component with optional replacement
-- `set_on_widget_unregister(callback)` - Set callback for widget unregistration
-- `set_on_observable_unregister(callback)` - Set callback for observable unregistration
-- `set_on_property_unregister(callback)` - Set callback for property unregistration
-- `set_on_id_changed(callback)` - Set callback for ID changes
+- `unregister(component_id)` - Unregister a component
+- `add_widget_unregister_callback(callback)` - Add callback for widget unregistration
+- `remove_widget_unregister_callback(callback)` - Remove callback for widget unregistration
+- `add_observable_unregister_callback(callback)` - Add callback for observable unregistration
+- `remove_observable_unregister_callback(callback)` - Remove callback for observable unregistration
+- `add_property_unregister_callback(callback)` - Add callback for property unregistration
+- `remove_property_unregister_callback(callback)` - Remove callback for property unregistration
+- `add_id_changed_callback(callback)` - Add callback for ID changes
+- `remove_id_changed_callback(callback)` - Remove callback for ID changes
+- `clear_widget_unregister_callbacks()` - Clear all widget unregister callbacks
+- `clear_observable_unregister_callbacks()` - Clear all observable unregister callbacks
+- `clear_property_unregister_callbacks()` - Clear all property unregister callbacks
+- `clear_id_changed_callbacks()` - Clear all ID changed callbacks
+- `clear_all_callbacks()` - Clear all callbacks
 
 ### Subscription Methods
 - `subscribe_to_id(component_id, callback)` - Subscribe to ID changes
@@ -188,19 +196,18 @@ from command_system.id_system import get_simple_id_registry
 registry = get_simple_id_registry()
 
 # Register a name with a type code
-widget_id = registry.register("welcome_tab", ContainerTypeCodes.TAB)   # "t:1"
-form_id = registry.register("main_form", "fm")       # "fm:1"
+widget_id = registry.register("t")   # "t:1"
+form_id = registry.register("fm")    # "fm:1"
 
 # Register with a custom ID
-custom_id = registry.register("custom_widget", ContainerTypeCodes.TAB, "t:custom")
+custom_id = registry.register("t", "t:custom")
 
-# Look up IDs and names
-id_str = registry.get_id("welcome_tab")      # "t:1"
-name = registry.get_name("t:1")             # "welcome_tab"
+# Look up IDs
+id_str = registry.get_all_ids()      # Returns all registered IDs
 
 # Check registration and unregister
-is_reg = registry.is_registered("welcome_tab")   # True
-registry.unregister("welcome_tab")               # True
+is_reg = registry.is_registered("t:1")   # True
+registry.unregister("t:1")               # True
 ```
 
 ## ID Subscription System
@@ -245,10 +252,8 @@ The ID system uses distinct type codes for different component types. These are 
 | Table Widget | tb |
 | Custom Widget | cw |
 | **Observables** |  |
-| Observable | o |
+| Observable | ob |
 | Observable Property | op |
-
-
 
 ### Container Type Codes
 These codes represent container components that can hold other widgets:
@@ -288,7 +293,7 @@ These codes represent observable objects and their properties:
 ```python
 from command_system.id_system.types import ObservableTypeCodes, PropertyTypeCodes
 
-ObservableTypeCodes.OBSERVABLE           # 'o' - Observable
+ObservableTypeCodes.OBSERVABLE           # 'ob' - Observable
 PropertyTypeCodes.OBSERVABLE_PROPERTY    # 'op' - Observable Property
 ```
 
@@ -303,12 +308,12 @@ all_widget_codes = TypeCodes.get_all_widget_codes()
 
 # Check what category a code belongs to
 TypeCodes.get_type_category('pb')  # 'widget'
-TypeCodes.get_type_category('o')   # 'observable'
+TypeCodes.get_type_category('ob')   # 'observable'
 
 # Check if a code is valid
 TypeCodes.is_valid_widgets('pb')       # True
 TypeCodes.is_valid_containers('t')     # True
-TypeCodes.is_valid_observers('o')      # True
+TypeCodes.is_valid_observers('ob')      # True
 TypeCodes.is_valid_properties('op')    # True
 TypeCodes.is_valid_all_widgets('pb')   # True
 ```
@@ -341,7 +346,7 @@ Proper cleanup is essential when unregistering components:
    - Subscriptions to the property's ID are properly cleaned up
 
 #### ID Updates
-When updating an ID with `update_id`:
+When updating an ID:
 
 1. **Widget/Container ID Updates**:
    - All child widgets' container references are updated to the new ID
@@ -366,15 +371,15 @@ When a widget is registered or moved:
 
 1. If no widget_location_id is provided, the container's location generator creates one
 2. If a widget_location_id is provided but already exists in that location:
-   - For registration: An error is raised
-   - For container updates: A new ID is generated
+   - For registration: A new widget_location_id is automatically generated
+   - For container updates: A new widget_location_id is generated
 
 ### ID Collisions
 
 The system handles potential collisions:
 - For unique_ids: The global generator ensures no collisions by tracking all used IDs
 - For widget_location_ids: Each container location maintains its own set of used IDs
-- When attempting to register a widget with an ID that already exists in a location, an error is raised
+- When attempting to register a widget with an ID that already exists in a location, a new ID is generated
 - When updating a container and a collision occurs, a new widget_location_id is generated
 
 ### Container Updates
@@ -429,7 +434,7 @@ This pyramid structure provides several benefits:
 4. The registry facade presents a unified API
 5. Complex operations are built from simpler ones
 
-### Revised File Structure
+### File Structure
 
 ```
 command_system/id_system/

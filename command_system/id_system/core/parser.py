@@ -379,3 +379,98 @@ def replace_container_path_prefix(path, old_prefix, new_prefix):
         return new_prefix + path[len(old_prefix):]
         
     return path  # Path doesn't start with the prefix, return unchanged
+
+
+#MARK: - ID comparison functions
+
+def compare_ids(id1, id2):
+    """
+    Compare two IDs and determine what components differ.
+    
+    Args:
+        id1: First ID string
+        id2: Second ID string
+        
+    Returns:
+        dict: A dictionary with differences, or None if IDs are not comparable
+    """
+    # Try to parse as widget IDs
+    widget1 = parse_widget_id(id1)
+    widget2 = parse_widget_id(id2)
+    
+    if widget1 and widget2:
+        # Both are widget IDs
+        return {
+            'type': 'widget',
+            'type_code_changed': widget1['type_code'] != widget2['type_code'],
+            'unique_id_changed': widget1['unique_id'] != widget2['unique_id'],
+            'container_changed': widget1['container_unique_id'] != widget2['container_unique_id'],
+            'container_location_changed': widget1['container_location'] != widget2['container_location'],
+            'widget_location_id_changed': widget1['widget_location_id'] != widget2['widget_location_id']
+        }
+    
+    # Try to parse as observable IDs
+    obs1 = parse_observable_id(id1)
+    obs2 = parse_observable_id(id2)
+    
+    if obs1 and obs2:
+        # Both are observable IDs
+        return {
+            'type': 'observable',
+            'type_code_changed': obs1['type_code'] != obs2['type_code'],
+            'unique_id_changed': obs1['unique_id'] != obs2['unique_id']
+        }
+    
+    # Try to parse as property IDs
+    prop1 = parse_property_id(id1)
+    prop2 = parse_property_id(id2)
+    
+    if prop1 and prop2:
+        # Both are property IDs
+        return {
+            'type': 'property',
+            'type_code_changed': prop1['type_code'] != prop2['type_code'],
+            'unique_id_changed': prop1['unique_id'] != prop2['unique_id'],
+            'observable_changed': prop1['observable_unique_id'] != prop2['observable_unique_id'],
+            'property_name_changed': prop1['property_name'] != prop2['property_name'],
+            'controller_changed': prop1['controller_id'] != prop2['controller_id']
+        }
+    
+    # IDs are not of the same type
+    return None
+
+
+def get_id_components(id_string):
+    """
+    Get all components from an ID string based on its type.
+    
+    Args:
+        id_string: The ID string to parse
+        
+    Returns:
+        dict: A dictionary with all components, or None if invalid
+    """
+    # Try to parse as different ID types
+    widget = parse_widget_id(id_string)
+    if widget:
+        return {
+            'type': 'widget',
+            'components': widget
+        }
+    
+    observable = parse_observable_id(id_string)
+    if observable:
+        return {
+            'type': 'observable',
+            'components': observable
+        }
+    
+    property_id = parse_property_id(id_string)
+    if property_id:
+        return {
+            'type': 'property',
+            'components': property_id
+        }
+    
+    # Invalid ID
+    return None

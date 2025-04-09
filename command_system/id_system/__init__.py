@@ -44,6 +44,6 @@ __all__ = [
     'subscribe_to_id', 'unsubscribe_from_id', 'clear_subscriptions',
     
     # Type codes
-    'WIDGET_TYPE_CODES', 'CONTAINER_TYPE_CODES', 
-    'OBSERVABLE_TYPE_CODES', 'PROPERTY_TYPE_CODES',
+    'ContainerTypeCodes', 'WidgetTypeCodes', 
+    'ObservableTypeCodes', 'PropertyTypeCodes', 'TypeCodes',
 ]

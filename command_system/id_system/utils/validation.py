@@ -238,3 +238,51 @@ def validate_property_components(type_code, unique_id, observable_unique_id, pro
         return False, f"Invalid controller ID: {controller_id}"
     
     return True, None
+
+
+#MARK: - ID Update Validation Functions
+
+def validate_id_type_consistency(old_id, new_id):
+    """
+    Validate that two IDs are of the same component type.
+    
+    Args:
+        old_id: The current ID string
+        new_id: The new ID string
+        
+    Returns:
+        tuple: (is_valid, error_message) where is_valid is a boolean and
+               error_message is None if valid or a string describing the issue
+    """
+    # Try widget ID parsing first
+    old_components = parse_widget_id(old_id)
+    new_components = parse_widget_id(new_id)
+    
+    if old_components and new_components:
+        # Both are widget IDs
+        if old_components['type_code'] != new_components['type_code']:
+            return False, f"Type code mismatch: {old_components['type_code']} vs {new_components['type_code']}"
+        return True, None
+    
+    # Try observable ID parsing
+    old_components = parse_observable_id(old_id)
+    new_components = parse_observable_id(new_id)
+    
+    if old_components and new_components:
+        # Both are observable IDs
+        if old_components['type_code'] != new_components['type_code']:
+            return False, f"Type code mismatch: {old_components['type_code']} vs {new_components['type_code']}"
+        return True, None
+    
+    # Try property ID parsing
+    old_components = parse_property_id(old_id)
+    new_components = parse_property_id(new_id)
+    
+    if old_components and new_components:
+        # Both are property IDs
+        if old_components['type_code'] != new_components['type_code']:
+            return False, f"Type code mismatch: {old_components['type_code']} vs {new_components['type_code']}"
+        return True, None
+    
+    # IDs are not of the same type or not valid
+    return False, "IDs must be of the same component type"

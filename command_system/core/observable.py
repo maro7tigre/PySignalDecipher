@@ -31,10 +31,10 @@ class ObservableProperty(Generic[T]):
         Args:
             default: Default value for the property if not set
         """
+        self.id_registry = get_id_registry()
         self.default = default
         self.name = None
         self.private_name = None
-        self.property_id = None
         
     def __set_name__(self, owner, name):
         """Called when descriptor is assigned to a class attribute."""
@@ -63,14 +63,24 @@ class ObservableProperty(Generic[T]):
             # Notify observers
             instance._notify_property_changed(self.name, old_value, value)
             
-    def update_property_id(self, new_id: str):
+    def update_id(self, new_id: str):
         """
         Update the property ID when it changes in the ID system.
         
         Args:
             new_id: The new property ID
         """
-        self.property_id = new_id
+        
+        return self.id_registry.update_id(self.get_id(), new_id)
+    
+    def get_id(self) -> str:
+        """
+        Get the unique identifier for this property.
+
+        Returns:
+            The property ID
+        """
+        return self.id_registry.get_id(self)
 
 # MARK: - Observable
 class Observable:
@@ -83,8 +93,8 @@ class Observable:
         Initialize an observable object.
         """
         # Register with ID system
-        id_registry = get_id_registry()
-        self._id = id_registry.register_observable(self, ObservableTypeCodes.OBSERVABLE)
+        self.id_registry = get_id_registry()
+        self.id_registry.register_observable(self, ObservableTypeCodes.OBSERVABLE)
         
         # Property change observers: {property_id -> {observer_id -> callback}}
         self._property_observers: Dict[str, Dict[str, Callable]] = {}
@@ -126,11 +136,10 @@ class Observable:
         if property_name in self._property_id_cache:
             return self._property_id_cache[property_name]
             
-        id_registry = get_id_registry()
         observable_id = self.get_id()
         
         # Check if this property is already registered
-        property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
+        property_ids = self.id_registry.get_property_ids_by_observable_id_and_property_name(
             observable_id, property_name)
         
         if property_ids:
@@ -138,7 +147,7 @@ class Observable:
             property_id = property_ids[0]
         else:
             # Register the property
-            property_id = id_registry.register_observable_property(
+            property_id = self.id_registry.register_observable_property(
                 None,  # No need to store the property object itself
                 PropertyTypeCodes.OBSERVABLE_PROPERTY,
                 None,
@@ -156,7 +165,7 @@ class Observable:
     
     def _subscribe_to_id_changes(self):
         """Subscribe to our own ID changes to update internal state."""
-        subscribe_to_id(self._id, self._on_id_changed)
+        subscribe_to_id(self.get_id(), self._on_id_changed)
         
     def _subscribe_to_property_id_changes(self, property_id: str):
         """
@@ -175,15 +184,13 @@ class Observable:
             old_id: The previous ID
             new_id: The new ID
         """
-        self._id = new_id
         
         # Update all property IDs that reference this observable
-        id_registry = get_id_registry()
         for prop_name in list(self._property_id_cache.keys()):
             old_prop_id = self._property_id_cache[prop_name]
             
             # Get all property IDs for this observable and name
-            new_prop_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
+            new_prop_ids = self.id_registry.get_property_ids_by_observable_id_and_property_name(
                 new_id, prop_name)
             
             if new_prop_ids:
@@ -254,20 +261,19 @@ class Observable:
             self._property_observers[property_id] = {}
             
         # Get or register the observer
-        id_registry = get_id_registry()
         
         if observer_obj is not None:
             # If we have an object, get or register its ID
-            observer_id = id_registry.get_id(observer_obj)
+            observer_id = self.id_registry.get_id(observer_obj)
             if not observer_id:
                 # Register as widget if not already registered
-                observer_id = id_registry.register(
+                observer_id = self.id_registry.register(
                     observer_obj, WidgetTypeCodes.CUSTOM_WIDGET
                 )
         else:
             # Create a proxy object to hold the callback
             observer_obj = {"callback": callback}
-            observer_id = id_registry.register(
+            observer_id = self.id_registry.register(
                 observer_obj, WidgetTypeCodes.CUSTOM_WIDGET
             )
             
@@ -337,7 +343,7 @@ class Observable:
         Returns:
             String ID for this object
         """
-        return self._id
+        return self.id_registry.get_id(self)
         
     def get_generation(self) -> int:
         """
@@ -377,7 +383,6 @@ class Observable:
         Returns:
             True if the property was unregistered, False otherwise
         """
-        id_registry = get_id_registry()
         
         # Find the property name associated with this ID
         property_name = None
@@ -395,12 +400,12 @@ class Observable:
                 del self._property_observers[property_id]
             
             # Unregister from ID system
-            id_registry.unregister(property_id)
+            self.id_registry.unregister(property_id)
             
             # Check if we have any properties left
             if not self._property_id_cache:
                 # No properties left, unregister the observable
-                id_registry.unregister(self._id)
+                self.id_registry.unregister(self.get_id())
                 
             return True
         
@@ -410,7 +415,7 @@ class Observable:
         """Clean up by unregistering from ID registry."""
         try:
             # Unsubscribe from ID changes to prevent leaks
-            unsubscribe_from_id(self._id)
+            unsubscribe_from_id(self.get_id())
             
             # Unsubscribe from all property ID changes
             for property_id in self._property_id_cache.values():
@@ -422,7 +427,7 @@ class Observable:
                     unsubscribe_from_id(observer_id, self._on_observer_id_changed)
                 
             # Unregister from ID registry
-            get_id_registry().unregister(self._id)
+            self.id_registry.unregister(self.get_id())
         except:
             pass  # Ignore errors during cleanup
     
@@ -488,34 +493,30 @@ class Observable:
             return False
         
         # Check if this observable's ID has changed
-        if self._id != observable_id:
-            id_registry = get_id_registry()
+        if self.get_id() != observable_id:
             
             # Check for ID collision (another observable with the same ID)
-            existing_observable = id_registry.get_observable(observable_id)
+            existing_observable = self.id_registry.get_observable(observable_id)
             if existing_observable and existing_observable is not self:
                 raise ValueError(f"Observable ID collision: {observable_id} (potential cleanup failure)")
             
             # Save old ID for notification
-            old_id = self._id
+            old_id = self.get_id()
             
             # Store property names and IDs before the update
             old_property_ids = {}
             for prop_name in self._property_id_cache:
                 old_property_ids[prop_name] = self._property_id_cache[prop_name]
             
-            # Update our ID
-            self._id = observable_id
-            
             # Update property IDs in registry to reference the new observable ID
             for prop_name, old_prop_id in old_property_ids.items():
                 # Update observable reference for this property in the registry
-                new_prop_id = id_registry.update_observable_reference(old_prop_id, observable_id)
+                new_prop_id = self.id_registry.update_observable_reference(old_prop_id, observable_id)
                 # Update our cache
                 self._property_id_cache[prop_name] = new_prop_id
             
             # Manually notify subscribers about the ID change
-            id_registry._subscription_manager.notify(old_id, observable_id)
+            self.id_registry._subscription_manager.notify(old_id, observable_id)
             
             # Unsubscribe from old ID and subscribe to new ID
             unsubscribe_from_id(old_id, self._on_id_changed)
