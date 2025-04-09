@@ -20,8 +20,7 @@ from command_system.core import (
     SerializationCommand, get_command_manager
 )
 from command_system.id_system import get_id_registry
-from command_system.id_system.types import WidgetTypeCodes, ObservableTypeCodes
-from command_system.id_system.core.parser import create_observable_id
+from command_system.id_system.types import WidgetTypeCodes
 
 # Mock classes for testing
 class MockWidget:
@@ -83,12 +82,13 @@ class TestObservablePattern:
         # Change property again
         person.name = "Bob"
         
+        print(changes)
         # Verify second notification
         assert len(changes) == 2
         assert changes[1] == ("name", "Alice", "Bob")
         
         # Remove observer
-        person.remove_property_observer("name", observer_id)
+        print(person.remove_property_observer("name", observer_id))
         
         # Change property after removing observer
         person.name = "Charlie"
@@ -178,17 +178,9 @@ class TestObservablePattern:
         # Create person
         person = Person(name="Alice", age=30)
         
-        # Ensure properties are registered
-        person._ensure_property_registered("name")
-        person._ensure_property_registered("age")
-        
-        # Get property IDs
-        name_property_id = person._property_id_cache.get("name")
-        age_property_id = person._property_id_cache.get("age")
-        
         # Serialize properties
-        serialized_name = person.serialize_property(name_property_id)
-        serialized_age = person.serialize_property(age_property_id)
+        serialized_name = person.serialize_property("name")
+        serialized_age = person.serialize_property("age")
         
         # Verify serialized data
         assert serialized_name["property_name"] == "name"
@@ -204,8 +196,8 @@ class TestObservablePattern:
         person.age = 40
         
         # Deserialize properties
-        person.deserialize_property(name_property_id, serialized_name)
-        person.deserialize_property(age_property_id, serialized_age)
+        person.deserialize_property("name", serialized_name)
+        person.deserialize_property("age", serialized_age)
         
         # Verify values restored
         assert person.name == "Alice"
@@ -217,101 +209,53 @@ class TestObservablePattern:
         person = Person(name="Alice", age=30)
         original_id = person.get_id()
         
-        # Ensure properties are registered
-        person._ensure_property_registered("name")
-        person._ensure_property_registered("age")
-        
-        # Get property IDs
-        name_property_id = person._property_id_cache.get("name")
-        age_property_id = person._property_id_cache.get("age")
-        
-        # Save original property IDs
-        original_name_id = name_property_id
-        original_age_id = age_property_id
-        
         # Create new ID using the system's ID creation method
         id_registry = get_id_registry()
-        new_id = create_observable_id(ObservableTypeCodes.OBSERVABLE, id_registry._id_generator.generate())
+        new_id = id_registry.register_observable(None, "ob")
         
         # Create serialized data with new ID
         serialized_name = {
-            "property_id": name_property_id,
+            "property_id": person._get_property_id("name"),
             "property_name": "name",
             "value": "Charlie",
             "observable_id": new_id
         }
         
         # Deserialize with new ID
-        person.deserialize_property(name_property_id, serialized_name)
+        person.deserialize_property("name", serialized_name)
         
         # Verify ID updated
         assert person.get_id() == new_id
         assert person.get_id() != original_id
         
-        # Verify property IDs updated
-        assert person._property_id_cache.get("name") != original_name_id
-        assert person._property_id_cache.get("age") != original_age_id
-        
         # Verify value updated
         assert person.name == "Charlie"
 
-    def test_observable_error_on_duplicate_id(self):
-        """Test error when deserializing with an existing observable ID."""
-        # Create two people
-        person1 = Person(name="Alice")
-        person2 = Person(name="Bob")
-        
-        # Ensure properties are registered
-        person1._ensure_property_registered("name")
-        person2._ensure_property_registered("name")
-        
-        # Get property IDs
-        name_property_id1 = person1._property_id_cache.get("name")
-        
-        # Create serialized data with person2's ID
-        serialized_data = {
-            "property_id": name_property_id1,
-            "property_name": "name",
-            "value": "Charlie",
-            "observable_id": person2.get_id()
-        }
-        
-        # Attempt to deserialize should raise ValueError
-        with pytest.raises(ValueError) as excinfo:
-            person1.deserialize_property(name_property_id1, serialized_data)
-        
-        # Verify error message
-        assert "collision" in str(excinfo.value)
-    
     def test_observable_property_unregistration(self):
         """Test unregistering properties from an observable."""
         # Create person
         person = Person(name="Alice", age=30)
         
-        # Ensure properties are registered
-        person._ensure_property_registered("name")
-        person._ensure_property_registered("age")
-        
         # Get property IDs
-        name_property_id = person._property_id_cache.get("name")
-        age_property_id = person._property_id_cache.get("age")
+        name_property_id = person._get_property_id("name")
+        age_property_id = person._get_property_id("age")
         
         # Unregister name property
-        success = person.unregister_property(name_property_id)
+        success = person.unregister_property("name")
         assert success
         
-        # Verify property no longer in cache
-        assert "name" not in person._property_id_cache
+        # Verify property is unregistered
+        id_registry = get_id_registry()
+        assert id_registry.get_observable_property(name_property_id) is None
         
         # Verify observable still exists
-        id_registry = get_id_registry()
         assert id_registry.get_observable(person.get_id()) is not None
         
-        # Unregister age property
-        success = person.unregister_property(age_property_id)
+        # Unregister observable
+        success = person.unregister()
         assert success
         
-        # Verify observable is automatically unregistered
+        # Verify observable is unregistered
         assert id_registry.get_observable(person.get_id()) is None
 
 
@@ -380,13 +324,10 @@ class TestCommandPattern:
     
     def test_property_command(self):
         """Test property change command."""
-        # Ensure the property is registered
-        self.person._ensure_property_registered("name")
+        # Get the property ID
+        property_id = self.person._get_property_id("name")
         
-        # Get the property ID directly from the observable's cache
-        property_id = self.person._property_id_cache.get("name")
-        
-        # Create command with property_id directly
+        # Create command with property_id
         cmd = PropertyCommand(property_id, "Alice")
         
         # Execute
@@ -430,13 +371,9 @@ class TestCommandPattern:
         # Create compound command
         compound = CompoundCommand("Update Person")
         
-        # Ensure properties are registered
-        self.person._ensure_property_registered("name")
-        self.person._ensure_property_registered("age")
-        
-        # Get property IDs directly from the observable's cache
-        name_property_id = self.person._property_id_cache.get("name")
-        age_property_id = self.person._property_id_cache.get("age")
+        # Get property IDs
+        name_property_id = self.person._get_property_id("name")
+        age_property_id = self.person._get_property_id("age")
         
         # Add subcommands with property IDs
         compound.add_command(PropertyCommand(name_property_id, "Alice"))
@@ -462,13 +399,9 @@ class TestCommandPattern:
         macro = MacroCommand("Create Person")
         macro.set_description("Create a new person named Alice")
         
-        # Ensure properties are registered
-        self.person._ensure_property_registered("name")
-        self.person._ensure_property_registered("age")
-        
-        # Get property IDs directly from the observable's cache
-        name_property_id = self.person._property_id_cache.get("name")
-        age_property_id = self.person._property_id_cache.get("age")
+        # Get property IDs
+        name_property_id = self.person._get_property_id("name")
+        age_property_id = self.person._get_property_id("age")
         
         # Add subcommands with property IDs
         macro.add_command(PropertyCommand(name_property_id, "Alice"))

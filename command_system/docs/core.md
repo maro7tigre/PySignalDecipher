@@ -1,14 +1,15 @@
 # Command System Documentation
 
-This document provides a concise overview of the Command System for creating observable objects and implementing undo/redo functionality in PySignalDecipher applications.
+This document provides a concise overview of the Command System for creating observable objects and implementing undo/redo functionality in applications.
 
 ## Overview
 
-The Command System provides two key patterns:
-1. **Observable Pattern**: For property change notification
+The Command System consists of two primary patterns:
+
+1. **Observable Pattern**: For tracking property changes with notification
 2. **Command Pattern**: For encapsulating actions that can be executed, undone, and redone
 
-Both patterns are integrated with the ID System for efficient memory management, reference tracking, and serialization support.
+Both patterns are integrated with the ID System for efficient memory management, reference tracking, and serialization.
 
 ## Observable Pattern
 
@@ -31,16 +32,15 @@ class Person(Observable):
 ### Property Change Tracking
 
 ```python
-# Create an observer object (usually a widget)
-class NameChangeObserver:
-    def on_name_changed(self, property_name, old_value, new_value):
-        print(f"Name changed from {old_value} to {new_value}")
+# Create an observer function
+def on_name_changed(property_name, old_value, new_value):
+    print(f"Name changed from {old_value} to {new_value}")
 
-observer = NameChangeObserver()
+# Create person object
 person = Person()
 
-# Register observer with its object for proper ID tracking
-observer_id = person.add_property_observer("name", observer.on_name_changed, observer)
+# Register observer function (returns observer ID)
+observer_id = person.add_property_observer("name", on_name_changed)
 
 # Property changes trigger notifications
 person.name = "Bob"  # Triggers notification: "Name changed from Alice to Bob"
@@ -49,20 +49,27 @@ person.name = "Bob"  # Triggers notification: "Name changed from Alice to Bob"
 person.remove_property_observer("name", observer_id)
 ```
 
-You can also register observers without providing an observer object:
+You can also register observers with an observer object for proper tracking:
 
 ```python
-# This creates a proxy object internally
-observer_id = person.add_property_observer("name", lambda prop, old, new: print(f"{old} -> {new}"))
+class NameObserver:
+    def on_name_changed(self, property_name, old_value, new_value):
+        print(f"Name changed from {old_value} to {new_value}")
+
+observer = NameObserver()
+observer_id = person.add_property_observer("name", observer.on_name_changed, observer)
 ```
 
-### Working with Object IDs
+### Working with Observable IDs
 
-Each observable object and property is assigned a unique ID:
+Each observable and its properties are assigned unique IDs:
 
 ```python
 # Get the observable's ID
-person_id = person.get_id()  # Returns something like "o:1A"
+person_id = person.get_id()
+
+# Get property ID from the observable
+property_id = person._get_property_id("name")
 
 # Looking up objects by ID
 from command_system.id_system import get_id_registry
@@ -70,23 +77,39 @@ registry = get_id_registry()
 same_person = registry.get_observable(person_id)
 ```
 
-### Property Cleanup
+### Serialization
 
 ```python
-# Property IDs are cached in the observable
-property_id = person._property_id_cache.get("name")
+# Serialize a specific property
+serialized_name = person.serialize_property("name")
+# Result: {'property_id': 'op:1:1:name:0', 'property_name': 'name', 'value': 'Bob', 'observable_id': 'ob:1'}
 
+# Serialize the entire observable
+serialized_person = person.serialize()
+# Result: {'id': 'ob:1', 'properties': {'name': {...}, 'age': {...}}}
+
+# Deserialize property
+person.deserialize_property("name", serialized_name)
+
+# Deserialize entire observable
+person.deserialize(serialized_person)
+```
+
+### Cleanup
+
+```python
 # Unregister a specific property
-person.unregister_property(property_id)
+person.unregister_property("name")
 
-# The observable will automatically unregister itself if all properties are removed
+# Unregister the entire observable with all its properties
+person.unregister()
 ```
 
 ## Command Pattern
 
 ### Basic Commands
 
-All commands must implement the `execute` and `undo` methods:
+All commands must implement `execute()` and `undo()` methods:
 
 ```python
 from command_system.core import Command
@@ -107,23 +130,15 @@ class MyCommand(Command):
 
 ### Property Change Commands
 
-Change properties with automatic undo/redo support:
+Change observable properties with automatic undo/redo support:
 
 ```python
 from command_system.core import PropertyCommand, get_command_manager
 
 person = Person()
 
-# Get property ID - two ways to do this:
-# 1. Directly from the observable
-property_id = person._property_id_cache.get("name")
-
-# 2. From the ID registry
-id_registry = get_id_registry()
-property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
-    person.get_id(), "name"
-)
-property_id = property_ids[0]
+# Get property ID from observable
+property_id = person._get_property_id("name")
 
 # Create command with property_id and new value
 cmd = PropertyCommand(property_id, "Bob")
@@ -144,13 +159,13 @@ print(person.name)  # Output: Alice
 
 ### Widget Property Commands
 
-Similar to PropertyCommand but for UI widgets:
+For UI widgets:
 
 ```python
 from command_system.core import WidgetPropertyCommand
 
-# Get the widget's ID
-widget_id = id_registry.get_id(my_widget)
+# Get the widget's ID from ID registry
+widget_id = registry.get_id(my_widget)
 
 # Create command to change widget property
 cmd = WidgetPropertyCommand(widget_id, "text", "New Label")
@@ -168,8 +183,8 @@ from command_system.core import CompoundCommand
 compound = CompoundCommand("Update Person")
 
 # Add multiple commands
-property_id_name = person._property_id_cache.get("name")
-property_id_age = person._property_id_cache.get("age")
+property_id_name = person._get_property_id("name")
+property_id_age = person._get_property_id("age")
 
 compound.add_command(PropertyCommand(property_id_name, "Bob"))
 compound.add_command(PropertyCommand(property_id_age, 30))
@@ -192,8 +207,8 @@ from command_system.core import MacroCommand
 macro = MacroCommand("Create Person")
 
 # Add commands to the macro
-property_id_name = person._property_id_cache.get("name")
-property_id_age = person._property_id_cache.get("age")
+property_id_name = person._get_property_id("name")
+property_id_age = person._get_property_id("age")
 
 macro.add_command(PropertyCommand(property_id_name, "Bob"))
 macro.add_command(PropertyCommand(property_id_age, 30))
@@ -207,7 +222,7 @@ manager.execute(macro)
 
 ### Serialization Commands
 
-For commands that need to capture and restore state:
+For commands that need to capture and restore component state:
 
 ```python
 from command_system.core import SerializationCommand
@@ -308,7 +323,7 @@ def on_button_clicked():
 
 ### Command Context Navigation
 
-The system will automatically navigate back to the UI context when undoing/redoing commands:
+The system automatically navigates back to the UI context when undoing/redoing commands:
 
 ```python
 # In your container widget implementation:
@@ -335,16 +350,16 @@ def navigate_to_widget(self, widget_id):
 
 4. **Clean up properly**
    - Remove observers when they're no longer needed
-   - Unregister properties when they're no longer needed
+   - Unregister properties and observables when they're no longer needed
 
 5. **Use property commands for observable changes**
    - Always use PropertyCommand for changing observable properties
    - This ensures undo/redo works properly
 
-6. **Check ID validity**
-   - Always ensure IDs are valid before using them
-   - Handle cases where IDs might have changed
+6. **Leverage the ID system**
+   - Use the ID system's relationship tracking capabilities
+   - Let the ID system handle reference management
 
 7. **Handle serialization carefully**
-   - Be consistent in how you serialize and deserialize state
-   - Test serialization with undo/redo thoroughly
+   - Be consistent in serialization methods
+   - Always test serialization with undo/redo thoroughly
