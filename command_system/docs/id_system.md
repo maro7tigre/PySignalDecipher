@@ -139,9 +139,11 @@ The registry provides methods for managing components and their relationships:
 - `get_full_id_from_unique_id(unique_id)`
 
 ### Container and Location Management
-- `get_locations_map(container_id)` - Get mapping of subcontainer IDs to locations
+- `get_container_widgets(container_id)` - Get a dictionary mapping container locations to lists of widget IDs
+- `get_widgets_by_container_id(container_id)` - Get a flat list of all widget IDs in the container
+- `get_locations_map(container_id)` - Get the container's locations map (same as get_container_widgets)
 - `set_locations_map(container_id, locations_map)` - Set locations map for a container
-- `get_widgets_at_subcontainer_location(container_id, subcontainer_location)` - Get widgets at a specific location
+- `get_widgets_at_location(container_id, container_location)` - Get widgets at a specific location
 - `get_subcontainer_id_at_location(container_id, location)` - Get subcontainer at a specific location
 
 ### ID-Based Relationship Queries
@@ -320,11 +322,28 @@ TypeCodes.is_valid_all_widgets('pb')   # True
 
 ## Implementation Details
 
+### Container Widget Relationships
+
+The system maintains two separate but synchronized data structures to track container-widget relationships:
+
+1. **Container-to-Widgets Map**: For each container, tracks a set of all widget IDs in the container
+   - Used for efficient lookup of all widgets in a container
+   - Automatically updated when widgets are registered, unregistered, or moved
+
+2. **Container Locations Map**: For each container, maps container locations to lists of widget IDs
+   - Organizes widgets by their location within the container
+   - Automatically synchronized with the Container-to-Widgets Map
+   - Return format: `{'0/1': ['pb:3:1:0/1-2', 'pb:2:1:0/1-1']}`
+
+This dual approach provides both flat access to all widgets in a container (`get_widgets_by_container_id`) and 
+location-based access (`get_container_widgets`).
+
 ### Clean Handling of Component Lifecycle
 
 #### Registration
 - When registering a component, it's added to all relevant mappings
 - For container widgets, a new location generator is created
+- The container's locations map is automatically updated
 
 #### Unregistration
 Proper cleanup is essential when unregistering components:
@@ -334,6 +353,7 @@ Proper cleanup is essential when unregistering components:
    - All properties controlled by the widget have their controller reference removed
    - The widget is removed from all mappings and location generators
    - The container's location generator is removed
+   - Container's locations map is automatically updated
    - Subscriptions to the widget's ID are properly cleaned up
 
 2. **Observable Unregistration**:
@@ -388,6 +408,7 @@ When updating a widget's container:
 1. The old container's location generator removes the widget_location_id
 2. The new container's location generator either uses the same widget_location_id or generates a new one if there's a collision
 3. All container references and location paths are updated automatically
+4. Both containers' location maps are automatically updated
 
 ### Multiple Projects Support
 
