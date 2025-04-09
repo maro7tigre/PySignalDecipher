@@ -202,14 +202,17 @@ class Observable:
         if not observer_obj:
             return False
             
-        # Get the callback
-        callback = getattr(observer_obj, "callback", None)
-        if not callback:
-            return False
+        # Get all subscribers to this property
+        subscription_manager = self.id_registry._subscription_manager
+        subscribers = subscription_manager.get_subscribers(property_id)
+        
+        # Find and unsubscribe the matching subscriber
+        for callback in subscribers:
+            # Try to unsubscribe this callback
+            unsubscribe_from_id(property_id, callback)
+            return True
             
-        # Unsubscribe the observer
-        unsubscribe_from_id(property_id, callback)
-        return True
+        return False
     
     # MARK: - Identity and Relationship
     def get_id(self) -> str:
@@ -310,7 +313,19 @@ class Observable:
         
         # If observable ID has changed, update our ID
         if observable_id != self.get_id():
-            success, updated_id, error = self.id_registry.update_id(self.get_id(), observable_id)
+            # Special handling for None observable case
+            # If the new ID was created with None as the observable,
+            # we need to take ownership of that ID
+            target_observable = self.id_registry.get_observable(observable_id)
+            if target_observable is None:
+                # Unregister the empty observable ID, since we'll take it over
+                self.id_registry.unregister(observable_id)
+                # Now update our ID to match
+                success, updated_id, error = self.id_registry.update_id(self.get_id(), observable_id)
+            else:
+                # Normal path - attempt to update our ID
+                success, updated_id, error = self.id_registry.update_id(self.get_id(), observable_id)
+                
             if not success:
                 raise ValueError(f"Failed to update observable ID: {error}")
                 
@@ -361,7 +376,17 @@ class Observable:
         # Update observable ID if needed
         observable_id = data.get('id')
         if observable_id and observable_id != self.get_id():
-            success, updated_id, error = self.id_registry.update_id(self.get_id(), observable_id)
+            # Special handling for None observable case
+            target_observable = self.id_registry.get_observable(observable_id)
+            if target_observable is None:
+                # Unregister the empty observable ID, since we'll take it over
+                self.id_registry.unregister(observable_id)
+                # Now update our ID to match
+                success, updated_id, error = self.id_registry.update_id(self.get_id(), observable_id)
+            else:
+                # Normal path - attempt to update our ID
+                success, updated_id, error = self.id_registry.update_id(self.get_id(), observable_id)
+                
             if not success:
                 raise ValueError(f"Failed to update observable ID: {error}")
                 

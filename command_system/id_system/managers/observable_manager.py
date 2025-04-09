@@ -78,7 +78,10 @@ class ObservableManager:
         # Save the ID mappings
         self._observables[observable_id] = observable
         self._unique_id_to_observable_id[unique_id] = observable_id
-        self._observable_objects_to_id[observable] = observable_id
+        
+        # Only add to weak dictionary if observable is not None
+        if observable is not None:
+            self._observable_objects_to_id[observable] = observable_id
         
         # Initialize property set for this observable
         self._observable_to_properties[unique_id] = set()
@@ -124,7 +127,7 @@ class ObservableManager:
                 del self._observable_to_properties[unique_id]
         
         # Remove from all mappings
-        if observable in self._observable_objects_to_id:
+        if observable is not None and observable in self._observable_objects_to_id:
             del self._observable_objects_to_id[observable]
         if unique_id in self._unique_id_to_observable_id:
             del self._unique_id_to_observable_id[unique_id]

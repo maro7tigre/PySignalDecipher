@@ -150,6 +150,7 @@ class PropertyCommand(Command):
         super().__init__()
         self.property_id = property_id
         self.new_value = new_value
+        self.old_value = None
         
         # Parse the property ID to extract target information
         id_registry = get_id_registry()
@@ -164,15 +165,10 @@ class PropertyCommand(Command):
                 target = id_registry.get_observable(self.observable_id)
                 if target and hasattr(target, self.property_name):
                     self.old_value = getattr(target, self.property_name)
-                else:
-                    self.old_value = None
-            else:
-                self.old_value = None
         else:
             # Fallback for invalid property ID
             self.observable_id = None
             self.property_name = None
-            self.old_value = None
         
     def execute(self) -> None:
         """Execute the command by setting the new property value."""
@@ -187,6 +183,9 @@ class PropertyCommand(Command):
         if target_id:
             target = id_registry.get_observable(target_id)
             if target and hasattr(target, self.property_name):
+                # Store the current value before changing it
+                self.old_value = getattr(target, self.property_name)
+                # Set the new value
                 setattr(target, self.property_name, self.new_value)
         
     def undo(self) -> None:

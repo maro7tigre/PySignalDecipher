@@ -82,13 +82,12 @@ class TestObservablePattern:
         # Change property again
         person.name = "Bob"
         
-        print(changes)
         # Verify second notification
         assert len(changes) == 2
         assert changes[1] == ("name", "Alice", "Bob")
         
         # Remove observer
-        print(person.remove_property_observer("name", observer_id))
+        person.remove_property_observer("name", observer_id)
         
         # Change property after removing observer
         person.name = "Charlie"
