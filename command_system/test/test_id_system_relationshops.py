@@ -137,6 +137,10 @@ class TestIDSystemRelationships:
         
         # Verify container query methods
         container_widgets = self.registry.get_container_widgets(container_id)
+        print(container_widgets)
+        print(widget1_id, widget2_id, container_id)
+        print(self.registry.get_container_id_from_widget_id(widget1_id))
+        
         assert len(container_widgets) == 2
         assert widget1_id in container_widgets
         assert widget2_id in container_widgets
