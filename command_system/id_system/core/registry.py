@@ -422,8 +422,14 @@ class IDRegistry:
             # Widget/Container ID update
             success, updated_id, error = self._widget_manager.update_widget_id(old_id, new_id)
             
-            # If successful, notify ID subscribers
+            # If successful, update any properties controlled by this widget
             if success and updated_id != old_id:
+                old_unique_id = get_unique_id_from_id(old_id)
+                new_unique_id = get_unique_id_from_id(updated_id)
+                if old_unique_id != new_unique_id:
+                    self._update_controller_properties(old_unique_id, new_unique_id)
+                
+                # Notify ID subscribers
                 self._subscription_manager.notify(old_id, updated_id)
                 self._notify_id_changed_callbacks(old_id, updated_id)
                 

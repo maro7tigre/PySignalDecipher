@@ -320,6 +320,9 @@ class TestIDSystemCore:
         property_id = self.registry.register_observable_property(
             property_obj, "op", None, "name", observable_id
         )
+        property2_id = self.registry.register_observable_property(
+            property_obj, "op", None, "age", observable_id
+        )
         
         # Verify registration
         assert self.registry.get_observable_property(property_id) == property_obj
@@ -337,6 +340,13 @@ class TestIDSystemCore:
         
         # Verify observable is still registered
         assert self.registry.get_observable(observable_id) == observable
+        
+        # Unregister the sercond property
+        result = self.registry.unregister(property2_id)
+        assert result
+        
+        # Verify observable is no longer registered
+        assert self.registry.get_observable(observable_id) is None
 
     #MARK: - Simple ID Registry Tests
     
