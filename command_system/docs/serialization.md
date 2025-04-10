@@ -49,7 +49,29 @@ flowchart TD
   "property_id": "op:5D:0:name:0",
   "property_name": "name",
   "value": "Alice",
-  "observable_id": "o:4C"
+  "observable_id": "ob:4C"
+}
+```
+
+### Observable Serialization
+
+```json
+{
+  "id": "ob:4C",
+  "properties": {
+    "name": {
+      "property_id": "op:5D:0:name:0",
+      "property_name": "name",
+      "value": "Alice",
+      "observable_id": "ob:4C"
+    },
+    "age": {
+      "property_id": "op:6E:0:age:0",
+      "property_name": "age",
+      "value": 30,
+      "observable_id": "ob:4C"
+    }
+  }
 }
 ```
 
@@ -63,7 +85,7 @@ flowchart TD
       "property_id": "op:5D:0:name:0",
       "property_name": "name",
       "value": "Alice",
-      "observable_id": "o:4C"
+      "observable_id": "ob:4C"
     }
   }
 }
@@ -104,14 +126,25 @@ Observable objects provide methods to serialize and deserialize individual prope
 
 ```python
 # Serializing a property
-property_id = observable._property_id_cache.get("name")
-serialized_property = observable.serialize_property(property_id)
+serialized_property = observable.serialize_property("name")
 
 # Deserializing a property
-observable.deserialize_property(property_id, serialized_property)
+observable.deserialize_property("name", serialized_property)
 ```
 
-### 2. Widget Serialization
+### 2. Observable Serialization
+
+Observable objects can serialize and deserialize their entire state:
+
+```python
+# Serializing an observable
+serialized_observable = observable.serialize()
+
+# Deserializing an observable
+observable.deserialize(serialized_observable)
+```
+
+### 3. Widget Serialization
 
 Command widgets implement serialization methods to capture their state:
 
@@ -120,10 +153,10 @@ Command widgets implement serialization methods to capture their state:
 widget_state = widget.get_serialization()
 
 # Restoring a widget from serialized data
-widget.restore_widget(widget_state)
+widget.deserialize(widget_state)
 ```
 
-### 3. Container Serialization
+### 4. Container Serialization
 
 Containers serialize their entire hierarchy recursively:
 
@@ -133,35 +166,44 @@ container_state = container.get_serialization()
 
 # Deserializing a container
 container.deserialize(container_state)
+
+# Serializing a specific subcontainer
+subcontainer_state = container.serialize_subcontainer(subcontainer_id)
+
+# Deserializing a subcontainer
+container.deserialize_subcontainer(type_id, location, subcontainer_state)
 ```
 
-### 4. SerializationCommand
+### 5. SerializationCommand
 
-The SerializationCommand base class provides standard methods for capturing and restoring component state:
+The SerializationCommand class provides a standardized way to capture and restore component state for undo/redo operations:
 
 ```python
-class SerializationCommand(Command):
+class MySerializationCommand(SerializationCommand):
     def __init__(self, component_id):
-        super().__init__()
-        self.component_id = component_id
-        self.serialized_state = None
+        super().__init__(component_id)
+        # Capture initial state before changes
+        self.get_serialization()
         
-    def capture_state(self):
-        """Capture component state before changes."""
+    def execute(self):
+        # Perform changes to the component
         component = get_id_registry().get_widget(self.component_id)
-        if component and hasattr(component, 'get_serialization'):
-            self.serialized_state = component.get_serialization()
+        if component:
+            component.update_something()
         
-    def restore_state(self):
-        """Restore component to previous state."""
-        if not self.serialized_state:
-            return False
-            
-        component = get_id_registry().get_widget(self.component_id)
-        if component and hasattr(component, 'deserialize'):
-            return component.deserialize(self.serialized_state)
-        return False
+    def undo(self):
+        # Restore previous state
+        self.deserialize()
 ```
+
+### SerializationCommand Methods
+
+The SerializationCommand provides several methods for different serialization scenarios:
+
+- `get_serialization()`: Captures a component's serialized state
+- `deserialize()`: Restores a component from captured state
+- `serialize_subcontainer()`: Captures a container's subcontainer state
+- `deserialize_subcontainer()`: Restores a subcontainer to a container
 
 ## Serialization Flow
 
@@ -190,60 +232,108 @@ sequenceDiagram
     Component-->>Command: success
 ```
 
-## Best Practices
+## Implementation Examples
 
-1. **Use IDs, not references**: Always reference components by ID in serialized data
-2. **Handle ID changes**: During deserialization, be prepared for ID changes
-3. **Maintain hierarchies**: Properly serialize and deserialize parent-child relationships
-4. **Validate data**: Check for missing or invalid data during deserialization
-5. **Isolate state**: Keep serialized state independent from UI-specific details
-6. **Version your format**: Consider adding version info if your serialization format may change
-
-## Practical Examples
-
-### Serializing and Deserializing a Form
+### 1. Basic Property Command with Serialization
 
 ```python
-def save_form_state(form_container, filename):
-    # Get serialized state
-    state = form_container.get_serialization()
-    
-    # Save to file
-    with open(filename, 'w') as f:
-        json.dump(state, f)
+from command_system.core import SerializationCommand
 
-def load_form_state(form_container, filename):
-    # Load from file
-    with open(filename, 'r') as f:
-        state = json.load(f)
-    
-    # Restore state
-    form_container.deserialize(state)
-```
-
-### Creating Commands with State Capture
-
-```python
-class FormChangeCommand(SerializationCommand):
-    def __init__(self, form_id):
-        super().__init__(form_id)
-        self.capture_state()  # Capture initial state
+class TabChangeCommand(SerializationCommand):
+    def __init__(self, tab_widget_id, new_tab_index):
+        super().__init__(tab_widget_id)
+        self.new_tab_index = new_tab_index
+        self.old_tab_index = None
         
+        # Capture current state before changes
+        self.get_serialization()
+    
     def execute(self):
-        # Perform changes to the form
-        form = get_id_registry().get_widget(self.component_id)
-        if form:
-            form.update_values(self.new_values)
-        
+        tab_widget = get_id_registry().get_widget(self.component_id)
+        if tab_widget:
+            self.old_tab_index = tab_widget.currentIndex()
+            tab_widget.setCurrentIndex(self.new_tab_index)
+    
     def undo(self):
         # Restore previous state
-        self.restore_state()
+        self.deserialize()
 ```
+
+### 2. Subcontainer Serialization
+
+```python
+from command_system.core import SerializationCommand
+
+class DockWidgetShowCommand(SerializationCommand):
+    def __init__(self, dock_container_id, dock_widget_id):
+        super().__init__(dock_container_id)
+        self.dock_widget_id = dock_widget_id
+        self.location = None
+        
+        # Get the container and capture the subcontainer's state
+        self.serialize_subcontainer()
+    
+    def execute(self):
+        container = get_id_registry().get_widget(self.component_id)
+        if container:
+            # Show the dock widget
+            dock_widget = get_id_registry().get_widget(self.dock_widget_id)
+            container.showDockWidget(dock_widget)
+            # Store its location
+            self.location = container.get_dock_location(self.dock_widget_id)
+    
+    def undo(self):
+        # Restore the subcontainer's previous state
+        self.deserialize_subcontainer()
+```
+
+### 3. Form Data Serialization
+
+```python
+class FormDataCommand(SerializationCommand):
+    def __init__(self, form_id, new_values):
+        super().__init__(form_id)
+        self.new_values = new_values
+        
+        # Capture form state before changes
+        self.get_serialization()
+    
+    def execute(self):
+        form = get_id_registry().get_widget(self.component_id)
+        if form:
+            form.set_values(self.new_values)
+    
+    def undo(self):
+        # Restore previous form state
+        self.deserialize()
+```
+
+## Best Practices
+
+1. **Always Use IDs, Not References**: Store component IDs instead of direct references to ensure proper serialization/deserialization.
+
+2. **Capture State Before Changes**: Always capture the serialized state before making changes in command execution.
+
+3. **Handle ID Changes During Deserialization**: Be prepared for components to have different IDs when deserializing.
+
+4. **Maintain Hierarchies**: Properly serialize and deserialize parent-child relationships.
+
+5. **Validate Deserialization Data**: Check for missing or invalid data during deserialization.
+
+6. **Use SerializationCommand for Complex Operations**: Leverage the SerializationCommand class for operations that need to capture and restore state.
+
+7. **Include All Required Context**: Ensure serialized data includes all information needed for restoration, including type information and relationships.
+
+8. **Handle Errors Gracefully**: Implement error handling for serialization and deserialization failures.
 
 ## Troubleshooting
 
-1. **Missing Components**: If a component can't be found during deserialization, check if its ID has changed
-2. **Incomplete Restoration**: Ensure all required properties are included in serialized data
-3. **Circular References**: Use IDs instead of direct references to avoid circular serialization issues
-4. **Widget Type Mismatch**: Verify that widget types match when deserializing
-5. **Out-of-Order Restoration**: Restore parent containers before their children
+1. **Missing Components**: If a component can't be found during deserialization, check if its ID has changed. The ID system helps track these changes during serialization/deserialization.
+
+2. **Incomplete Restoration**: Ensure all required properties are included in serialized data.
+
+3. **Circular References**: Use IDs instead of direct references to avoid circular serialization issues.
+
+4. **Container Hierarchy Issues**: Restore container hierarchy from the root down to maintain proper parent-child relationships.
+
+5. **ID Mismatches**: If you're seeing ID mismatches during deserialization, ensure you're updating component IDs using the ID registry's methods.
