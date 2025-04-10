@@ -163,11 +163,13 @@ class CommandManager:
             for callback in self._before_execute_callbacks.values():
                 callback(command)
             
+            command.execute()
+            
             # Only add to history if not in initialization mode
             if not self._is_initializing:
                 self._history.add_command(command)
                 
-            command.execute()
+            
             
             # Call after execute callbacks
             for callback in self._after_execute_callbacks.values():

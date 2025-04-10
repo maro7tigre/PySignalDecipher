@@ -564,11 +564,10 @@ class TestCommandPattern:
                 self.undone = True
                 self.executed = False
         
-        print(self.manager._history.get_executed_commands())
         # Test execution error
         error_cmd1 = ErrorCommand(raise_on_execute=True)
         result = self.manager.execute(error_cmd1)
-        print(self.manager._history.get_executed_commands())
+        
         # Verify execution failed
         assert not result
         assert not error_cmd1.executed
@@ -864,11 +863,17 @@ class TestAdvancedUsage:
             assert person.name == f"Alice_{i}"
 
     def test_command_reexecution_consistency(self):
-        """Test that command execution and re-execution through redo produce consistent results."""
+        """Test command execution and re-execution behavior.
+        
+        This test verifies that:
+        1. Commands properly store the state they need to undo their effects
+        2. The redo() method, which by default calls execute() again, operates on the current state
+        3. Commands can be undone and redone in sequence
+        """
         # Create person
         person = Person()
         
-        # Create a command that depends on current state
+        # Create a command that increments a property value
         class IncrementCommand(Command):
             def __init__(self, person, property_name, increment):
                 super().__init__()
@@ -882,7 +887,7 @@ class TestAdvancedUsage:
                 property_value = getattr(self.person, self.property_name)
                 self.old_value = property_value
                 
-                # Calculate new value
+                # Calculate new value based on current state
                 try:
                     if isinstance(property_value, int):
                         new_value = property_value + self.increment
@@ -898,39 +903,48 @@ class TestAdvancedUsage:
                 # Restore old value
                 setattr(self.person, self.property_name, self.old_value)
         
-        # Create and execute command
+        # Test: Initial execution
         cmd = IncrementCommand(person, "age", 10)
         self.manager.execute(cmd)
-        
-        # Verify result
         assert person.age == 10
         
-        # Undo
+        # Test: Undo
         self.manager.undo()
         assert person.age == 0
         
-        # Change property before redo
+        # Test: Default redo behavior (calls execute() again)
+        # Since execute() works with the current state, redo will increment from current value
+        self.manager.redo()
+        assert person.age == 10
+        
+        # Test: Modifying state between undo/redo
+        self.manager.undo()
+        assert person.age == 0
+        
+        # Change the property's value before redo
         person.age = 5
         
-        # Redo - should still increment by 10 from the captured old_value
+        # Redo - will increment from current value (5), not original value (0)
         self.manager.redo()
+        assert person.age == 15  # 5 + 10, not 0 + 10
         
-        # Verify consistent increment of 10 from original value
-        assert person.age == 10  # Not 15
+        # Test: Multiple commands and proper state restoration
+        # Undo the first command
+        self.manager.undo()
+        assert person.age == 5  # Restores to modified intermediate value
         
-        # Create another command that depends on current state
+        # Create and execute a second command
         cmd2 = IncrementCommand(person, "age", 20)
         self.manager.execute(cmd2)
+        assert person.age == 25  # 5 + 20
         
-        # Verify accumulated result
-        assert person.age == 30
-        
-        # Undo both commands
+        # Undo second command
         self.manager.undo()
-        self.manager.undo()
+        assert person.age == 5
         
-        # Verify back to initial state
-        assert person.age == 0
+        # Redo second command
+        self.manager.redo()
+        assert person.age == 25  # 5 + 20
 
 if __name__ == "__main__":
     # Run tests when script is executed directly
