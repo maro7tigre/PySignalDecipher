@@ -96,13 +96,13 @@ class Observable:
                 
                 # If property wasn't registered for some reason, register it explicitly
                 if property_id is None:
-                    # Get the property value
-                    property_value = getattr(self, attr_name)
+                    # Get the property descriptor
+                    property_descriptor = getattr(self.__class__, attr_name)
                     
                     # Register the property with the ID system
                     observable_id = self.get_id()
                     property_id = self.id_registry.register_observable_property(
-                        None,  # No need for property object
+                        property_descriptor,  # Use the actual descriptor instead of None
                         PropertyTypeCodes.OBSERVABLE_PROPERTY,
                         None,  # Auto-generated unique ID
                         attr_name,
@@ -132,8 +132,17 @@ class Observable:
             # Property already registered
             return property_ids[0]
         else:
+            # Get the property descriptor
+            property_descriptor = getattr(self.__class__, property_name)
+            
             # Register the property
-            return None
+            return self.id_registry.register_observable_property(
+                property_descriptor,  # Use the actual descriptor instead of None
+                PropertyTypeCodes.OBSERVABLE_PROPERTY,
+                None,  # Auto-generated unique ID
+                property_name,
+                observable_id
+            )
     
     def _get_property_observers(self, property_name: str) -> list:
         """
@@ -375,9 +384,12 @@ class Observable:
             
             if original_components:
                 controller_id = original_components['controller_id']
+                # Get the newly created property descriptor
+                property_descriptor = getattr(self.__class__, property_name)
+                
                 # Register the property with the same ID
                 registry.register_observable_property(
-                    None,  # No concrete property object for descriptor properties
+                    property_descriptor,  # Use the descriptor instead of None
                     original_components['type_code'],
                     original_components['unique_id'],
                     property_name,
