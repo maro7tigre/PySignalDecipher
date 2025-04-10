@@ -432,13 +432,13 @@ class IDRegistry:
             str: The full observable ID, or None if not found or invalid property ID
         """
         # Get the unique ID from the property
-        observable_unique_id = self._observable_manager.get_observable_id_from_property_id(property_id)
+        observable_id = self._observable_manager.get_observable_id_from_property_id(property_id)
         
-        if not observable_unique_id or observable_unique_id == DEFAULT_NO_OBSERVABLE:
+        if not observable_id or observable_id == DEFAULT_NO_OBSERVABLE:
+        
             return None
-        
         # Return the full observable ID
-        return self.get_full_id_from_unique_id(observable_unique_id, "ob")
+        return observable_id
     
     def get_controller_id_from_property_id(self, property_id):
         """
