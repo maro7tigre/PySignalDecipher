@@ -507,67 +507,58 @@ class ObservableManager:
                 - actual_new_id: The actual new ID after the update
                 - error_message: Description of error if unsuccessful
         """
+        # 1. Validate inputs
         if old_observable_id not in self._observables:
             return False, old_observable_id, "Observable not found"
         
-        # Parse both IDs
         old_components = parse_observable_id(old_observable_id)
         new_components = parse_observable_id(new_observable_id)
         
         if not old_components or not new_components:
             return False, old_observable_id, "Invalid observable ID format"
         
-        # Make sure type codes match
         if old_components['type_code'] != new_components['type_code']:
             return False, old_observable_id, "Cannot change observable type code"
         
-        # Get the observable object
+        # 2. Get key information
         observable = self._observables[old_observable_id]
-        
-        # Check if the unique ID is changing
         old_unique_id = old_components['unique_id']
         new_unique_id = new_components['unique_id']
         
-        if old_unique_id != new_unique_id:
-            # Make sure the new unique ID isn't already used
-            if new_unique_id in self._unique_id_to_observable_id and self._unique_id_to_observable_id[new_unique_id] != old_observable_id:
-                return False, old_observable_id, f"Unique ID '{new_unique_id}' is already in use"
-        
-        # The new ID is valid for update
-        final_observable_id = create_observable_id(
-            old_components['type_code'],  # Type code remains the same
-            new_unique_id
-        )
-        
-        # If this is the same as the original ID, nothing to do
-        if final_observable_id == old_observable_id:
+        # If no change in unique ID, nothing to do
+        if old_unique_id == new_unique_id:
             return True, old_observable_id, None
         
-        # Update mappings
+        # Check for ID collision
+        if new_unique_id in self._unique_id_to_observable_id and self._unique_id_to_observable_id[new_unique_id] != old_observable_id:
+            return False, old_observable_id, f"Unique ID '{new_unique_id}' is already in use"
+        
+        # 3. Directly find all properties referencing this observable
+        properties_to_update = []
+        for prop_id in list(self._properties.keys()):
+            components = parse_property_id(prop_id)
+            if components and components['observable_unique_id'] == old_unique_id:
+                properties_to_update.append(prop_id)
+        
+        # 4. Create new observable ID
+        final_observable_id = create_observable_id(old_components['type_code'], new_unique_id)
+        
+        # 5. Update all property references in one go
+        property_updates = []
+        for prop_id in properties_to_update:
+            # This is a direct call to update the property's observable reference
+            new_prop_id = self.update_property_observable(prop_id, new_unique_id)
+            property_updates.append((prop_id, new_prop_id))
+        
+        # 6. Update observable mappings
         self._observables[final_observable_id] = observable
         self._unique_id_to_observable_id[new_unique_id] = final_observable_id
-        self._observable_objects_to_id[observable] = final_observable_id
+        if observable is not None:
+            self._observable_objects_to_id[observable] = final_observable_id
         
-        # Update observable's properties set
-        if old_unique_id in self._observable_to_properties:
-            # Transfer the property set to the new unique ID
-            if old_unique_id != new_unique_id:
-                self._observable_to_properties[new_unique_id] = self._observable_to_properties[old_unique_id]
-                del self._observable_to_properties[old_unique_id]
-            
-            # Update each property's observable reference
-            property_updates = []
-            for property_id in list(self._observable_to_properties[new_unique_id]):
-                new_property_id = self.update_property_observable(property_id, new_unique_id)
-                property_updates.append((property_id, new_property_id))
-        
-        # Clean up old observable ID
-        if old_observable_id in self._observables:
-            del self._observables[old_observable_id]
-        
-        # Remove old unique ID from mappings if changed
-        if old_unique_id != new_unique_id and old_unique_id in self._unique_id_to_observable_id:
-            del self._unique_id_to_observable_id[old_unique_id]
+        # 7. Clean up old mappings
+        del self._observables[old_observable_id]
+        del self._unique_id_to_observable_id[old_unique_id]
         
         return True, final_observable_id, None
     
