@@ -10,6 +10,7 @@ for tracking components without maintaining direct references.
 # Import core functionality
 from command_system.id_system.core.registry import IDRegistry, get_id_registry
 
+from command_system.id_system.core.parser import parse_property_id
 # Import error classes
 from command_system.id_system.managers.widget_manager import IDRegistrationError
 
@@ -46,4 +47,7 @@ __all__ = [
     # Type codes
     'ContainerTypeCodes', 'WidgetTypeCodes', 
     'ObservableTypeCodes', 'PropertyTypeCodes', 'TypeCodes',
+    
+    # ID parsing and creation
+    'parse_property_id',
 ]

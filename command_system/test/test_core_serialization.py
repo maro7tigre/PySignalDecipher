@@ -303,18 +303,15 @@ class TestPropertySerialization:
         serialized_name = person.serialize_property("name")
         registry = get_id_registry()
         
-        print("================")
-        print(f"1 : {employee._get_property_id("name")}")
-        
         # Verify initial values
         assert person.name == "Alice"
         assert employee.name == ""
         
         person.unregister()
-        print(f"2 : {employee._get_property_id("name")}")
+
         # Deserialize person's name property to employee
         employee.deserialize_property("name", serialized_name)
-        print(f"3 : {employee._get_property_id("name")}")
+        
         # Verify the property was transferred
         assert employee.name == "Alice"
         
