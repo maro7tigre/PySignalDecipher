@@ -314,6 +314,7 @@ class Observable:
         if not data or not isinstance(data, dict):
             return False
         
+        # Get relevant data from the serialized dictionary
         property_id = data.get('property_id')
         value = data.get('value')
         observable_id = data.get('observable_id')
@@ -321,31 +322,78 @@ class Observable:
         if not property_id or not observable_id:
             return False
         
+        # Get the ID registry
+        registry = self.id_registry
+        
         # If observable ID has changed, update our ID
         if observable_id != self.get_id():
             # Special handling for None observable case
             # If the new ID was created with None as the observable,
             # we need to take ownership of that ID
-            target_observable = self.id_registry.get_observable(observable_id)
+            target_observable = registry.get_observable(observable_id)
             if target_observable is None:
                 # Unregister the empty observable ID, since we'll take it over
-                self.id_registry.unregister(observable_id)
+                registry.unregister(observable_id)
                 # Now update our ID to match
-                success, updated_id, error = self.id_registry.update_id(self.get_id(), observable_id)
+                success, updated_id, error = registry.update_id(self.get_id(), observable_id)
             else:
                 # Normal path - attempt to update our ID
-                success, updated_id, error = self.id_registry.update_id(self.get_id(), observable_id)
+                success, updated_id, error = registry.update_id(self.get_id(), observable_id)
                 
             if not success:
                 raise ValueError(f"Failed to update observable ID: {error}")
         
-        # Update the property if it exists
+        # Check if the observable has a property with the same name
         if hasattr(self, property_name):
-            setattr(self, property_name, value)
-            return True
+            # Get the property ID for the existing property
+            existing_property_id = self._get_property_id(property_name)
             
-        return False
-    
+            # Update the property value
+            setattr(self, property_name, value)
+            
+            # If the existing property is registered and the property_id differs, update it
+            if existing_property_id and property_id != existing_property_id:
+                # First get the existing property's components
+                existing_components = registry._observable_manager._properties.get(existing_property_id)
+                
+                # If we found the existing property, update its ID
+                if existing_components is not None:
+                    # Update the property ID in the ID system
+                    success, updated_id, error = registry.update_id(existing_property_id, property_id)
+                    if not success:
+                        raise ValueError(f"Failed to update property ID: {error}")
+        else:
+            # Property doesn't exist on this observable, create a new ObservableProperty
+            # This is a dynamic addition of a property
+            
+            # First, create an ObservableProperty descriptor
+            from command_system.core import ObservableProperty
+            
+            # Dynamically add the property to the instance
+            setattr(self.__class__, property_name, ObservableProperty(value))
+            
+            # Set the initial value
+            setattr(self, property_name, value)
+            
+            # Now register the property with the ID system
+            # First get the original property components to extract controller information
+            from command_system.id_system.core.parser import parse_property_id
+            original_components = parse_property_id(property_id)
+            
+            if original_components:
+                controller_id = original_components['controller_id']
+                # Register the property with the same ID
+                registry.register_observable_property(
+                    None,  # No concrete property object for descriptor properties
+                    original_components['type_code'],
+                    original_components['unique_id'],
+                    property_name,
+                    self.get_id(),
+                    controller_id if controller_id != "0" else None
+                )
+        
+        return True
+
     def serialize(self) -> Dict[str, Any]:
         """
         Serialize the entire observable to a dictionary.
