@@ -76,7 +76,8 @@ class Observable:
         """
         # Register with ID system
         self.id_registry = get_id_registry()
-        self.id = self.id_registry.register_observable(self, ObservableTypeCodes.OBSERVABLE)
+        # Register with ID system but don't store the ID
+        self.id_registry.register_observable(self, ObservableTypeCodes.OBSERVABLE)
         
         # Update status tracking
         self._is_updating = False
@@ -89,8 +90,23 @@ class Observable:
         """Auto-register all ObservableProperty attributes on instance creation."""
         for attr_name, attr_value in self.__class__.__dict__.items():
             if isinstance(attr_value, ObservableProperty):
-                # Force property registration by accessing it once
-                self._get_property_id(attr_name)
+                # Get the property ID to force registration
+                property_id = self._get_property_id(attr_name)
+                
+                # If property wasn't registered for some reason, register it explicitly
+                if property_id is None:
+                    # Get the property value
+                    property_value = getattr(self, attr_name)
+                    
+                    # Register the property with the ID system
+                    observable_id = self.get_id()
+                    property_id = self.id_registry.register_observable_property(
+                        None,  # No need for property object
+                        PropertyTypeCodes.OBSERVABLE_PROPERTY,
+                        None,  # Auto-generated unique ID
+                        attr_name,
+                        observable_id
+                    )
     
     def _get_property_id(self, property_name: str) -> Optional[str]:
         """
@@ -116,13 +132,7 @@ class Observable:
             return property_ids[0]
         else:
             # Register the property
-            return self.id_registry.register_observable_property(
-                None,  # No need for property object
-                PropertyTypeCodes.OBSERVABLE_PROPERTY,
-                None,  # Auto-generated unique ID
-                property_name,
-                observable_id
-            )
+            return None
     
     def _get_property_observers(self, property_name: str) -> list:
         """
@@ -222,7 +232,7 @@ class Observable:
         Returns:
             str: ID for this object
         """
-        return self.id
+        return self.id_registry.get_id(self)
         
     def is_updating(self) -> bool:
         """
@@ -259,7 +269,7 @@ class Observable:
         Returns:
             bool: True if successful, False otherwise
         """
-        return self.id_registry.unregister(self.id)
+        return self.id_registry.unregister(self.get_id())
     
     def __del__(self):
         """Clean up by unregistering from ID registry."""
@@ -328,9 +338,6 @@ class Observable:
                 
             if not success:
                 raise ValueError(f"Failed to update observable ID: {error}")
-                
-            # Update our reference
-            self.id = updated_id
         
         # Update the property if it exists
         if hasattr(self, property_name):
@@ -389,9 +396,6 @@ class Observable:
                 
             if not success:
                 raise ValueError(f"Failed to update observable ID: {error}")
-                
-            # Update our reference
-            self.id = updated_id
             
         # Update properties
         if 'properties' in data and isinstance(data['properties'], dict):

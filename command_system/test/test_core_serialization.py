@@ -301,26 +301,35 @@ class TestPropertySerialization:
         # Get original property ID and serialize it
         person_name_id = person._get_property_id("name")
         serialized_name = person.serialize_property("name")
+        registry = get_id_registry()
+        
+        print("================")
+        print(f"1 : available observables : {registry._observable_manager._observables}")
         
         # Verify initial values
         assert person.name == "Alice"
         assert employee.name == ""
         
+        print(person_name_id)
+        person.unregister()
+        print(f"2 : available observables : {registry._observable_manager._observables}")
         # Deserialize person's name property to employee
         employee.deserialize_property("name", serialized_name)
-        
+        print(f"3 : available observables : {registry._observable_manager._observables}")
         # Verify the property was transferred
         assert employee.name == "Alice"
         
         # Check that the observable_id was updated in the process
         employee_name_id = employee._get_property_id("name")
-        registry = get_id_registry()
+        
         
         # Get the observable ID from the property
         employee_id_from_prop = registry.get_observable_id_from_property_id(employee_name_id)
-        
+        print(f"employee_name_id : {employee_name_id}")
+        print(f"4 : available observables : {registry._observable_manager._observables}")
         # Verify it points to the employee now
         assert employee_id_from_prop == employee.get_id()
+        assert 1==0
     
     def test_property_restore_after_observable_change(self):
         """Test restoring a property after its observable has changed."""
