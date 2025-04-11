@@ -160,8 +160,20 @@ class BaseCommandWidget:
         # Get the property ID
         property_id = self._controlled_properties[widget_property]
         
-        # Remove the controller reference
+        # Get the observable ID and property name
         id_registry = get_id_registry()
+        observable_id = id_registry.get_observable_id_from_property_id(property_id)
+        property_components = parse_property_id(property_id)
+        
+        if observable_id and property_components:
+            # Get the observable and remove the observer
+            observable = id_registry.get_observable(observable_id)
+            property_name = property_components['property_name']
+            if observable:
+                # Remove our observer from the property
+                observable.remove_property_observer(property_name, self.widget_id)
+        
+        # Remove the controller reference
         id_registry.remove_controller_reference(property_id)
         
         # Remove from our tracking
