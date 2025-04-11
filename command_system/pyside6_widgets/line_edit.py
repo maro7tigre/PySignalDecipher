@@ -75,11 +75,6 @@ class CommandLineEdit(QLineEdit, BaseCommandWidget):
     @Slot()
     def _handle_editing_finished(self):
         """Handle the completion of editing."""
-        # Store the final value for ON_EDIT_FINISHED mode
-        if self._command_trigger_mode == CommandTriggerMode.ON_EDIT_FINISHED:
-            current_text = self.text()
-            self._pending_changes["text"] = current_text
-        
         # Delegate to base class
         self._on_widget_editing_finished()
     
@@ -97,3 +92,50 @@ class CommandLineEdit(QLineEdit, BaseCommandWidget):
     def unbind_text_property(self):
         """Convenience method to unbind text property."""
         self.unbind_property("text")
+        
+    # MARK: - Serialization
+    def get_serialization(self) -> dict:
+        """
+        Get serialized representation of this widget.
+        
+        Returns:
+            Dict containing serialized widget state
+        """
+        # Get base serialization
+        result = super().get_serialization()
+        
+        # Add any QLineEdit-specific properties here if needed
+        # For example:
+        # result['line_edit_props'] = {
+        #     'placeholder_text': self.placeholderText(),
+        #     'max_length': self.maxLength(),
+        #     'read_only': self.isReadOnly()
+        # }
+        
+        return result
+    
+    def deserialize(self, data: dict) -> bool:
+        """
+        Restore this widget's state from serialized data.
+
+        Args:
+            data: Dictionary containing widget state
+
+        Returns:
+            True if successful
+        """
+        # Let the base class handle the common serialization
+        if not super().deserialize(data):
+            return False
+            
+        # Handle any QLineEdit-specific properties here if needed
+        # if 'line_edit_props' in data:
+        #     props = data['line_edit_props']
+        #     if 'placeholder_text' in props:
+        #         self.setPlaceholderText(props['placeholder_text'])
+        #     if 'max_length' in props:
+        #         self.setMaxLength(props['max_length'])
+        #     if 'read_only' in props:
+        #         self.setReadOnly(props['read_only'])
+        
+        return True

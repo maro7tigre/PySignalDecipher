@@ -83,6 +83,9 @@ class BaseCommandWidget:
         
         Args:
             new_container_id: New container ID or None
+            
+        Returns:
+            str: Updated widget ID
         """
         id_registry = get_id_registry()
         if new_container_id is not None:
@@ -132,7 +135,7 @@ class BaseCommandWidget:
         self._controlled_properties[widget_property] = property_id
         
         # Set up observer for property changes
-        observer_id = observable.add_property_observer(
+        observable.add_property_observer(
             property_name, 
             lambda prop_name, old_val, new_val: self._on_observed_property_changed(
                 widget_property, old_val, new_val
@@ -143,9 +146,6 @@ class BaseCommandWidget:
         # Initialize widget with current observable value
         current_value = getattr(observable, property_name)
         self._on_observed_property_changed(widget_property, None, current_value)
-        
-        # Child classes should connect their value changed signals
-        # to _on_widget_value_changed method for updating the observable
 
     def unbind_property(self, widget_property: str):
         """
@@ -225,7 +225,9 @@ class BaseCommandWidget:
             # Store pending change and restart timer
             self._pending_changes[widget_property] = new_value
             self._change_timer.start(self._change_delay_ms)
-        # ON_EDIT_FINISHED mode is handled by _on_widget_editing_finished
+        elif self._command_trigger_mode == CommandTriggerMode.ON_EDIT_FINISHED:
+            # Store for later processing when editing is finished
+            self._pending_changes[widget_property] = new_value
     
     def _on_widget_editing_finished(self):
         """
@@ -236,11 +238,10 @@ class BaseCommandWidget:
         if self._change_timer.isActive():
             self._change_timer.stop()
             
-        if self._command_trigger_mode == CommandTriggerMode.ON_EDIT_FINISHED:
-            # Process all pending changes
-            for widget_property, new_value in self._pending_changes.items():
-                self._create_and_execute_property_command(widget_property, new_value)
-            self._pending_changes.clear()
+        # Process all pending changes
+        for widget_property, new_value in self._pending_changes.items():
+            self._create_and_execute_property_command(widget_property, new_value)
+        self._pending_changes.clear()
     
     def _on_change_timer_timeout(self):
         """Handle the timeout of the change delay timer."""
@@ -279,13 +280,18 @@ class BaseCommandWidget:
         self._last_values[widget_property] = new_value
     
     # MARK: - Resource Management
-    def unregister_widget(self) -> None:
-        """Unregister this widget from the ID system"""
+    def unregister_widget(self) -> bool:
+        """
+        Unregister this widget from the ID system
+        
+        Returns:
+            bool: True if successful
+        """
         id_registry = get_id_registry()
-        id_registry.unregister(self.widget_id)
+        return id_registry.unregister(self.widget_id)
     
     # MARK: - Serialization
-    def get_serialization(self):
+    def get_serialization(self) -> dict:
         """
         Get serialized representation of this widget.
         
@@ -300,17 +306,27 @@ class BaseCommandWidget:
         # Serialize controlled properties
         for widget_property, property_id in self._controlled_properties.items():
             id_registry = get_id_registry()
+            # Get observable ID from property ID
             observable_id = id_registry.get_observable_id_from_property_id(property_id)
             
             if observable_id:
+                # Get the observable
                 observable = id_registry.get_observable(observable_id)
                 if observable and hasattr(observable, 'serialize_property'):
-                    serialized_property = observable.serialize_property(property_id)
-                    result['properties'][widget_property] = serialized_property
+                    # Get property name from property_id
+                    property_components = id_registry._parser.parse_property_id(property_id)
+                    if property_components:
+                        property_name = property_components['property_name']
+                        # Serialize the property
+                        serialized_property = observable.serialize_property(property_name)
+                        if serialized_property:
+                            result['properties'][widget_property] = serialized_property
+        
+        # Add any additional widget-specific state here in subclasses
         
         return result
     
-    def deserialize(self, data):
+    def deserialize(self, data: dict) -> bool:
         """
         Restore this widget's state from serialized data.
 
@@ -320,17 +336,29 @@ class BaseCommandWidget:
         Returns:
             True if successful
         """
+        if not data or not isinstance(data, dict):
+            return False
+            
         id_registry = get_id_registry()
         
         # Update widget ID if needed
-        if data['id'] != self.widget_id:
-            # Register with the specified ID - this will update our ID
-            id_registry.unregister(self.widget_id)
-            self.widget_id = id_registry.register(self, self.type_code, get_unique_id_from_id(data['id']))
+        if 'id' in data and data['id'] != self.widget_id:
+            success, updated_id, error = id_registry.update_id(self.widget_id, data['id'])
+            if success:
+                self.widget_id = updated_id
+            else:
+                # Alternative: re-register with the desired ID
+                id_registry.unregister(self.widget_id)
+                self.widget_id = id_registry.register(
+                    self, 
+                    self.type_code, 
+                    get_unique_id_from_id(data['id'])
+                )
         
         # Restore properties
-        if 'properties' in data:
+        if 'properties' in data and isinstance(data['properties'], dict):
             for widget_property, serialized_property in data['properties'].items():
+                # Find the matching controlled property
                 if widget_property in self._controlled_properties:
                     property_id = self._controlled_properties[widget_property]
                     observable_id = id_registry.get_observable_id_from_property_id(property_id)
@@ -338,6 +366,11 @@ class BaseCommandWidget:
                     if observable_id:
                         observable = id_registry.get_observable(observable_id)
                         if observable and hasattr(observable, 'deserialize_property'):
-                            observable.deserialize_property(property_id, serialized_property)
+                            # Extract property name from property_id
+                            property_components = id_registry._parser.parse_property_id(property_id)
+                            if property_components:
+                                property_name = property_components['property_name']
+                                # Deserialize the property
+                                observable.deserialize_property(property_name, serialized_property)
         
         return True
