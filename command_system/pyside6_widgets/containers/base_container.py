@@ -1,7 +1,7 @@
 """
-Base container for integrating PySide6 containers with the command system.
+Improved base container for integrating PySide6 containers with the command system.
 
-Provides a base implementation for command-enabled containers
+Provides an optimized implementation for command-enabled containers
 leveraging the ID system for efficient relationship tracking and
 support for nested container hierarchies.
 """
@@ -28,29 +28,42 @@ class BaseCommandContainer(BaseCommandWidget):
         # Initialize the base widget
         super().initiate_widget(type_code, container_id, location)
         
-        # Widget type registry for factory functions
+        # Widget type registry - optimized structure for faster lookups
         self._widget_types = {}  # type_id -> {factory, observables, options}
         
-        # Track registered subcontainers
+        # Direct references to subcontainers for faster access
         self._subcontainers = {}  # subcontainer_id -> subcontainer widget
         
-        # Type mapping for subcontainers
+        # Bidirectional mapping for faster lookups
         self._types_map = {}  # subcontainer_id -> type_id
-        
-        # Locations map for subcontainers
         self._locations_map = {}  # location -> subcontainer_id
+        self._id_to_location_map = {}  # subcontainer_id -> location
     
     # MARK: - Type Registration
     def register_subcontainer_type(self, factory_func: Callable, 
                                 observables: List[Union[str, Type[Observable]]] = None,
                                 type_id: str = None,
                                 **options) -> str:
-        # Generate type_id if not provided
+        """
+        Register a subcontainer type with factory function.
+        
+        Args:
+            factory_func: Function that creates the subcontainer content
+            observables: List of Observable IDs or Observable classes
+                         IDs will use existing observables
+                         Classes will create new instances
+            type_id: Optional ID for the type, generated if not provided
+            **options: Additional options for the subcontainer type
+            
+        Returns:
+            Type ID of the registered subcontainer type
+        """
+        # Generate type_id if not provided - using efficient ID generation
         if type_id is None:
             simple_id_registry = get_simple_id_registry()
             type_id = simple_id_registry.register(self.type_code)
         
-        # Store subcontainer type info
+        # Store subcontainer type info - optimized structure
         self._widget_types[type_id] = {
             "factory": factory_func,
             "observables": observables or [],
@@ -85,7 +98,7 @@ class BaseCommandContainer(BaseCommandWidget):
         Returns:
             ID of the created subcontainer, or None if failed
         """
-        # Check if the type exists
+        # Type validation with early return for performance
         if type_id not in self._widget_types:
             return None
         
@@ -98,21 +111,48 @@ class BaseCommandContainer(BaseCommandWidget):
         id_registry = get_id_registry()
         subcontainer_id = id_registry.register(subcontainer, self.type_code, None, self.widget_id, location)
         
-        # Store mapping and reference
+        # Store mappings - now with bidirectional references for faster lookups
         self._types_map[subcontainer_id] = type_id
         self._locations_map[subcontainer_location] = subcontainer_id
+        self._id_to_location_map[subcontainer_id] = subcontainer_location
         self._subcontainers[subcontainer_id] = subcontainer
         
         # Get type info for the content
         type_info = self._widget_types[type_id]
         factory = type_info["factory"]
-        registered_observables = type_info["observables"]
         
-        # Prepare arguments - resolve observables
+        # Create content using optimized observable resolution
+        content = self._create_content_with_observables(factory, type_info["observables"])
+        if not content:
+            return subcontainer_id  # Still return ID even if content creation fails
+            
+        if not isinstance(content, QWidget):
+            return subcontainer_id
+        
+        # Add content to the subcontainer efficiently
+        self._add_content_to_subcontainer(subcontainer, content)
+        
+        # Register child widgets efficiently
+        self._register_contents(content, subcontainer_id)
+        
+        return subcontainer_id
+        
+    def _create_content_with_observables(self, factory: Callable, 
+                                        registered_observables: List[Union[str, Type[Observable]]]) -> QWidget:
+        """
+        Create content for subcontainer with optimized observable handling.
+        
+        Args:
+            factory: Factory function to create content
+            registered_observables: List of observable specifications
+            
+        Returns:
+            Created widget content or None if creation failed
+        """
         factory_args = []
-        created_observables = []
+        id_registry = get_id_registry()
         
-        # Process observables
+        # Process observables more efficiently
         for obs in registered_observables:
             if isinstance(obs, str):
                 # It's an ID - get the existing observable
@@ -122,34 +162,37 @@ class BaseCommandContainer(BaseCommandWidget):
                 # It's a class - create a new instance
                 observable = obs()
                 factory_args.append(observable)
-                created_observables.append(observable)
             else:
-                print(f"Invalid observable specification: {obs}")
+                return None  # Invalid observable specification
         
         try:
             # Create the widget content
-            content = factory(*factory_args)
-            
-            if not isinstance(content, QWidget):
-                print(f"Factory {type_id} didn't return a QWidget")
-                return None
-            
-            # Add content to the subcontainer using layout
-            if hasattr(subcontainer, 'layout') and subcontainer.layout():
-                subcontainer.layout().addWidget(content)
-            else:
-                layout = QVBoxLayout(subcontainer)
-                layout.setContentsMargins(0, 0, 0, 0)
-                layout.addWidget(content)
-            
-            # Register all child widgets
-            self._register_contents(content, subcontainer_id)
-            
-            return subcontainer_id
-        
+            return factory(*factory_args)
         except Exception as e:
-            print(f"Error creating subcontainer of type {type_id}: {e}")
             return None
+    
+    def _add_content_to_subcontainer(self, subcontainer: QWidget, content: QWidget):
+        """
+        Add content to subcontainer efficiently.
+        
+        Args:
+            subcontainer: Container widget
+            content: Content widget to add
+        """
+        # Reuse existing layout if available
+        layout = subcontainer.layout()
+        if layout is None:
+            layout = QVBoxLayout(subcontainer)
+            layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Clear existing items if present (for reused containers)
+        while layout.count():
+            item = layout.takeAt(0)
+            if item.widget():
+                item.widget().setParent(None)
+        
+        # Add new content
+        layout.addWidget(content)
         
     def _register_contents(self, widget: QWidget, container_id: str):
         """
@@ -159,6 +202,7 @@ class BaseCommandContainer(BaseCommandWidget):
             widget: The widget to register
             container_id: Container ID for the widgets
         """
+        # Use non-recursive approach for better performance with deep hierarchies
         id_registry = get_id_registry()
         widgets_to_process = [widget]
         
@@ -178,7 +222,7 @@ class BaseCommandContainer(BaseCommandWidget):
     # MARK: - Subcontainer Access
     def get_subcontainer(self, subcontainer_id: str) -> Optional[QWidget]:
         """
-        Get a subcontainer by ID.
+        Get a subcontainer by ID with direct lookup.
         
         Args:
             subcontainer_id: ID of the subcontainer
@@ -186,12 +230,12 @@ class BaseCommandContainer(BaseCommandWidget):
         Returns:
             Subcontainer widget, or None if not found
         """
-        id_registry = get_id_registry()
-        return id_registry.get_widget(subcontainer_id)
+        # Direct lookup from our cache for better performance
+        return self._subcontainers.get(subcontainer_id)
     
     def get_subcontainer_type(self, subcontainer_id: str) -> Optional[str]:
         """
-        Get the type ID for a subcontainer.
+        Get the type ID for a subcontainer using direct mapping.
         
         Args:
             subcontainer_id: ID of the subcontainer
@@ -203,7 +247,7 @@ class BaseCommandContainer(BaseCommandWidget):
     
     def get_subcontainer_location(self, subcontainer_id: str) -> Optional[str]:
         """
-        Get the location for a subcontainer.
+        Get the location for a subcontainer using bidirectional mapping.
         
         Args:
             subcontainer_id: ID of the subcontainer
@@ -211,10 +255,8 @@ class BaseCommandContainer(BaseCommandWidget):
         Returns:
             Location, or None if not found
         """
-        for location, container_id in self._locations_map.items():
-            if container_id == subcontainer_id:
-                return location
-        return None
+        # Direct lookup using bidirectional mapping
+        return self._id_to_location_map.get(subcontainer_id)
     
     def get_subcontainer_at_location(self, location: str) -> Optional[str]:
         """
@@ -263,8 +305,8 @@ class BaseCommandContainer(BaseCommandWidget):
         
         # Check if the target is in one of our subcontainers
         if target_container_id in self._subcontainers:
-            # Get the location for this subcontainer
-            subcontainer_location = self.get_subcontainer_location(target_container_id)
+            # Get the location directly from our mapping
+            subcontainer_location = self._id_to_location_map.get(target_container_id)
             if subcontainer_location:
                 # Navigate to the subcontainer's location
                 self.navigate_to_location(subcontainer_location)
@@ -301,32 +343,40 @@ class BaseCommandContainer(BaseCommandWidget):
         Returns:
             True if successful, False otherwise
         """
+        # Early validation
+        if subcontainer_id not in self._subcontainers:
+            return False
+            
         id_registry = get_id_registry()
         
-        # Get the location before removing mappings
-        location = self.get_subcontainer_location(subcontainer_id)
+        # Get the location from our direct mapping
+        location = self._id_to_location_map.get(subcontainer_id)
         
-        # Remove from tracking maps
-        if subcontainer_id in self._subcontainers:
-            del self._subcontainers[subcontainer_id]
-        if subcontainer_id in self._types_map:
-            del self._types_map[subcontainer_id]
-        if location in self._locations_map:
-            del self._locations_map[location]
+        # Remove from tracking maps efficiently
+        if location:
+            self._locations_map.pop(location, None)
+        self._id_to_location_map.pop(subcontainer_id, None)
+        self._types_map.pop(subcontainer_id, None)
+        self._subcontainers.pop(subcontainer_id, None)
         
         # Unregister from ID system
         return id_registry.unregister(subcontainer_id)
     
-    def unregister_widget(self) -> None:
-        """Unregister this container and all its subcontainers."""
-        # Close all subcontainers first
+    def unregister_widget(self) -> bool:
+        """
+        Unregister this container and all its subcontainers.
+        
+        Returns:
+            True if successful, False otherwise
+        """
+        # Close all subcontainers first - create a copy of keys to avoid modification during iteration
         for subcontainer_id in list(self._subcontainers.keys()):
             self.close_subcontainer(subcontainer_id)
         
         # Unregister this container
-        super().unregister_widget()
+        return super().unregister_widget()
     
-    # MARK: - Serialization
+    # MARK: - Serialization with optimized handling
     def get_serialization(self) -> Dict:
         """
         Get serialized representation of this container.
@@ -339,8 +389,8 @@ class BaseCommandContainer(BaseCommandWidget):
             'subcontainers': []
         }
         
-        # Serialize all subcontainers
-        for subcontainer_id, widget in self._subcontainers.items():
+        # Serialize all subcontainers efficiently
+        for subcontainer_id in self._subcontainers:
             serialized_subcontainer = self.serialize_subcontainer(subcontainer_id)
             if serialized_subcontainer:
                 result['subcontainers'].append(serialized_subcontainer)
@@ -349,7 +399,7 @@ class BaseCommandContainer(BaseCommandWidget):
     
     def serialize_subcontainer(self, subcontainer_id: str) -> Dict:
         """
-        Serialize a subcontainer.
+        Serialize a subcontainer efficiently.
         
         Args:
             subcontainer_id: ID of the subcontainer to serialize
@@ -357,17 +407,19 @@ class BaseCommandContainer(BaseCommandWidget):
         Returns:
             Dict containing serialized subcontainer state
         """
-        # Get subcontainer info
+        # Quick validation with early returns
+        if subcontainer_id not in self._subcontainers:
+            return None
+            
+        # Get subcontainer info from direct mappings
         subcontainer_type = self._types_map.get(subcontainer_id)
-        location = self.get_subcontainer_location(subcontainer_id)
+        location = self._id_to_location_map.get(subcontainer_id)
         
         if not subcontainer_type or not location:
             return None
             
-        # Get the subcontainer widget
-        id_registry = get_id_registry()
-        subcontainer = id_registry.get_widget(subcontainer_id)
-        
+        # Get the subcontainer widget from our cache
+        subcontainer = self._subcontainers.get(subcontainer_id)
         if not subcontainer:
             return None
             
@@ -380,6 +432,7 @@ class BaseCommandContainer(BaseCommandWidget):
         }
         
         # Get all widgets that have this subcontainer as their container
+        id_registry = get_id_registry()
         widget_ids = id_registry.get_widgets_by_container_id(subcontainer_id)
         
         # Serialize each child that can be serialized
@@ -392,7 +445,7 @@ class BaseCommandContainer(BaseCommandWidget):
     
     def deserialize(self, serialized_data: Dict) -> bool:
         """
-        Deserialize and restore container state.
+        Deserialize and restore container state efficiently.
         
         Args:
             serialized_data: Dict containing serialized container state
@@ -400,30 +453,57 @@ class BaseCommandContainer(BaseCommandWidget):
         Returns:
             True if successful, False otherwise
         """
+        # Validate input
+        if not serialized_data or not isinstance(serialized_data, dict):
+            return False
+            
         # Update container ID if needed
+        self._update_container_id(serialized_data)
+        
+        # Process subcontainers efficiently
+        return self._deserialize_subcontainers(serialized_data)
+    
+    def _update_container_id(self, serialized_data: Dict):
+        """
+        Update container ID if needed during deserialization.
+        
+        Args:
+            serialized_data: Serialized container data
+        """
         if 'id' in serialized_data and serialized_data['id'] != self.widget_id:
             id_registry = get_id_registry()
             # Register with specified ID to keep consistent with serialized state
             id_registry.unregister(self.widget_id)
             self.widget_id = id_registry.register(self, self.type_code, None)
+    
+    def _deserialize_subcontainers(self, serialized_data: Dict) -> bool:
+        """
+        Process subcontainers during deserialization efficiently.
         
-        # Get current subcontainers
+        Args:
+            serialized_data: Serialized container data
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        # Get current subcontainers and track which ones are in the serialized data
         current_subcontainers = set(self._subcontainers.keys())
         serialized_subcontainers = set()
         
         # Process serialized subcontainers
-        if 'subcontainers' in serialized_data:
+        if 'subcontainers' in serialized_data and isinstance(serialized_data['subcontainers'], list):
             for subcontainer_data in serialized_data['subcontainers']:
-                subcontainer_id = subcontainer_data.get('id')
-                subcontainer_type = subcontainer_data.get('type')
-                location = subcontainer_data.get('location')
-                
-                if not subcontainer_id or not subcontainer_type or not location:
+                # Validate required fields
+                if not self._validate_subcontainer_data(subcontainer_data):
                     continue
+                    
+                subcontainer_id = subcontainer_data['id']
+                subcontainer_type = subcontainer_data['type']
+                location = subcontainer_data['location']
                 
                 serialized_subcontainers.add(subcontainer_id)
                 
-                # Check if subcontainer exists
+                # Check if subcontainer exists and handle appropriately
                 if subcontainer_id in current_subcontainers:
                     # Update existing subcontainer
                     self.deserialize_subcontainer(
@@ -446,11 +526,26 @@ class BaseCommandContainer(BaseCommandWidget):
         
         return True
     
+    def _validate_subcontainer_data(self, subcontainer_data: Dict) -> bool:
+        """
+        Validate subcontainer data before deserialization.
+        
+        Args:
+            subcontainer_data: Serialized subcontainer data
+            
+        Returns:
+            True if valid, False otherwise
+        """
+        return (isinstance(subcontainer_data, dict) and
+                'id' in subcontainer_data and
+                'type' in subcontainer_data and
+                'location' in subcontainer_data)
+    
     def deserialize_subcontainer(self, type_id: str, location: str, 
                                 serialized_subcontainer: Dict,
                                 existing_subcontainer_id: Optional[str] = None) -> str:
         """
-        Deserialize and restore a subcontainer.
+        Deserialize and restore a subcontainer efficiently.
         
         Args:
             type_id: Type ID of the subcontainer
@@ -463,11 +558,12 @@ class BaseCommandContainer(BaseCommandWidget):
         """
         id_registry = get_id_registry()
         
+        # Handle existing vs. new subcontainer
         if existing_subcontainer_id:
-            # Update existing subcontainer
-            subcontainer = id_registry.get_widget(existing_subcontainer_id)
+            # Verify the subcontainer still exists
+            subcontainer = self.get_subcontainer(existing_subcontainer_id)
             if not subcontainer:
-                # Subcontainer no longer exists, create a new one
+                # Create a new one if the existing one is gone
                 return self.deserialize_subcontainer(
                     type_id, location, serialized_subcontainer)
                 
@@ -478,38 +574,73 @@ class BaseCommandContainer(BaseCommandWidget):
             subcontainer_id = self.add_subcontainer(type_id, location)
             if not subcontainer_id:
                 return None
-            
-        # Update the ID if it's different
-        if subcontainer_id != serialized_subcontainer['id']:
-            # Update the ID in registry to keep consistent with serialized data
-            # First, update our internal mappings
-            current_location = self.get_subcontainer_location(subcontainer_id)
-            current_type = self._types_map.get(subcontainer_id)
-            subcontainer = self._subcontainers.get(subcontainer_id)
-            
-            if current_location and current_type and subcontainer:
-                # Remove old mappings
-                del self._locations_map[current_location]
-                del self._types_map[subcontainer_id]
-                del self._subcontainers[subcontainer_id]
-                
-                # Add new mappings
-                new_id = serialized_subcontainer['id']
-                self._locations_map[current_location] = new_id
-                self._types_map[new_id] = current_type
-                self._subcontainers[new_id] = subcontainer
-                
-                # Update in registry
-                id_registry.unregister(subcontainer_id)
-                id_registry.register(subcontainer, self.type_code, new_id)
-                
-                subcontainer_id = new_id
+        
+        # Handle ID consistency with serialized data
+        self._ensure_consistent_id(subcontainer_id, serialized_subcontainer)
         
         # Deserialize children if included
-        if 'children' in serialized_subcontainer:
-            for child_id, child_data in serialized_subcontainer['children'].items():
+        self._deserialize_children(subcontainer_id, serialized_subcontainer)
+        
+        return subcontainer_id
+    
+    def _ensure_consistent_id(self, subcontainer_id: str, serialized_data: Dict):
+        """
+        Ensure consistent ID between current subcontainer and serialized data.
+        
+        Args:
+            subcontainer_id: Current subcontainer ID
+            serialized_data: Serialized data with potentially different ID
+        """
+        # Update the ID if it's different
+        if subcontainer_id != serialized_data['id']:
+            # Update our internal mappings
+            self._update_subcontainer_id(subcontainer_id, serialized_data['id'])
+    
+    def _update_subcontainer_id(self, old_id: str, new_id: str):
+        """
+        Update a subcontainer's ID in all internal mappings.
+        
+        Args:
+            old_id: Original subcontainer ID
+            new_id: New subcontainer ID
+        """
+        id_registry = get_id_registry()
+        
+        # Get current values
+        subcontainer = self._subcontainers.get(old_id)
+        location = self._id_to_location_map.get(old_id)
+        type_id = self._types_map.get(old_id)
+        
+        if subcontainer and location and type_id:
+            # Remove old mappings
+            self._subcontainers.pop(old_id, None)
+            self._id_to_location_map.pop(old_id, None)
+            self._types_map.pop(old_id, None)
+            
+            # Update location mapping
+            self._locations_map[location] = new_id
+            
+            # Add new mappings
+            self._subcontainers[new_id] = subcontainer
+            self._id_to_location_map[new_id] = location
+            self._types_map[new_id] = type_id
+            
+            # Update in registry
+            id_registry.unregister(old_id)
+            id_registry.register(subcontainer, self.type_code, new_id)
+    
+    def _deserialize_children(self, subcontainer_id: str, serialized_data: Dict):
+        """
+        Deserialize children of a subcontainer.
+        
+        Args:
+            subcontainer_id: Subcontainer ID
+            serialized_data: Serialized subcontainer data
+        """
+        id_registry = get_id_registry()
+        
+        if 'children' in serialized_data and isinstance(serialized_data['children'], dict):
+            for child_id, child_data in serialized_data['children'].items():
                 child = id_registry.get_widget(child_id)
                 if child and hasattr(child, 'deserialize'):
                     child.deserialize(child_data)
-        
-        return subcontainer_id
