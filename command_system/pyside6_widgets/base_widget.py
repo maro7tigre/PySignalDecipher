@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any, Optional, Callable, Dict, Union
 from PySide6.QtCore import QTimer
 
-from command_system.id_system import get_id_registry, TypeCodes
+from command_system.id_system import get_id_registry, TypeCodes, parse_property_id
 from command_system.id_system.core.parser import get_unique_id_from_id
 from command_system.core import PropertyCommand, get_command_manager
 
@@ -314,7 +314,7 @@ class BaseCommandWidget:
                 observable = id_registry.get_observable(observable_id)
                 if observable and hasattr(observable, 'serialize_property'):
                     # Get property name from property_id
-                    property_components = id_registry._parser.parse_property_id(property_id)
+                    property_components = parse_property_id(property_id)
                     if property_components:
                         property_name = property_components['property_name']
                         # Serialize the property
@@ -367,7 +367,7 @@ class BaseCommandWidget:
                         observable = id_registry.get_observable(observable_id)
                         if observable and hasattr(observable, 'deserialize_property'):
                             # Extract property name from property_id
-                            property_components = id_registry._parser.parse_property_id(property_id)
+                            property_components = parse_property_id(property_id)
                             if property_components:
                                 property_name = property_components['property_name']
                                 # Deserialize the property

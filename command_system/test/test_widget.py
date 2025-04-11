@@ -1,639 +1,67 @@
 """
 Comprehensive test suite for the PySide6 widget integration with command system.
 
-This test suite validates the functionality of the command-enabled widgets:
+This test suite validates the functionality of the actual PySide6 command-enabled widgets:
+- BaseCommandWidget and CommandLineEdit implementations
 - Widget registration and ID management
 - Property binding and change tracking
 - Command generation and execution
 - Widget serialization and deserialization
-- Real-world usage scenarios
+- Real-world usage scenarios and integration with both the command system and ID system
 
-The tests use mock classes to simulate Qt functionality without requiring the actual
-PySide6 dependencies, focusing on the command and ID system integration logic.
+This test uses the actual widget implementations, testing from an end user's perspective.
 """
 import pytest
 import sys
 import os
 from typing import Dict, Any, List, Optional, Callable
-from unittest.mock import MagicMock, patch
+from PySide6.QtWidgets import QApplication
 
 # Add project root to path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-# Mock PySide6 imports for testing without Qt dependency
-sys.modules['PySide6'] = MagicMock()
-sys.modules['PySide6.QtWidgets'] = MagicMock()
-sys.modules['PySide6.QtCore'] = MagicMock()
-
-# Mock QLineEdit class
-class MockQLineEdit:
-    def __init__(self, text="", parent=None):
-        self.text_value = text
-        self.blocked = False
-        self.placeholder_text = ""
-        # Create mock signals
-        self.textChanged = MagicMock()
-        self.textChanged.connect = MagicMock(return_value=True)
-        self.editingFinished = MagicMock()
-        self.editingFinished.connect = MagicMock(return_value=True)
-        
-    def text(self):
-        return self.text_value
-        
-    def setText(self, text):
-        old_text = self.text_value
-        self.text_value = text
-        if not self.blocked and old_text != text:
-            self.textChanged.emit(text)
-            
-    def setPlaceholderText(self, text):
-        self.placeholder_text = text
-        
-    def blockSignals(self, block):
-        self.blocked = block
-        return True
-
-# Mock QTimer class
-class MockQTimer:
-    def __init__(self):
-        self.timeout = MagicMock()
-        self.timeout.connect = MagicMock(return_value=True)
-        self._is_active = False
-        self._interval = 0
-        self._single_shot = False
-        
-    def setSingleShot(self, single_shot):
-        self._single_shot = single_shot
-        
-    def start(self, ms):
-        self._interval = ms
-        self._is_active = True
-        
-    def stop(self):
-        self._is_active = False
-        
-    def isActive(self):
-        return self._is_active
-
-# Add mock classes to the mock PySide6 module
-sys.modules['PySide6.QtWidgets'].QLineEdit = MockQLineEdit
-sys.modules['PySide6.QtCore'].QTimer = MockQTimer
-
-# Now that the PySide6 modules are mocked, import the command system modules
+# Import required modules from command system
 from command_system.core import (
     Observable, ObservableProperty,
-    Command, PropertyCommand, get_command_manager, CompoundCommand
+    Command, PropertyCommand, get_command_manager, CompoundCommand,
+    MacroCommand
 )
 
 from command_system.id_system import (
-    get_id_registry, WidgetTypeCodes, ContainerTypeCodes, parse_property_id
+    get_id_registry, WidgetTypeCodes, ContainerTypeCodes, 
+    parse_property_id
 )
 
-# Define command trigger modes without importing widget module
-class CommandTriggerMode:
-    """
-    Defines when a command should be triggered for widget value changes.
-    Used for testing without importing the actual module.
-    """
-    IMMEDIATE = 0
-    DELAYED = 1
-    ON_EDIT_FINISHED = 2
+# Import the actual PySide6 widget implementations we want to test
+from command_system.pyside6_widgets import (
+    BaseCommandWidget, CommandTriggerMode, CommandLineEdit,
+    BaseCommandContainer, CommandTabWidget
+)
+
+
 
 # MARK: - Test Models
-
 class Person(Observable):
     """Sample observable class for testing."""
     name = ObservableProperty("")
     age = ObservableProperty(0)
     email = ObservableProperty("")
+    is_active = ObservableProperty(True)
     
-    def __init__(self, name="", age=0, email=""):
+    def __init__(self, name="", age=0, email="", is_active=True):
         # Initialize Observable base
         super().__init__()
         # Set initial values
         self.name = name
         self.age = age
         self.email = email
-
-# MARK: - Mock Command Widgets
-
-class MockCommandWidget:
-    """Base class for command-enabled widget testing."""
-    
-    def __init__(self, type_code=WidgetTypeCodes.CUSTOM_WIDGET, container_id=None, location=None):
-        # Initialize widget state
-        self._text = ""
-        self._visible = True
-        self._enabled = True
-        self._pending_changes = {}
-        self._last_values = {}  # Property name -> Last committed value
-        self._controlled_properties = {}  # Widget property -> Property ID
-        
-        # Create mock Qt widget
-        self.qt_widget = MockQLineEdit()
-        
-        # Command settings
-        self._command_trigger_mode = CommandTriggerMode.IMMEDIATE
-        self._change_delay_ms = 300
-        self._processing_command = False
-        
-        # Create mock timer for delayed updates
-        self._change_timer = MockQTimer()
-        
-        # Register with ID system
-        id_registry = get_id_registry()
-        self.widget_id = id_registry.register(self, type_code, None, container_id, location)
-        self.type_code = type_code
-    
-    def text(self):
-        """Get widget text property."""
-        return self._text
-        
-    def setText(self, text):
-        """Set widget text property and trigger command if needed."""
-        if self._text != text:
-            self._text = text
-            self._on_widget_value_changed("text", text)
-            
-    def setVisible(self, visible):
-        """Set widget visibility."""
-        self._visible = visible
-        
-    def isVisible(self):
-        """Get widget visibility."""
-        return self._visible
-        
-    def setEnabled(self, enabled):
-        """Set widget enabled state."""
-        self._enabled = enabled
-        
-    def isEnabled(self):
-        """Get widget enabled state."""
-        return self._enabled
-    
-    def bind_property(self, widget_property, observable_id, property_name):
-        """
-        Bind a widget property to an observable property.
-        
-        Args:
-            widget_property: Name of the widget property to bind
-            observable_id: ID of the observable object
-            property_name: Name of the property on the observable
-        """
-        # Get registry and observable
-        id_registry = get_id_registry()
-        observable = id_registry.get_observable(observable_id)
-        
-        if not observable:
-            raise ValueError(f"Observable with ID {observable_id} not found")
-        
-        # Ensure the observable property exists
-        if not hasattr(observable, property_name):
-            raise ValueError(f"Observable does not have property '{property_name}'")
-        
-        # Get property IDs associated with this observable and property name
-        property_ids = id_registry.get_property_ids_by_observable_id_and_property_name(
-            observable_id, property_name)
-        
-        if property_ids:
-            # Property already exists, update controller reference
-            property_id = property_ids[0]
-            id_registry.update_controller_reference(property_id, self.widget_id)
-        else:
-            # This shouldn't happen with ObservableProperty attributes
-            # They should be registered when the Observable is initialized
-            raise ValueError(f"Property '{property_name}' not registered with observable")
-        
-        # Store the controlled property mapping
-        self._controlled_properties[widget_property] = property_id
-        
-        # Set up observer for property changes
-        observable.add_property_observer(
-            property_name, 
-            lambda prop_name, old_val, new_val: self._on_observed_property_changed(
-                widget_property, old_val, new_val
-            ),
-            self
-        )
-        
-        # Initialize widget with current observable value
-        current_value = getattr(observable, property_name)
-        self._on_observed_property_changed(widget_property, None, current_value)
-    
-    def unbind_property(self, widget_property):
-        """Unbind a widget property from its observable property."""
-        if widget_property not in self._controlled_properties:
-            return
-        
-        # Get the property ID
-        property_id = self._controlled_properties[widget_property]
-        
-        # Remove the controller reference
-        id_registry = get_id_registry()
-        id_registry.remove_controller_reference(property_id)
-        
-        # Remove from our tracking
-        del self._controlled_properties[widget_property]
-    
-    def _on_observed_property_changed(self, widget_property, old_value, new_value):
-        """Handle changes from the observable property."""
-        if self._processing_command:
-            return  # Avoid recursion
-            
-        self._processing_command = True
-        try:
-            # Update the widget property
-            self._update_widget_property(widget_property, new_value)
-            # Update last known value
-            self._last_values[widget_property] = new_value
-        finally:
-            self._processing_command = False
-    
-    def _update_widget_property(self, property_name, value):
-        """Update a widget property value."""
-        if property_name == "text":
-            self._text = value if value is not None else ""
-        elif property_name == "visible":
-            self._visible = value
-        elif property_name == "enabled":
-            self._enabled = value
-        else:
-            raise ValueError(f"Unsupported property: {property_name}")
-    
-    def _on_widget_value_changed(self, widget_property, new_value):
-        """Handle value changes from the widget."""
-        if self._processing_command:
-            return  # Avoid recursion
-            
-        # Skip if no change from last value
-        last_value = self._last_values.get(widget_property)
-        if last_value == new_value:
-            return
-            
-        # Handle based on trigger mode
-        if self._command_trigger_mode == CommandTriggerMode.IMMEDIATE:
-            self._create_and_execute_property_command(widget_property, new_value)
-        elif self._command_trigger_mode == CommandTriggerMode.DELAYED:
-            # Store pending change and restart timer
-            self._pending_changes[widget_property] = new_value
-            self._change_timer.start(self._change_delay_ms)
-        elif self._command_trigger_mode == CommandTriggerMode.ON_EDIT_FINISHED:
-            # Store for later processing when editing is finished
-            self._pending_changes[widget_property] = new_value
-    
-    def triggerEditingFinished(self):
-        """Simulate editing finished event."""
-        self._on_widget_editing_finished()
-    
-    def _on_widget_editing_finished(self):
-        """Handle the completion of editing."""
-        # Stop any pending delayed updates
-        if self._change_timer.isActive():
-            self._change_timer.stop()
-            
-        # Process all pending changes
-        for widget_property, new_value in list(self._pending_changes.items()):
-            self._create_and_execute_property_command(widget_property, new_value)
-        self._pending_changes.clear()
-    
-    def _on_change_timer_timeout(self):
-        """Handle the timeout of the change delay timer."""
-        # Process all pending changes
-        for widget_property, new_value in list(self._pending_changes.items()):
-            self._create_and_execute_property_command(widget_property, new_value)
-        self._pending_changes.clear()
-    
-    def _create_and_execute_property_command(self, widget_property, new_value):
-        """Create and execute a command to update the controlled property."""
-        if widget_property not in self._controlled_properties:
-            return
-        
-        # Skip if no change from last value
-        last_value = self._last_values.get(widget_property)
-        if last_value == new_value:
-            return
-            
-        # Get the property ID
-        property_id = self._controlled_properties[widget_property]
-        
-        # Create and execute the command
-        command = PropertyCommand(property_id, new_value)
-        command.set_trigger_widget(self.widget_id)
-        
-        # Execute the command
-        get_command_manager().execute(command)
-        
-        # Update last known value
-        self._last_values[widget_property] = new_value
-    
-    def update_container(self, new_container_id=None):
-        """Update the container for this widget."""
-        id_registry = get_id_registry()
-        if new_container_id is not None:
-            # Update container in the ID system
-            updated_id = id_registry.update_container(self.widget_id, new_container_id)
-            if updated_id != self.widget_id:
-                # Update our stored widget ID if it changed
-                self.widget_id = updated_id
-        return self.widget_id
-    
-    def set_command_trigger_mode(self, mode, delay_ms=300):
-        """Set when commands should be triggered for widget value changes."""
-        self._command_trigger_mode = mode
-        self._change_delay_ms = delay_ms
-    
-    def get_serialization(self):
-        """Get serialized representation of this widget."""
-        result = {
-            'id': self.widget_id,
-            'properties': {},
-            'widget_props': {
-                'text': self._text,
-                'visible': self._visible,
-                'enabled': self._enabled
-            }
-        }
-        
-        # Serialize controlled properties
-        for widget_property, property_id in self._controlled_properties.items():
-            id_registry = get_id_registry()
-            # Get observable ID from property ID
-            observable_id = id_registry.get_observable_id_from_property_id(property_id)
-            
-            if observable_id:
-                # Get the observable
-                observable = id_registry.get_observable(observable_id)
-                if observable and hasattr(observable, 'serialize_property'):
-                    # Get property name from property_id
-                    property_components = parse_property_id(property_id)
-                    if property_components:
-                        property_name = property_components['property_name']
-                        # Serialize the property
-                        serialized_property = observable.serialize_property(property_name)
-                        if serialized_property:
-                            result['properties'][widget_property] = serialized_property
-        
-        return result
-    
-    def deserialize(self, data):
-        """Restore this widget's state from serialized data."""
-        if not data or not isinstance(data, dict):
-            return False
-            
-        id_registry = get_id_registry()
-        
-        # Update widget ID if needed
-        if 'id' in data and data['id'] != self.widget_id:
-            success, updated_id, error = id_registry.update_id(self.widget_id, data['id'])
-            if success:
-                self.widget_id = updated_id
-        
-        # Restore properties
-        if 'properties' in data and isinstance(data['properties'], dict):
-            for widget_property, serialized_property in data['properties'].items():
-                # Find the matching controlled property
-                if widget_property in self._controlled_properties:
-                    property_id = self._controlled_properties[widget_property]
-                    observable_id = id_registry.get_observable_id_from_property_id(property_id)
-                    
-                    if observable_id:
-                        observable = id_registry.get_observable(observable_id)
-                        if observable and hasattr(observable, 'deserialize_property'):
-                            # Extract property name from property_id
-                            property_components = parse_property_id(property_id)
-                            if property_components:
-                                property_name = property_components['property_name']
-                                # Deserialize the property
-                                observable.deserialize_property(property_name, serialized_property)
-        
-        # Restore widget properties
-        if 'widget_props' in data:
-            props = data['widget_props']
-            if 'text' in props:
-                self._text = props['text']
-            if 'visible' in props:
-                self._visible = props['visible']
-            if 'enabled' in props:
-                self._enabled = props['enabled']
-        
-        return True
-    
-    def unregister_widget(self):
-        """Unregister this widget from the ID system."""
-        id_registry = get_id_registry()
-        return id_registry.unregister(self.widget_id)
-
-class MockCommandLineEdit(MockCommandWidget):
-    """A specialized mock line edit with command support."""
-    def __init__(self, text="", container_id=None, location=None):
-        super().__init__(WidgetTypeCodes.LINE_EDIT, container_id, location)
-        self._text = text
-        
-    def bind_to_text_property(self, observable_id, property_name):
-        """Convenience method to bind text property."""
-        self.bind_property("text", observable_id, property_name)
-        
-    def unbind_text_property(self):
-        """Convenience method to unbind text property."""
-        self.unbind_property("text")
-        
-class MockCommandContainer(MockCommandWidget):
-    """A mock container widget that can hold other widgets."""
-    
-    def __init__(self, type_code=ContainerTypeCodes.CUSTOM, container_id=None, location=None):
-        super().__init__(type_code, container_id, location)
-        self.children = {}  # Location -> Widget ID mapping
-        self.active_child = None
-    
-    def add_child(self, child_id, location):
-        """Add a child widget at the specified location."""
-        self.children[location] = child_id
-        
-    def remove_child(self, location):
-        """Remove a child widget from the specified location."""
-        if location in self.children:
-            del self.children[location]
-            
-    def get_child(self, location):
-        """Get the child widget at the specified location."""
-        return self.children.get(location)
-    
-    def set_active_child(self, location):
-        """Set the active child widget."""
-        if location in self.children:
-            self.active_child = location
-        
-    def navigate_to_widget(self, widget_id):
-        """Navigate to a specific widget within this container."""
-        # Find the widget's location
-        for location, wid in self.children.items():
-            if wid == widget_id:
-                self.active_child = location
-                return True
-        return False
-    
-    def get_serialization(self):
-        """Get serialized representation of this container."""
-        result = super().get_serialization()
-        result['children'] = self.children.copy()
-        result['active_child'] = self.active_child
-        return result
-    
-    def deserialize(self, data):
-        """Restore this container's state from serialized data."""
-        if not super().deserialize(data):
-            return False
-        
-        if 'children' in data:
-            self.children = data['children'].copy()
-        if 'active_child' in data:
-            self.active_child = data['active_child']
-        
-        return True
+        self.is_active = is_active
 
 # MARK: - Tests
-
-class TestWidgetRegistration:
-    """Test cases for widget registration and ID management."""
-    
-    def setup_method(self):
-        """Set up test fixtures before each test."""
-        # Clear ID registry for clean tests
-        registry = get_id_registry()
-        registry.clear()
-        
-        # Clear command manager
-        manager = get_command_manager()
-        manager.clear()
-    
-    def test_widget_registration_basics(self):
-        """Test basic widget registration and ID retrieval."""
-        # Create and register widget
-        widget = MockCommandWidget()
-        
-        # Verify widget is registered
-        registry = get_id_registry()
-        widget_id = widget.widget_id
-        assert widget_id is not None
-        
-        # Verify widget can be retrieved by ID
-        retrieved_widget = registry.get_widget(widget_id)
-        assert retrieved_widget is widget
-        
-        # Verify ID can be retrieved from widget
-        retrieved_id = registry.get_id(widget)
-        assert retrieved_id == widget_id
-    
-    def test_widget_type_codes(self):
-        """Test widgets with different type codes."""
-        # Create widgets with different type codes
-        line_edit = MockCommandWidget(WidgetTypeCodes.LINE_EDIT)
-        button = MockCommandWidget(WidgetTypeCodes.PUSH_BUTTON)
-        container = MockCommandWidget(ContainerTypeCodes.TAB)
-        
-        # Verify IDs have correct type codes
-        assert line_edit.widget_id.startswith(f"{WidgetTypeCodes.LINE_EDIT}:")
-        assert button.widget_id.startswith(f"{WidgetTypeCodes.PUSH_BUTTON}:")
-        assert container.widget_id.startswith(f"{ContainerTypeCodes.TAB}:")
-    
-    def test_widget_container_relationship(self):
-        """Test container-widget relationship."""
-        # Create container and widget
-        container = MockCommandContainer()
-        widget = MockCommandWidget()
-        
-        # Set up widget's container
-        original_id = widget.widget_id
-        updated_id = widget.update_container(container.widget_id)
-        
-        # Verify widget ID was updated
-        assert updated_id != original_id
-        
-        # Verify container reference
-        registry = get_id_registry()
-        container_id = registry.get_container_id_from_widget_id(widget.widget_id)
-        assert container_id == container.widget_id
-        
-        # Verify container's widgets list
-        container_widgets = registry.get_container_widgets(container.widget_id)
-        assert widget.widget_id in container_widgets
-    
-    def test_widget_hierarchy(self):
-        """Test nested container hierarchy."""
-        # Create container hierarchy
-        root = MockCommandContainer(ContainerTypeCodes.WINDOW)
-        level1 = MockCommandContainer(ContainerTypeCodes.TAB)
-        level2 = MockCommandContainer(ContainerTypeCodes.DOCK)
-        
-        # Set up hierarchy
-        level1.update_container(root.widget_id)
-        level2.update_container(level1.widget_id)
-        
-        # Create widget in the deepest container
-        widget = MockCommandWidget()
-        widget.update_container(level2.widget_id)
-        
-        # Verify container hierarchy
-        registry = get_id_registry()
-        widget_container_id = registry.get_container_id_from_widget_id(widget.widget_id)
-        assert widget_container_id == level2.widget_id
-        
-        level2_container_id = registry.get_container_id_from_widget_id(level2.widget_id)
-        assert level2_container_id == level1.widget_id
-        
-        level1_container_id = registry.get_container_id_from_widget_id(level1.widget_id)
-        assert level1_container_id == root.widget_id
-    
-    def test_widget_unregistration(self):
-        """Test widget unregistration."""
-        # Create widget
-        widget = MockCommandWidget()
-        widget_id = widget.widget_id
-        
-        # Unregister widget
-        result = widget.unregister_widget()
-        
-        # Verify unregistration
-        assert result
-        
-        # Verify widget is no longer registered
-        registry = get_id_registry()
-        assert registry.get_widget(widget_id) is None
-        assert registry.get_id(widget) is None
-    
-    def test_container_unregister_cascade(self):
-        """Test that unregistering a container cascades to children."""
-        # Create container hierarchy
-        container = MockCommandContainer()
-        widget1 = MockCommandWidget()
-        widget2 = MockCommandWidget()
-        
-        # Set up hierarchy
-        widget1.update_container(container.widget_id)
-        widget2.update_container(container.widget_id)
-        
-        # Store all IDs
-        container_id = container.widget_id
-        widget1_id = widget1.widget_id
-        widget2_id = widget2.widget_id
-        
-        # Unregister container
-        registry = get_id_registry()
-        result = registry.unregister(container_id)
-        
-        # Verify unregistration
-        assert result
-        
-        # Verify container and all widgets are no longer registered
-        assert registry.get_widget(container_id) is None
-        assert registry.get_widget(widget1_id) is None
-        assert registry.get_widget(widget2_id) is None
-
-
-class TestPropertyBinding:
-    """Test cases for property binding between widgets and observables."""
+class TestPySide6Widgets:
+    """Test cases for actual PySide6 widget implementations."""
     
     def setup_method(self):
         """Set up test fixtures before each test."""
@@ -647,350 +75,320 @@ class TestPropertyBinding:
         
         # Create test objects
         self.person = Person(name="Alice", age=30, email="alice@example.com")
-        self.widget = MockCommandLineEdit()
     
-    def test_property_binding_basics(self):
-        """Test basic property binding functionality."""
-        # Bind widget to observable property
-        self.widget.bind_to_text_property(self.person.get_id(), "name")
+    def test_command_line_edit_creation(self):
+        """Test basic CommandLineEdit creation and initialization."""
+        # Create a command line edit
+        line_edit = CommandLineEdit(text="Initial Text")
         
-        # Check that widget was initialized with observable's value
-        assert self.widget.text() == "Alice"
+        # Verify widget is registered with ID system
+        registry = get_id_registry()
+        widget_id = registry.get_id(line_edit)
+        
+        # ID should be valid and follow the format
+        assert widget_id is not None
+        assert widget_id.startswith(f"{WidgetTypeCodes.LINE_EDIT}:")
+        
+        # Should be able to retrieve widget by ID
+        retrieved_widget = registry.get_widget(widget_id)
+        assert retrieved_widget is line_edit
+        
+        # Initial text should be set
+        assert line_edit.text() == "Initial Text"
+        
+        # Default trigger mode should be ON_EDIT_FINISHED
+        # This is an implementation detail we can verify using the internal state
+        assert line_edit._command_trigger_mode == CommandTriggerMode.ON_EDIT_FINISHED
+        
+        # Clean up after test
+        registry.unregister(widget_id)
+    
+    def test_property_binding(self):
+        """Test property binding between CommandLineEdit and Observable."""
+        # Create a command line edit
+        line_edit = CommandLineEdit()
+        
+        # Bind to person's name property
+        line_edit.bind_to_text_property(self.person.get_id(), "name")
+        
+        # Verify widget was initialized with observable's value
+        assert line_edit.text() == "Alice"
         
         # Change observable property
         self.person.name = "Bob"
         
-        # Check that widget was updated
-        assert self.widget.text() == "Bob"
+        # Verify widget was updated
+        assert line_edit.text() == "Bob"
         
         # Change widget property
-        self.widget.setText("Charlie")
+        line_edit.setText("Charlie")
         
-        # Check that observable was updated
+        # Trigger editingFinished since we're using ON_EDIT_FINISHED mode
+        line_edit.editingFinished.emit()
+        
+        # Verify observable was updated via command
         assert self.person.name == "Charlie"
-    
-    def test_property_binding_multiple_widgets(self):
-        """Test binding multiple widgets to the same observable property."""
-        # Create multiple widgets
-        widget1 = MockCommandLineEdit()
-        widget2 = MockCommandLineEdit()
         
-        # Bind both widgets to the same property
-        widget1.bind_to_text_property(self.person.get_id(), "name")
-        widget2.bind_to_text_property(self.person.get_id(), "name")
-        
-        # Verify both widgets have the initial value
-        assert widget1.text() == "Alice"
-        assert widget2.text() == "Alice"
-        
-        # Change property from one widget
-        widget1.setText("Bob")
-        
-        # Verify observable and all widgets were updated
-        assert self.person.name == "Bob"
-        assert widget1.text() == "Bob"
-        assert widget2.text() == "Bob"
-        
-        # Change property from observable
-        self.person.name = "Charlie"
-        
-        # Verify all widgets were updated
-        assert widget1.text() == "Charlie"
-        assert widget2.text() == "Charlie"
-    
-    def test_property_binding_multiple_properties(self):
-        """Test binding widgets to different properties of the same observable."""
-        # Create multiple widgets
-        name_widget = MockCommandLineEdit()
-        age_widget = MockCommandLineEdit()
-        email_widget = MockCommandLineEdit()
-        
-        # Bind widgets to different properties
-        name_widget.bind_to_text_property(self.person.get_id(), "name")
-        age_widget.bind_to_text_property(self.person.get_id(), "age")
-        email_widget.bind_to_text_property(self.person.get_id(), "email")
-        
-        # Verify widgets have the initial values
-        assert name_widget.text() == "Alice"
-        assert age_widget.text() == "30"  # Converted to string
-        assert email_widget.text() == "alice@example.com"
-        
-        # Change each property from its widget
-        name_widget.setText("Bob")
-        age_widget.setText("40")
-        email_widget.setText("bob@example.com")
-        
-        # Verify observable properties were updated
-        assert self.person.name == "Bob"
-        assert self.person.age == 40  # Converted to number
-        assert self.person.email == "bob@example.com"
-    
-    def test_unbind_property(self):
-        """Test unbinding a property."""
-        # Bind widget to observable property
-        self.widget.bind_to_text_property(self.person.get_id(), "name")
-        
-        # Verify binding works
-        self.person.name = "Bob"
-        assert self.widget.text() == "Bob"
-        
-        # Unbind property
-        self.widget.unbind_text_property()
-        
-        # Change observable - should not update widget anymore
-        self.person.name = "Charlie"
-        assert self.widget.text() == "Bob"  # Still has old value
-        
-        # Change widget - should not update observable anymore
-        self.widget.setText("Dave")
-        assert self.person.name == "Charlie"  # Observable unchanged
-
-
-class TestSerializationDeserialization:
-    """Test cases for widget serialization and deserialization."""
-    
-    def setup_method(self):
-        """Set up test fixtures before each test."""
-        # Clear ID registry for clean tests
-        registry = get_id_registry()
-        registry.clear()
-        
-        # Clear command manager
+        # Undo the command
         manager = get_command_manager()
-        manager.clear()
+        assert manager.can_undo()
+        manager.undo()
         
-        # Create test objects
-        self.person = Person(name="Alice", age=30, email="alice@example.com")
-        self.widget = MockCommandLineEdit()
+        # Verify observable and widget were restored
+        assert self.person.name == "Bob"
+        assert line_edit.text() == "Bob"
+        
+        # Clean up
+        line_edit.unbind_text_property()
+        registry = get_id_registry()
+        registry.unregister(line_edit.widget_id)
     
-    def test_basic_serialization(self):
-        """Test basic widget serialization without binding."""
-        # Set widget properties
-        self.widget.setText("Test Text")
-        self.widget.setVisible(False)
-        self.widget.setEnabled(False)
+    def test_immediate_command_mode(self):
+        """Test command generation with IMMEDIATE trigger mode."""
+        # Create a command line edit with immediate trigger mode
+        line_edit = CommandLineEdit()
+        line_edit.set_command_trigger_mode(CommandTriggerMode.IMMEDIATE)
+        
+        # Bind to person's name property
+        line_edit.bind_to_text_property(self.person.get_id(), "name")
+        
+        # Change widget text
+        line_edit.setText("Bob")
+        
+        # Verify command was generated immediately
+        manager = get_command_manager()
+        assert manager.can_undo()
+        
+        # Undo the command
+        manager.undo()
+        
+        # Verify observable and widget were restored
+        assert self.person.name == "Alice"
+        assert line_edit.text() == "Alice"
+    
+    def test_delayed_command_mode(self):
+        """Test command generation with DELAYED trigger mode."""
+        # Create a command line edit with delayed trigger mode
+        line_edit = CommandLineEdit()
+        line_edit.set_command_trigger_mode(CommandTriggerMode.DELAYED, 300)
+        
+        # Bind to person's name property
+        line_edit.bind_to_text_property(self.person.get_id(), "name")
+        
+        # Change widget text
+        line_edit.setText("Bob")
+        
+        # No command should be generated yet
+        manager = get_command_manager()
+        assert not manager.can_undo()
+        
+        # Manually trigger the timeout (simulating timer expiry)
+        line_edit._on_change_timer_timeout()
+        
+        # Verify command was generated
+        assert manager.can_undo()
+        
+        # Undo the command
+        manager.undo()
+        
+        # Verify observable and widget were restored
+        assert self.person.name == "Alice"
+        assert line_edit.text() == "Alice"
+    
+    def test_multiple_value_changes(self):
+        """Test behavior with multiple value changes in different modes."""
+        # Create a command line edit with edit finished trigger mode
+        line_edit = CommandLineEdit()
+        line_edit.set_command_trigger_mode(CommandTriggerMode.ON_EDIT_FINISHED)
+        
+        # Bind to person's name property
+        line_edit.bind_to_text_property(self.person.get_id(), "name")
+        
+        # Make multiple changes without finishing editing
+        line_edit.setText("Bob")
+        line_edit.setText("Charlie")
+        line_edit.setText("Dave")
+        
+        # No command should be generated yet
+        manager = get_command_manager()
+        assert not manager.can_undo()
+        
+        # Finish editing
+        line_edit.editingFinished.emit()
+        
+        # Verify command was generated (only one command for the final value)
+        assert manager.can_undo()
+        
+        # Verify observable has the final value
+        assert self.person.name == "Dave"
+        
+        # Undo the command
+        manager.undo()
+        
+        # Verify observable and widget were restored
+        assert self.person.name == "Alice"
+        assert line_edit.text() == "Alice"
+    
+    def test_multiple_bound_widgets(self):
+        """Test multiple widgets bound to the same observable property."""
+        # Create multiple widgets
+        line_edit1 = CommandLineEdit()
+        line_edit2 = CommandLineEdit()
+        
+        # Set to immediate mode for easier testing
+        line_edit1.set_command_trigger_mode(CommandTriggerMode.IMMEDIATE)
+        line_edit2.set_command_trigger_mode(CommandTriggerMode.IMMEDIATE)
+        
+        # Bind both to the same property
+        line_edit1.bind_to_text_property(self.person.get_id(), "name")
+        line_edit2.bind_to_text_property(self.person.get_id(), "name")
+        
+        # Verify both have initial value
+        assert line_edit1.text() == "Alice"
+        assert line_edit2.text() == "Alice"
+        
+        # Change from first widget
+        line_edit1.setText("Bob")
+        
+        # Verify both widgets and observable were updated
+        assert self.person.name == "Bob"
+        assert line_edit1.text() == "Bob"
+        assert line_edit2.text() == "Bob"
+        
+        # Change from observable
+        self.person.name = "Charlie"
+        
+        # Verify both widgets were updated
+        assert line_edit1.text() == "Charlie"
+        assert line_edit2.text() == "Charlie"
+        
+        # Clean up
+        line_edit1.unbind_text_property()
+        line_edit2.unbind_text_property()
+    
+    def test_widget_serialization(self):
+        """Test serialization and deserialization of CommandLineEdit."""
+        # Create and configure a command line edit
+        line_edit = CommandLineEdit()
+        line_edit.setPlaceholderText("Enter name")
+        line_edit.setMaxLength(100)
+        
+        # Bind to person's name property
+        line_edit.bind_to_text_property(self.person.get_id(), "name")
+        
+        # Capture widget ID
+        original_id = line_edit.widget_id
         
         # Serialize widget
-        serialized_data = self.widget.get_serialization()
+        serialized_data = line_edit.get_serialization()
         
         # Verify serialized data structure
         assert "id" in serialized_data
-        assert serialized_data["id"] == self.widget.widget_id
-        assert "widget_props" in serialized_data
-        assert serialized_data["widget_props"]["text"] == "Test Text"
-        assert serialized_data["widget_props"]["visible"] is False
-        assert serialized_data["widget_props"]["enabled"] is False
-        
-        # Change widget properties
-        self.widget.setText("New Text")
-        self.widget.setVisible(True)
-        self.widget.setEnabled(True)
-        
-        # Deserialize widget to restore original state
-        self.widget.deserialize(serialized_data)
-        
-        # Verify properties were restored
-        assert self.widget.text() == "Test Text"
-        assert self.widget.isVisible() is False
-        assert self.widget.isEnabled() is False
-    
-    def test_serialization_with_binding(self):
-        """Test serialization with property binding."""
-        # Bind widget to observable property
-        self.widget.bind_to_text_property(self.person.get_id(), "name")
-        
-        # Verify initial binding
-        assert self.widget.text() == "Alice"
-        
-        # Serialize widget
-        serialized_data = self.widget.get_serialization()
-        
-        # Verify serialized data includes property binding
+        assert serialized_data["id"] == original_id
         assert "properties" in serialized_data
         assert "text" in serialized_data["properties"]
         assert serialized_data["properties"]["text"]["value"] == "Alice"
         
-        # Change observable and widget properties
+        # Change observable and widget values
         self.person.name = "Bob"
+        line_edit.setPlaceholderText("Modified placeholder")
         
-        # Verify widget was updated
-        assert self.widget.text() == "Bob"
+        # Create a new line edit for deserialization
+        new_line_edit = CommandLineEdit()
         
-        # Deserialize to restore original state
-        result = self.widget.deserialize(serialized_data)
+        # Bind to same observable first (needed to establish the property connection)
+        new_line_edit.bind_to_text_property(self.person.get_id(), "name")
         
-        # Verify deserialization worked
-        assert result is True
+        # Deserialize to the new widget
+        new_line_edit.deserialize(serialized_data)
         
-        # Verify properties were restored
-        assert self.person.name == "Alice"
-        assert self.widget.text() == "Alice"
+        # Verify property was restored
+        assert self.person.name == "Alice"  # Observable value should be restored
+        assert new_line_edit.text() == "Alice"
         
         # Verify binding still works
         self.person.name = "Charlie"
-        assert self.widget.text() == "Charlie"
+        assert new_line_edit.text() == "Charlie"
     
-    def test_container_serialization(self):
-        """Test serialization of containers with children."""
-        # Create container with widgets
-        container = MockCommandContainer()
-        widget1 = MockCommandLineEdit("Widget 1")
-        widget2 = MockCommandLineEdit("Widget 2")
+    def test_unbind_property(self):
+        """Test unbinding a property."""
+        # Create a command line edit
+        line_edit = CommandLineEdit()
         
-        # Add widgets to container
-        widget1.update_container(container.widget_id)
-        widget2.update_container(container.widget_id)
-        
-        # Update container's internal child tracking
-        registry = get_id_registry()
-        container_widgets = registry.get_widgets_by_container_id(container.widget_id)
-        
-        # Find locations for widgets (in a real container this would be managed automatically)
-        for i, widget_id in enumerate(container_widgets):
-            container.add_child(widget_id, f"location_{i}")
-        
-        # Set active child
-        container.set_active_child("location_0")
-        
-        # Serialize container
-        serialized_data = container.get_serialization()
-        
-        # Verify serialized data includes children
-        assert "children" in serialized_data
-        assert len(serialized_data["children"]) == 2
-        assert "active_child" in serialized_data
-        assert serialized_data["active_child"] == "location_0"
-        
-        # Change container state
-        container.set_active_child("location_1")
-        container.remove_child("location_0")
-        
-        # Deserialize to restore original state
-        container.deserialize(serialized_data)
-        
-        # Verify container state was restored
-        assert len(container.children) == 2
-        assert "location_0" in container.children
-        assert "location_1" in container.children
-        assert container.active_child == "location_0"
-    
-    def test_restore_after_unregister(self):
-        """Test restoring widget state after unregistering and recreating."""
-        # Bind widget to observable property
-        self.widget.bind_to_text_property(self.person.get_id(), "name")
-        self.widget.setText("Alice")
-        
-        # Serialize widget
-        serialized_data = self.widget.get_serialization()
-        widget_id = self.widget.widget_id
-        
-        # Unregister widget
-        self.widget.unregister_widget()
-        
-        # Create a new widget
-        new_widget = MockCommandLineEdit()
-        assert new_widget.widget_id != widget_id  # Different ID
-        
-        # Try to deserialize with original data
-        new_widget.deserialize(serialized_data)
-        
-        # Bind to the same observable
-        new_widget.bind_to_text_property(self.person.get_id(), "name")
-        
-        # Verify widget has the correct property values
-        assert new_widget.text() == "Alice"
+        # Bind to person's name property
+        line_edit.bind_to_text_property(self.person.get_id(), "name")
         
         # Verify binding works
         self.person.name = "Bob"
-        assert new_widget.text() == "Bob"
-
-
-class TestErrorHandling:
-    """Test cases for error handling in widgets."""
+        assert line_edit.text() == "Bob"
+        
+        # Unbind property
+        line_edit.unbind_text_property()
+        
+        # Change observable - should not update widget anymore
+        self.person.name = "Charlie"
+        assert line_edit.text() == "Bob"  # Still has old value
+        
+        # Change widget - should not update observable anymore
+        line_edit.setText("Dave")
+        line_edit.editingFinished.emit()
+        assert self.person.name == "Charlie"  # Observable unchanged
     
-    def setup_method(self):
-        """Set up test fixtures before each test."""
-        # Clear ID registry for clean tests
+    def test_container_hierarchy(self):
+        """Test widget container hierarchy."""
+        # Create tab container
+        tab_container = CommandTabWidget()
+        
+        # Create line edit in container
+        line_edit = CommandLineEdit(container_id=tab_container.widget_id, location="tab1")
+        
+        # Verify container relationship
         registry = get_id_registry()
-        registry.clear()
+        container_id = registry.get_container_id_from_widget_id(line_edit.widget_id)
+        assert container_id == tab_container.widget_id
         
-        # Clear command manager
-        manager = get_command_manager()
-        manager.clear()
+        # Verify container's widgets
+        container_widgets = registry.get_widgets_by_container_id(tab_container.widget_id)
+        assert line_edit.widget_id in container_widgets
         
-        # Create test objects
-        self.person = Person(name="Alice", age=30)
-        self.widget = MockCommandLineEdit()
+        # Change container
+        new_container = CommandTabWidget()
+        updated_id = line_edit.update_container(new_container.widget_id)
+        
+        # Verify container was updated
+        new_container_id = registry.get_container_id_from_widget_id(updated_id)
+        assert new_container_id == new_container.widget_id
     
-    def test_binding_nonexistent_property(self):
-        """Test handling of binding to a nonexistent property."""
+    def test_error_handling(self):
+        """Test error handling in widget implementations."""
+        # Create a command line edit
+        line_edit = CommandLineEdit()
+        
         # Try to bind to nonexistent property
         with pytest.raises(ValueError) as excinfo:
-            self.widget.bind_to_text_property(self.person.get_id(), "nonexistent")
+            line_edit.bind_to_text_property(self.person.get_id(), "nonexistent")
         
         # Verify error message
         assert "does not have property" in str(excinfo.value)
-    
-    def test_binding_nonexistent_observable(self):
-        """Test handling of binding to a nonexistent observable."""
-        # Get a nonexistent observable ID
-        invalid_id = "ob:999"
         
         # Try to bind to nonexistent observable
         with pytest.raises(ValueError) as excinfo:
-            self.widget.bind_to_text_property(invalid_id, "name")
+            line_edit.bind_to_text_property("ob:999", "name")
         
         # Verify error message
         assert "not found" in str(excinfo.value)
+        
+        # Unbinding a property that was never bound (should not raise error)
+        line_edit.unbind_text_property()
     
-    def test_unbinding_nonexistent_property(self):
-        """Test handling of unbinding a nonexistent property."""
-        # Unbind property that was never bound (should not raise error)
-        self.widget.unbind_text_property()
-    
-    def test_invalid_widget_property(self):
-        """Test handling of invalid widget property."""
-        # Bind to valid property
-        self.widget.bind_to_text_property(self.person.get_id(), "name")
-        
-        # Try to update invalid property
-        with pytest.raises(ValueError) as excinfo:
-            self.widget._update_widget_property("nonexistent", "value")
-        
-        # Verify error message
-        assert "Unsupported property" in str(excinfo.value)
-
-
-class TestRealWorldScenarios:
-    """Test cases for real-world usage scenarios."""
-    
-    def setup_method(self):
-        """Set up test fixtures before each test."""
-        # Clear ID registry for clean tests
-        registry = get_id_registry()
-        registry.clear()
-        
-        # Clear command manager
-        manager = get_command_manager()
-        manager.clear()
-        
-        # Enable initialization mode to avoid tracking setup commands
-        manager.begin_init()
-        
-        # Create test objects
-        self.person = Person(name="Alice", age=30, email="alice@example.com")
-        
-        # End initialization mode
-        manager.end_init()
-    
-    def test_form_editing_scenario(self):
+    def test_real_world_form_scenario(self):
         """Test a typical form editing scenario with multiple fields."""
         # Create form widgets
-        name_widget = MockCommandLineEdit()
-        age_widget = MockCommandLineEdit()
-        email_widget = MockCommandLineEdit()
+        name_widget = CommandLineEdit()
+        age_widget = CommandLineEdit()
+        email_widget = CommandLineEdit()
         
-        # Set edit finished trigger mode
+        # Set edit finished trigger mode (default, but being explicit)
         name_widget.set_command_trigger_mode(CommandTriggerMode.ON_EDIT_FINISHED)
         age_widget.set_command_trigger_mode(CommandTriggerMode.ON_EDIT_FINISHED)
         email_widget.set_command_trigger_mode(CommandTriggerMode.ON_EDIT_FINISHED)
@@ -1015,9 +413,9 @@ class TestRealWorldScenarios:
         assert not manager.can_undo()
         
         # Complete editing of each field
-        name_widget.triggerEditingFinished()
-        age_widget.triggerEditingFinished()
-        email_widget.triggerEditingFinished()
+        name_widget.editingFinished.emit()
+        age_widget.editingFinished.emit()
+        email_widget.editingFinished.emit()
         
         # All changes should be applied
         assert self.person.name == "Bob"
@@ -1039,57 +437,47 @@ class TestRealWorldScenarios:
         assert age_widget.text() == "30"
         assert email_widget.text() == "alice@example.com"
     
-    def test_container_navigation(self):
-        """Test container navigation with command context."""
-        # Create container hierarchy
-        main_container = MockCommandContainer(ContainerTypeCodes.WINDOW)
-        tab_container = MockCommandContainer(ContainerTypeCodes.TAB)
-        panel_container = MockCommandContainer(ContainerTypeCodes.DOCK)
+    def test_command_navigation(self):
+        """Test command navigation with trigger widget."""
+        # Create tab container
+        tab_container = CommandTabWidget()
         
-        # Set up hierarchy
-        tab_container.update_container(main_container.widget_id)
-        panel_container.update_container(tab_container.widget_id)
+        # Create widgets in container
+        name_widget = CommandLineEdit(container_id=tab_container.widget_id, location="tab1")
+        age_widget = CommandLineEdit(container_id=tab_container.widget_id, location="tab2")
         
-        # Create widgets
-        name_widget = MockCommandLineEdit()
-        age_widget = MockCommandLineEdit()
+        # Override navigate_to_widget to track navigation
+        tab_container.navigation_history = []
+        original_navigate = tab_container.navigate_to_widget
         
-        # Place widgets in containers
-        name_widget.update_container(tab_container.widget_id)
-        age_widget.update_container(panel_container.widget_id)
-        
-        # Update container tracking
-        tab_container.add_child(name_widget.widget_id, "name_field")
-        panel_container.add_child(age_widget.widget_id, "age_field")
+        def tracked_navigate(widget_id):
+            tab_container.navigation_history.append(widget_id)
+            return original_navigate(widget_id)
+            
+        tab_container.navigate_to_widget = tracked_navigate
         
         # Bind widgets to observable
         name_widget.bind_to_text_property(self.person.get_id(), "name")
         age_widget.bind_to_text_property(self.person.get_id(), "age")
         
-        # Change a property from a widget
+        # Set immediate mode for testing
+        name_widget.set_command_trigger_mode(CommandTriggerMode.IMMEDIATE)
+        
+        # Change property from widget
         name_widget.setText("Bob")
         
-        # Get the command that was generated
+        # Get command manager and undo
         manager = get_command_manager()
-        history = manager._history
-        commands = history.get_executed_commands()
-        command = commands[0]
+        manager.undo()
         
-        # Verify command has the trigger widget ID
-        assert command.trigger_widget_id == name_widget.widget_id
-        
-        # Simulate command manager navigating to context when undoing
-        # (Usually done by CommandManager._navigate_to_command_context)
-        assert tab_container.navigate_to_widget(command.trigger_widget_id)
-        
-        # Verify tab_container found and activated the widget
-        assert tab_container.active_child == "name_field"
+        # Verify navigate_to_widget was called with trigger widget ID
+        assert name_widget.widget_id in tab_container.navigation_history
     
-    def test_compound_edits(self):
-        """Test compound commands with multiple widget edits."""
+    def test_compound_command(self):
+        """Test compound commands with widget properties."""
         # Create widgets
-        name_widget = MockCommandLineEdit()
-        age_widget = MockCommandLineEdit()
+        name_widget = CommandLineEdit()
+        age_widget = CommandLineEdit()
         
         # Bind to model properties
         name_widget.bind_to_text_property(self.person.get_id(), "name")
@@ -1099,12 +487,12 @@ class TestRealWorldScenarios:
         compound = CompoundCommand("Update Person")
         
         # Get property IDs
-        name_property_id = self.person._get_property_id("name")
-        age_property_id = self.person._get_property_id("age")
+        name_property_id = name_widget._controlled_properties["text"]
+        age_property_id = age_widget._controlled_properties["text"]
         
         # Create property commands
         name_command = PropertyCommand(name_property_id, "Bob")
-        age_command = PropertyCommand(age_property_id, 40)
+        age_command = PropertyCommand(age_property_id, "40")
         
         # Add commands to compound
         compound.add_command(name_command)
@@ -1132,160 +520,128 @@ class TestRealWorldScenarios:
         # Verify widgets were restored
         assert name_widget.text() == "Alice"
         assert age_widget.text() == "30"
-
-
-class TestCommandGeneration:
-    """Test cases for command generation from widget interactions."""
     
-    def setup_method(self):
-        """Set up test fixtures before each test."""
-        # Clear ID registry for clean tests
-        registry = get_id_registry()
-        registry.clear()
+    def test_macro_command(self):
+        """Test macro commands with user-level descriptions."""
+        # Create widgets
+        name_widget = CommandLineEdit()
+        age_widget = CommandLineEdit()
         
-        # Clear command manager
+        # Bind to model properties
+        name_widget.bind_to_text_property(self.person.get_id(), "name")
+        age_widget.bind_to_text_property(self.person.get_id(), "age")
+        
+        # Create a macro command
+        macro = MacroCommand("Edit Person Information")
+        macro.set_description("Change name to Bob and age to 40")
+        
+        # Get property IDs
+        name_property_id = name_widget._controlled_properties["text"]
+        age_property_id = age_widget._controlled_properties["text"]
+        
+        # Create property commands
+        name_command = PropertyCommand(name_property_id, "Bob")
+        age_command = PropertyCommand(age_property_id, "40")
+        
+        # Add commands to macro
+        macro.add_command(name_command)
+        macro.add_command(age_command)
+        
+        # Execute the macro command
         manager = get_command_manager()
-        manager.clear()
+        manager.execute(macro)
         
-        # Create test objects
-        self.person = Person(name="Alice", age=30)
-        self.widget = MockCommandLineEdit()
+        # Verify description
+        assert macro.get_description() == "Change name to Bob and age to 40"
         
-        # Bind widget to observable
-        self.widget.bind_to_text_property(self.person.get_id(), "name")
-    
-    def test_command_immediate_mode(self):
-        """Test commands are generated immediately by default."""
-        # Set immediate trigger mode
-        self.widget.set_command_trigger_mode(CommandTriggerMode.IMMEDIATE)
+        # Verify both properties were updated
+        assert self.person.name == "Bob"
+        assert self.person.age == 40
         
-        # Change widget text
-        self.widget.setText("Bob")
-        
-        # Verify command was created and executed
-        manager = get_command_manager()
-        assert manager.can_undo()
-        
-        # Undo the command
+        # Undo the macro command
         manager.undo()
         
-        # Verify observable and widget were restored
+        # Verify all properties were restored
         assert self.person.name == "Alice"
-        assert self.widget.text() == "Alice"
-
-
-if __name__ == "__main__":
-    # Run the tests directly if this script is executed
-    pytest.main(["-v", __file__])
+        assert self.person.age == 30
     
-    def test_multiple_property_changes(self):
-        """Test batching multiple property changes."""
-        # Set edit finished trigger mode
-        self.widget.set_command_trigger_mode(CommandTriggerMode.ON_EDIT_FINISHED)
+    def test_context_information(self):
+        """Test command context information storage and retrieval."""
+        # Create widgets
+        name_widget = CommandLineEdit()
         
-        # Make multiple changes
-        self.widget.setText("Bob")
-        self.widget.setText("Charlie")
-        self.widget.setText("Dave")
+        # Bind to model property
+        name_widget.bind_to_text_property(self.person.get_id(), "name")
+        name_widget.set_command_trigger_mode(CommandTriggerMode.IMMEDIATE)
         
-        # Verify no command was created yet
-        manager = get_command_manager()
-        assert not manager.can_undo()
+        # Change widget value to generate command
+        name_widget.setText("Bob")
         
-        # Simulate finishing editing
-        self.widget.triggerEditingFinished()
-        
-        # Verify only one command was created
-        assert manager.can_undo()
-        
-        # Get command from history
-        history = manager._history
-        commands = history.get_executed_commands()
-        assert len(commands) == 1
-        
-        # Undo the command
-        manager.undo()
-        
-        # Verify observable and widget went back to original state
-        assert self.person.name == "Alice"
-        assert self.widget.text() == "Alice"
-    
-    def test_command_properties(self):
-        """Test properties of generated commands."""
-        # Change widget text to generate command
-        self.widget.setText("Bob")
-        
-        # Get command from history
+        # Get the generated command
         manager = get_command_manager()
         history = manager._history
         commands = history.get_executed_commands()
-        
-        # Verify command properties
         command = commands[0]
-        assert isinstance(command, PropertyCommand)
-        assert command.trigger_widget_id == self.widget.widget_id
-        assert command.new_value == "Bob"
-        assert command.old_value == "Alice"
         
-        # Verify property ID references the correct observable property
-        property_id = command.property_id
+        # Set context information
+        command.set_context_info("edit_type", "name_change")
+        command.set_context_info("ui_section", "personal_info")
         
-        # Get name property ID from person
-        name_property_id = self.person._get_property_id("name")
+        # Verify context information
+        assert command.get_context_info("edit_type") == "name_change"
+        assert command.get_context_info("ui_section") == "personal_info"
+        assert command.get_context_info("non_existent", "default") == "default"
         
-        # Should be the same property ID
-        assert property_id == name_property_id
-        
-        # Verify observable and widget were restored
-        assert self.person.name == "Alice"
-        assert self.widget.text() == "Alice"
+        # Verify trigger widget is correctly stored
+        assert command.trigger_widget_id == name_widget.widget_id
+        assert command.get_trigger_widget() is name_widget
     
-    def test_command_edit_finished_mode(self):
-        """Test commands are only generated when editing is finished."""
-        # Set edit finished trigger mode
-        self.widget.set_command_trigger_mode(CommandTriggerMode.ON_EDIT_FINISHED)
+    def test_recursive_updates_prevention(self):
+        """Test prevention of recursive updates between widget and observable."""
+        # Create widget
+        line_edit = CommandLineEdit()
+        line_edit.set_command_trigger_mode(CommandTriggerMode.IMMEDIATE)
         
-        # Change widget text but don't finish editing
-        self.widget.setText("Bob")
+        # Create an observer to track update calls
+        update_count = 0
         
-        # Verify no command was created
-        manager = get_command_manager()
-        assert not manager.can_undo()
+        def on_name_changed(prop_name, old_val, new_val):
+            nonlocal update_count
+            update_count += 1
         
-        # Simulate finishing editing
-        self.widget.triggerEditingFinished()
+        # Add direct observer to person
+        self.person.add_property_observer("name", on_name_changed)
         
-        # Verify command was created
-        assert manager.can_undo()
+        # Bind widget to observable property
+        line_edit.bind_to_text_property(self.person.get_id(), "name")
         
-        # Undo the command
-        manager.undo()
+        # Initial value should set update_count to 1
+        assert update_count == 1
         
-        # Verify observable and widget were restored
-        assert self.person.name == "Alice"
-        assert self.widget.text() == "Alice"
-    
-    def test_command_delayed_mode(self):
-        """Test commands are generated after a delay."""
-        # Set delayed trigger mode
-        self.widget.set_command_trigger_mode(CommandTriggerMode.DELAYED)
+        # Reset counter
+        update_count = 0
         
-        # Change widget text
-        self.widget.setText("Bob")
+        # Change from widget
+        line_edit.setText("Bob")
         
-        # Verify no command was created yet
-        manager = get_command_manager()
-        assert not manager.can_undo()
+        # Should only trigger one update (not recursive)
+        assert update_count == 1
         
-        # Simulate timer timeout
-        self.widget._on_change_timer_timeout()
+        # Reset counter
+        update_count = 0
         
-        # Verify command was created
-        assert manager.can_undo()
+        # Change from observable
+        self.person.name = "Charlie"
         
-        # Undo the command
-        manager.undo()
+        # Should only trigger one update (not recursive)
+        assert update_count == 1
         
+        # Verify final values
+        assert self.person.name == "Charlie"
+        assert line_edit.text() == "Charlie"
+
+
 if __name__ == "__main__":
     # Run the tests directly if this script is executed
-    pytest.main(["-v", __file__])
+    app = QApplication(sys.argv)
+    pytest.main(["-vs", __file__])
