@@ -1,5 +1,5 @@
 """
-Observable pattern implementation for property change tracking.
+Observable pattern implementation for property change tracking with improved observer management.
 
 This module provides a clean implementation of the observable pattern
 with property change notifications that fully leverages the ID system.
@@ -81,7 +81,8 @@ class Observable:
         # Update status tracking
         self._is_updating = False
         
-        # Store observer callbacks directly
+        # Store observer callbacks with improved structure
+        # property_name -> {observer_id: callback}
         self._property_observers = {}
         
         # Auto-register all observable properties defined on the class
@@ -111,7 +112,7 @@ class Observable:
                     )
                     
                 # Initialize observer dict for this property
-                self._property_observers[attr_name] = set()
+                self._property_observers[attr_name] = {}
     
     def _get_property_id(self, property_name: str) -> Optional[str]:
         """
@@ -157,12 +158,12 @@ class Observable:
             old_value: Previous value of the property
             new_value: New value of the property
         """
-        # Make sure we have the observers set for this property
+        # Make sure we have the observers dict for this property
         if property_name not in self._property_observers:
             return
         
-        # Notify all observers
-        for callback in list(self._property_observers[property_name]):
+        # Notify all observers - iterate through values (callbacks)
+        for observer_id, callback in list(self._property_observers[property_name].items()):
             try:
                 callback(property_name, old_value, new_value)
             except Exception as e:
@@ -202,12 +203,12 @@ class Observable:
             observer_obj = {"callback": callback}
             observer_id = self.id_registry.register(observer_obj, "cw")
             
-        # Ensure we have an observer set for this property
+        # Ensure we have an observer dict for this property
         if property_name not in self._property_observers:
-            self._property_observers[property_name] = set()
+            self._property_observers[property_name] = {}
             
-        # Add the callback to our internal observer set
-        self._property_observers[property_name].add(callback)
+        # Add the callback to our observer dict with observer_id as key
+        self._property_observers[property_name][observer_id] = callback
         
         return observer_id
         
@@ -226,28 +227,11 @@ class Observable:
         if property_name not in self._property_observers:
             return False
             
-        # Get the observer object
-        observer_obj = self.id_registry.get_widget(observer_id)
-        if not observer_obj:
-            return False
-            
-        # Try to find the callback
-        callback = None
-        if hasattr(observer_obj, 'callback'):
-            # Proxy object case
-            callback = observer_obj.callback
-            
-        if callback and callback in self._property_observers[property_name]:
-            # Remove the callback from our set
-            self._property_observers[property_name].discard(callback)
+        # Direct lookup using observer_id as key
+        if observer_id in self._property_observers[property_name]:
+            del self._property_observers[property_name][observer_id]
             return True
             
-        # If we have method callbacks from this object, try to find them
-        for cb in list(self._property_observers[property_name]):
-            if hasattr(cb, '__self__') and getattr(cb, '__self__') is observer_obj:
-                self._property_observers[property_name].discard(cb)
-                return True
-                
         return False
     
     # MARK: - Identity and Relationship
@@ -402,7 +386,7 @@ class Observable:
             setattr(self, property_name, value)
             
             # Make sure we have an observer set for this property
-            self._property_observers[property_name] = set()
+            self._property_observers[property_name] = {}
             
             # Now register the property with the ID system
             # First get the original property components to extract controller information

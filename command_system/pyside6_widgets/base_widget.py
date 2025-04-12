@@ -55,7 +55,9 @@ class BaseCommandWidget:
         # Controlled properties tracking
         self._controlled_properties: Dict[str, str] = {}  # Widget property -> Property ID
         self._property_id_subscriptions: Set[str] = set()  # Set of property IDs we're subscribed to
-        self._property_observers: Dict[str, Dict[str, str]] = {}  # Property name -> Observable ID -> Observer ID
+        self._property_observers: Dict[str, str] = {}  # Widget property -> Observer ID
+        self._widget_to_observable_prop_map: Dict[str, str] = {}  # Widget property -> Observable property name
+        self._widget_to_observable_id_map: Dict[str, str] = {}  # Widget property -> Observable ID
         
         # Value change handling
         self._command_trigger_mode = CommandTriggerMode.IMMEDIATE
@@ -147,6 +149,10 @@ class BaseCommandWidget:
         # Store the controlled property mapping
         self._controlled_properties[widget_property] = property_id
         
+        # Store mapping of widget property to observable property name and ID
+        self._widget_to_observable_prop_map[widget_property] = property_name
+        self._widget_to_observable_id_map[widget_property] = observable_id
+        
         # Subscribe to ID changes for this property
         self._subscribe_to_property_id_changes(property_id, widget_property)
         
@@ -160,9 +166,7 @@ class BaseCommandWidget:
         )
         
         # Store observer ID for cleanup
-        if property_name not in self._property_observers:
-            self._property_observers[property_name] = {}
-        self._property_observers[property_name][observable_id] = observer_id
+        self._property_observers[widget_property] = observer_id
         
         # Initialize widget with current observable value
         current_value = getattr(observable, property_name)
@@ -204,22 +208,21 @@ class BaseCommandWidget:
         # Get the property ID
         property_id = self._controlled_properties[widget_property]
         
-        # Get the observable ID and property name
-        id_registry = get_id_registry()
-        observable_id = id_registry.get_observable_id_from_property_id(property_id)
-        property_components = parse_property_id(property_id)
+        # Get the observable ID and property name directly from our maps
+        observable_id = self._widget_to_observable_id_map.get(widget_property)
+        property_name = self._widget_to_observable_prop_map.get(widget_property)
         
-        if observable_id and property_components:
-            # Get the observable and remove the observer
+        if observable_id and property_name:
+            # Get the observable 
+            id_registry = get_id_registry()
             observable = id_registry.get_observable(observable_id)
-            property_name = property_components['property_name']
-            if observable:
-                # Remove our observer from the property
-                if (property_name in self._property_observers and 
-                    observable_id in self._property_observers[property_name]):
-                    observer_id = self._property_observers[property_name][observable_id]
-                    observable.remove_property_observer(property_name, observer_id)
-                    del self._property_observers[property_name][observable_id]
+            
+            # Get the observer ID from our direct mapping
+            observer_id = self._property_observers.get(widget_property)
+            
+            if observable and observer_id:
+                # Remove the observer
+                observable.remove_property_observer(property_name, observer_id)
         
         # Unsubscribe from property ID changes
         if property_id in self._property_id_subscriptions:
@@ -227,10 +230,14 @@ class BaseCommandWidget:
             self._property_id_subscriptions.remove(property_id)
         
         # Remove the controller reference
+        id_registry = get_id_registry()
         id_registry.remove_controller_reference(property_id)
         
         # Remove from our tracking
         del self._controlled_properties[widget_property]
+        self._property_observers.pop(widget_property, None)
+        self._widget_to_observable_prop_map.pop(widget_property, None)
+        self._widget_to_observable_id_map.pop(widget_property, None)
     
     # MARK: - Property Change Handling
     def _on_observed_property_changed(self, widget_property: str, old_value: Any, new_value: Any):
@@ -358,6 +365,10 @@ class BaseCommandWidget:
         Returns:
             bool: True if successful
         """
+        # Unbind all properties first
+        for widget_property in list(self._controlled_properties.keys()):
+            self.unbind_property(widget_property)
+            
         id_registry = get_id_registry()
         return id_registry.unregister(self.widget_id)
     
@@ -377,17 +388,16 @@ class BaseCommandWidget:
         # Serialize controlled properties
         for widget_property, property_id in self._controlled_properties.items():
             id_registry = get_id_registry()
-            # Get observable ID from property ID
-            observable_id = id_registry.get_observable_id_from_property_id(property_id)
+            # Get observable ID
+            observable_id = self._widget_to_observable_id_map.get(widget_property)
             
             if observable_id:
                 # Get the observable
                 observable = id_registry.get_observable(observable_id)
                 if observable and hasattr(observable, 'serialize_property'):
-                    # Get property name from property_id
-                    property_components = parse_property_id(property_id)
-                    if property_components:
-                        property_name = property_components['property_name']
+                    # Get property name from our mapping
+                    property_name = self._widget_to_observable_prop_map.get(widget_property)
+                    if property_name:
                         # Serialize the property
                         serialized_property = observable.serialize_property(property_name)
                         if serialized_property:
@@ -432,15 +442,14 @@ class BaseCommandWidget:
                 # Find the matching controlled property
                 if widget_property in self._controlled_properties:
                     property_id = self._controlled_properties[widget_property]
-                    observable_id = id_registry.get_observable_id_from_property_id(property_id)
+                    observable_id = self._widget_to_observable_id_map.get(widget_property)
                     
                     if observable_id:
                         observable = id_registry.get_observable(observable_id)
                         if observable and hasattr(observable, 'deserialize_property'):
-                            # Extract property name from property_id
-                            property_components = parse_property_id(property_id)
-                            if property_components:
-                                property_name = property_components['property_name']
+                            # Get property name from our mapping
+                            property_name = self._widget_to_observable_prop_map.get(widget_property)
+                            if property_name:
                                 # Deserialize the property
                                 observable.deserialize_property(property_name, serialized_property)
         
