@@ -41,7 +41,8 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         self.tabCloseRequested.connect(self._on_tab_close_requested)
         self.currentChanged.connect(self._on_current_changed)
         
-        # Store last tab index for change tracking - initialize to current index
+        # Track the current tab index for undo/redo operations
+        # Initialize to the current index (usually 0 for a new widget)
         self._last_tab_index = self.currentIndex()
     
     # MARK: - Tab Registration
@@ -55,14 +56,12 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             factory_func: Function that creates the tab content
             tab_name: Display name for tabs of this type
             observables: List of Observable IDs or Observable classes
-                         IDs will use existing observables
-                         Classes will create new instances
             closable: Whether tabs of this type can be closed
             
         Returns:
             ID of the registered tab type
         """
-        options = {"tab_name": tab_name, "closable": closable}
+        options = {"tab_name": tab_name or "Tab", "closable": closable}
         type_id = self.register_subcontainer_type(factory_func, observables, None, **options)
         return type_id
     
@@ -83,6 +82,8 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             if subcontainer_id:
                 # Emit signal for the new tab
                 self.tabAdded.emit(subcontainer_id)
+                # Update the last tab index to match current
+                self._last_tab_index = self.currentIndex()
             return subcontainer_id
         
         # Create a command for adding a tab
@@ -103,7 +104,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         Returns:
             Tuple of (tab container widget, location string)
         """
-        # Quick validation with early return
+        # Validate type exists
         type_info = self._widget_types.get(type_id)
         if not type_info:
             return None, None
@@ -140,6 +141,9 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         
         # Set as current tab 
         self.setCurrentIndex(target_index)
+        
+        # Update the last tab index to match current after adding
+        self._last_tab_index = self.currentIndex()
         
         # Location is the string representation of the index
         tab_location = str(target_index)
@@ -183,6 +187,10 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         
         # Update internal mappings
         self._update_tab_mappings()
+        
+        # Make sure _last_tab_index is updated if needed
+        if self._last_tab_index >= self.count():
+            self._last_tab_index = self.currentIndex()
         
         return True
     
@@ -318,8 +326,10 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         if get_command_manager().is_updating():
             return
         
-        # Store current index for next time
+        # Get the old index for the command
         old_index = self._last_tab_index
+        
+        # Update the last tab index for future changes
         self._last_tab_index = index
             
         # Only create command if index actually changed
@@ -327,6 +337,24 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             cmd = TabSelectionCommand(self.widget_id, old_index, index)
             cmd.set_trigger_widget(self.widget_id)
             get_command_manager().execute(cmd)
+    
+    # MARK: - Overridden QTabWidget methods
+    def addTab(self, widget: QWidget, label: str) -> int:
+        """Override to track newly added tabs."""
+        result = super().addTab(widget, label)
+        self._update_tab_mappings()
+        return result
+        
+    def insertTab(self, index: int, widget: QWidget, label: str) -> int:
+        """Override to track tab insertions."""
+        result = super().insertTab(index, widget, label)
+        self._update_tab_mappings()
+        return result
+        
+    def removeTab(self, index: int) -> None:
+        """Override to properly handle tab removal."""
+        super().removeTab(index)
+        self._update_tab_mappings()
     
     # MARK: - Custom Event Handling
     def closeEvent(self, event):
@@ -341,31 +369,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         # Process the event
         super().closeEvent(event)
     
-    # MARK: - Overridden QTabWidget methods to maintain mappings
-    def removeTab(self, index: int) -> None:
-        """Override to properly handle tab removal."""
-        # Get the widget before removal
-        tab_widget = self.widget(index)
-        
-        # Call the parent implementation
-        super().removeTab(index)
-                
-        # Update all tab mappings
-        self._update_tab_mappings()
-        
-    def insertTab(self, index: int, widget: QWidget, label: str) -> int:
-        """Override to track newly inserted tabs."""
-        result = super().insertTab(index, widget, label)
-        self._update_tab_mappings()
-        return result
-        
-    def addTab(self, widget: QWidget, label: str) -> int:
-        """Override to track newly added tabs."""
-        result = super().addTab(widget, label)
-        self._update_tab_mappings()
-        return result
-    
-    # MARK: - Enhanced serialization
+    # MARK: - Serialization
     def get_serialization(self) -> Dict:
         """
         Get serialized representation of this tab widget.
@@ -418,8 +422,11 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             index = serialized_data['current_index']
             if 0 <= index < self.count():
                 self.setCurrentIndex(index)
+                # Update our tracking variable
+                self._last_tab_index = index
                 
         return True
+
 
 # MARK: - Command Classes    
 class AddTabCommand(SerializationCommand):
@@ -552,9 +559,15 @@ class TabSelectionCommand(Command):
         tab_widget = get_id_registry().get_widget(self.tab_widget_id)
         if tab_widget and 0 <= self.new_index < tab_widget.count():
             tab_widget.setCurrentIndex(self.new_index)
+            # Update the internal tracking to match
+            if hasattr(tab_widget, '_last_tab_index'):
+                tab_widget._last_tab_index = self.new_index
     
     def undo(self):
         """Undo the command by selecting the previous tab."""
         tab_widget = get_id_registry().get_widget(self.tab_widget_id)
         if tab_widget and 0 <= self.old_index < tab_widget.count():
             tab_widget.setCurrentIndex(self.old_index)
+            # Update the internal tracking to match
+            if hasattr(tab_widget, '_last_tab_index'):
+                tab_widget._last_tab_index = self.old_index

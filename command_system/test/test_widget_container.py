@@ -417,21 +417,13 @@ class TestCommandTabWidget:
         
         # Select a different tab
         current_index = self.tab_widget.currentIndex()
-        # Make sure _last_tab_index is properly set
-        self.tab_widget._last_tab_index = current_index
-        
-        # Choose a new index different from current
-        new_index = (current_index + 1) % 3
-        
-        # Set the current index 
+        new_index = (current_index + 1) % 3  # Select next tab
         self.tab_widget.setCurrentIndex(new_index)
         
         # Process events
         process_events_and_wait()
         
-        assert self.tab_widget.currentIndex() != current_index
-        
-        # Verify command was created
+        # Verify command was created for tab selection
         assert len(self.command_executions) == 1
         assert self.command_executions[0][1] == True  # Command succeeded
         
