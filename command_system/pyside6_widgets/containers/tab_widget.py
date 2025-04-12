@@ -41,8 +41,8 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         self.tabCloseRequested.connect(self._on_tab_close_requested)
         self.currentChanged.connect(self._on_current_changed)
         
-        # Store last tab index for change tracking
-        self._last_tab_index = 0
+        # Store last tab index for change tracking - initialize to current index
+        self._last_tab_index = self.currentIndex()
     
     # MARK: - Tab Registration
     def register_tab(self, factory_func: Callable, tab_name: str = None,
