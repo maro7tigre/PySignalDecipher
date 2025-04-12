@@ -5,10 +5,13 @@ This module provides a base implementation for all command-enabled widgets,
 handling ID registration, property binding, and command generation.
 """
 from enum import Enum
-from typing import Any, Optional, Callable, Dict, Union
+from typing import Any, Optional, Callable, Dict, Union, Set
 from PySide6.QtCore import QTimer
 
-from command_system.id_system import get_id_registry, TypeCodes, parse_property_id
+from command_system.id_system import (
+    get_id_registry, TypeCodes, parse_property_id,
+    subscribe_to_id, unsubscribe_from_id
+)
 from command_system.id_system.core.parser import get_unique_id_from_id
 from command_system.core import PropertyCommand, get_command_manager
 
@@ -51,6 +54,8 @@ class BaseCommandWidget:
         
         # Controlled properties tracking
         self._controlled_properties: Dict[str, str] = {}  # Widget property -> Property ID
+        self._property_id_subscriptions: Set[str] = set()  # Set of property IDs we're subscribed to
+        self._property_observers: Dict[str, Dict[str, str]] = {}  # Property name -> Observable ID -> Observer ID
         
         # Value change handling
         self._command_trigger_mode = CommandTriggerMode.IMMEDIATE
@@ -63,6 +68,9 @@ class BaseCommandWidget:
         
         # We're tracking whether we're already processing a command to prevent recursion
         self._processing_command = False
+        
+        # Widget lifecycle state
+        self._initialized = True
     
     # MARK: - Command Trigger Configuration
     def set_command_trigger_mode(self, mode: CommandTriggerMode, delay_ms: int = 300):
@@ -125,17 +133,25 @@ class BaseCommandWidget:
         if property_ids:
             # Property already exists, update controller reference
             property_id = property_ids[0]
-            id_registry.update_controller_reference(property_id, self.widget_id)
+            property_id = id_registry.update_controller_reference(property_id, self.widget_id)
         else:
             # This shouldn't happen with ObservableProperty attributes
             # They should be registered when the Observable is initialized
             raise ValueError(f"Property '{property_name}' not registered with observable")
         
+        # Check if we already have a binding for this widget property
+        if widget_property in self._controlled_properties:
+            # Unbind existing property first
+            self.unbind_property(widget_property)
+        
         # Store the controlled property mapping
         self._controlled_properties[widget_property] = property_id
         
+        # Subscribe to ID changes for this property
+        self._subscribe_to_property_id_changes(property_id, widget_property)
+        
         # Set up observer for property changes
-        observable.add_property_observer(
+        observer_id = observable.add_property_observer(
             property_name, 
             lambda prop_name, old_val, new_val: self._on_observed_property_changed(
                 widget_property, old_val, new_val
@@ -143,9 +159,37 @@ class BaseCommandWidget:
             self
         )
         
+        # Store observer ID for cleanup
+        if property_name not in self._property_observers:
+            self._property_observers[property_name] = {}
+        self._property_observers[property_name][observable_id] = observer_id
+        
         # Initialize widget with current observable value
         current_value = getattr(observable, property_name)
         self._on_observed_property_changed(widget_property, None, current_value)
+
+    def _subscribe_to_property_id_changes(self, property_id: str, widget_property: str):
+        """
+        Subscribe to changes in a property ID.
+        
+        Args:
+            property_id: Property ID to monitor
+            widget_property: Widget property name associated with this ID
+        """
+        def on_property_id_changed(old_id, new_id):
+            # Update our mapping if the ID changed
+            if old_id in self._controlled_properties.values():
+                for prop, pid in self._controlled_properties.items():
+                    if pid == old_id:
+                        self._controlled_properties[prop] = new_id
+                        # Update our subscription set
+                        if old_id in self._property_id_subscriptions:
+                            self._property_id_subscriptions.remove(old_id)
+                        self._property_id_subscriptions.add(new_id)
+        
+        # Subscribe to ID changes
+        if subscribe_to_id(property_id, on_property_id_changed):
+            self._property_id_subscriptions.add(property_id)
 
     def unbind_property(self, widget_property: str):
         """
@@ -171,7 +215,16 @@ class BaseCommandWidget:
             property_name = property_components['property_name']
             if observable:
                 # Remove our observer from the property
-                observable.remove_property_observer(property_name, self.widget_id)
+                if (property_name in self._property_observers and 
+                    observable_id in self._property_observers[property_name]):
+                    observer_id = self._property_observers[property_name][observable_id]
+                    observable.remove_property_observer(property_name, observer_id)
+                    del self._property_observers[property_name][observable_id]
+        
+        # Unsubscribe from property ID changes
+        if property_id in self._property_id_subscriptions:
+            unsubscribe_from_id(property_id)
+            self._property_id_subscriptions.remove(property_id)
         
         # Remove the controller reference
         id_registry.remove_controller_reference(property_id)
@@ -189,8 +242,8 @@ class BaseCommandWidget:
             old_value: Previous value
             new_value: New value
         """
-        if self._processing_command:
-            return  # Avoid recursion
+        if self._processing_command or not hasattr(self, '_initialized'):
+            return  # Avoid recursion or handling events after cleanup
             
         self._processing_command = True
         try:
@@ -222,8 +275,8 @@ class BaseCommandWidget:
             widget_property: Name of the widget property that changed
             new_value: New property value
         """
-        if self._processing_command:
-            return  # Avoid recursion
+        if self._processing_command or not hasattr(self, '_initialized'):
+            return  # Avoid recursion or handling events after cleanup
             
         # Skip if no change from last value
         last_value = self._last_values.get(widget_property)
@@ -246,6 +299,9 @@ class BaseCommandWidget:
         Handle the completion of editing.
         Should be called by subclasses when editing is finished.
         """
+        if not hasattr(self, '_initialized'):
+            return  # Don't process events after cleanup
+            
         # Stop any pending delayed updates
         if self._change_timer.isActive():
             self._change_timer.stop()
@@ -257,6 +313,9 @@ class BaseCommandWidget:
     
     def _on_change_timer_timeout(self):
         """Handle the timeout of the change delay timer."""
+        if not hasattr(self, '_initialized'):
+            return  # Don't process events after cleanup
+            
         # Process all pending changes
         for widget_property, new_value in self._pending_changes.items():
             self._create_and_execute_property_command(widget_property, new_value)
@@ -294,7 +353,7 @@ class BaseCommandWidget:
     # MARK: - Resource Management
     def unregister_widget(self) -> bool:
         """
-        Unregister this widget from the ID system
+        Unregister this widget from the ID system and clean up all resources.
         
         Returns:
             bool: True if successful

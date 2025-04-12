@@ -4,11 +4,10 @@ Observable pattern implementation for property change tracking.
 This module provides a clean implementation of the observable pattern
 with property change notifications that fully leverages the ID system.
 """
-from typing import Any, Dict, Callable, TypeVar, Generic, Optional
+from typing import Any, Dict, Callable, TypeVar, Generic, Optional, List, Set
+from weakref import WeakKeyDictionary
 from ..id_system import (
     get_id_registry,
-    subscribe_to_id,
-    unsubscribe_from_id,
     parse_property_id
 )
 from ..id_system.types import ObservableTypeCodes, PropertyTypeCodes
@@ -60,8 +59,7 @@ class ObservableProperty(Generic[T]):
             if not instance._is_updating:
                 try:
                     instance._is_updating = True
-                    for callback in instance._get_property_observers(self.name):
-                        callback(self.name, old_value, value)
+                    instance._notify_property_observers(self.name, old_value, value)
                 finally:
                     instance._is_updating = False
 
@@ -82,6 +80,9 @@ class Observable:
         
         # Update status tracking
         self._is_updating = False
+        
+        # Store observer callbacks directly
+        self._property_observers = {}
         
         # Auto-register all observable properties defined on the class
         self._auto_register_properties()
@@ -108,6 +109,9 @@ class Observable:
                         attr_name,
                         observable_id
                     )
+                    
+                # Initialize observer dict for this property
+                self._property_observers[attr_name] = set()
     
     def _get_property_id(self, property_name: str) -> Optional[str]:
         """
@@ -144,23 +148,25 @@ class Observable:
                 observable_id
             )
     
-    def _get_property_observers(self, property_name: str) -> list:
+    def _notify_property_observers(self, property_name: str, old_value: Any, new_value: Any) -> None:
         """
-        Get all observer callbacks for a property.
+        Notify all observers of a property change.
         
         Args:
-            property_name: Name of the property
-            
-        Returns:
-            list: List of observer callback functions
+            property_name: Name of the property that changed
+            old_value: Previous value of the property
+            new_value: New value of the property
         """
-        property_id = self._get_property_id(property_name)
-        if not property_id:
-            return []
-            
-        # Get all property observers from subscription manager
-        subscription_manager = self.id_registry._subscription_manager
-        return subscription_manager.get_subscribers(property_id)
+        # Make sure we have the observers set for this property
+        if property_name not in self._property_observers:
+            return
+        
+        # Notify all observers
+        for callback in list(self._property_observers[property_name]):
+            try:
+                callback(property_name, old_value, new_value)
+            except Exception as e:
+                print(f"Error in property observer callback: {e}")
     
     # MARK: - Observer Management
     def add_property_observer(self, property_name: str, 
@@ -196,8 +202,12 @@ class Observable:
             observer_obj = {"callback": callback}
             observer_id = self.id_registry.register(observer_obj, "cw")
             
-        # Subscribe to property changes
-        subscribe_to_id(property_id, callback)
+        # Ensure we have an observer set for this property
+        if property_name not in self._property_observers:
+            self._property_observers[property_name] = set()
+            
+        # Add the callback to our internal observer set
+        self._property_observers[property_name].add(callback)
         
         return observer_id
         
@@ -212,9 +222,8 @@ class Observable:
         Returns:
             bool: True if observer was removed, False otherwise
         """
-        # Get property ID
-        property_id = self._get_property_id(property_name)
-        if not property_id:
+        # Check if property exists
+        if property_name not in self._property_observers:
             return False
             
         # Get the observer object
@@ -222,16 +231,23 @@ class Observable:
         if not observer_obj:
             return False
             
-        # Get all subscribers to this property
-        subscription_manager = self.id_registry._subscription_manager
-        subscribers = subscription_manager.get_subscribers(property_id)
-        
-        # Find and unsubscribe the matching subscriber
-        for callback in subscribers:
-            # Try to unsubscribe this callback
-            unsubscribe_from_id(property_id, callback)
+        # Try to find the callback
+        callback = None
+        if hasattr(observer_obj, 'callback'):
+            # Proxy object case
+            callback = observer_obj.callback
+            
+        if callback and callback in self._property_observers[property_name]:
+            # Remove the callback from our set
+            self._property_observers[property_name].discard(callback)
             return True
             
+        # If we have method callbacks from this object, try to find them
+        for cb in list(self._property_observers[property_name]):
+            if hasattr(cb, '__self__') and getattr(cb, '__self__') is observer_obj:
+                self._property_observers[property_name].discard(cb)
+                return True
+                
         return False
     
     # MARK: - Identity and Relationship
@@ -267,6 +283,10 @@ class Observable:
         property_id = self._get_property_id(property_name)
         if not property_id:
             return False
+        
+        # Remove property observers
+        if property_name in self._property_observers:
+            self._property_observers.pop(property_name, None)
             
         return self.id_registry.unregister(property_id)
     
@@ -279,6 +299,9 @@ class Observable:
         Returns:
             bool: True if successful, False otherwise
         """
+        # Clear property observers
+        self._property_observers.clear()
+        
         return self.id_registry.unregister(self.get_id())
     
     def __del__(self):
@@ -377,6 +400,9 @@ class Observable:
             
             # Set the initial value
             setattr(self, property_name, value)
+            
+            # Make sure we have an observer set for this property
+            self._property_observers[property_name] = set()
             
             # Now register the property with the ID system
             # First get the original property components to extract controller information
