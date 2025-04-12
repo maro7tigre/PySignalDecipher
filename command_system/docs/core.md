@@ -28,6 +28,7 @@ This document provides a comprehensive overview of the Command System for creati
 - [Integration with UI Components](#integration-with-ui-components)
   - [Command-Enabled Widgets](#command-enabled-widgets)
   - [Property Binding](#property-binding)
+  - [Unbinding Properties](#unbinding-properties)
   - [Custom Command Triggering](#custom-command-triggering)
   - [Widget Serialization](#widget-serialization)
 - [Common Patterns and Examples](#common-patterns-and-examples)
@@ -123,7 +124,20 @@ Observer callbacks receive three arguments:
 2. `old_value`: Previous value of the property
 3. `new_value`: New value of the property
 
+The `add_property_observer` method returns an observer ID that you should store if you plan to later remove this observer:
+
+```python
+# Store the observer ID for later removal
+observer_id = person.add_property_observer("name", on_name_changed)
+
+# Later, use the ID to remove the observer
+person.remove_property_observer("name", observer_id)
+```
+
+Internally, observables track observers using a mapping from observer IDs to callbacks. This ensures reliable observer removal even when using lambda functions or other complex callback scenarios.
+
 Best practices for observers:
+- Always store the observer ID returned from add_property_observer
 - Always remove observers when they're no longer needed
 - Keep observer callbacks lightweight
 - Avoid modifying observed properties inside observer callbacks
@@ -544,6 +558,30 @@ Benefits:
 - Clean separation of UI and data
 - Simplified undo/redo support
 
+### Unbinding Properties
+
+When a property binding is no longer needed, it should be properly unbound:
+
+```python
+# Unbind a property when it's no longer needed
+line_edit.unbind_property("text")
+
+# For convenience methods:
+line_edit.unbind_text_property()
+```
+
+After unbinding:
+- The widget no longer receives updates from the observable
+- Changes to the widget no longer create commands to update the observable
+- The observer is properly removed from the observable's internal tracking
+- All references between the widget and observable are cleaned up
+
+Proper unbinding is important to:
+- Prevent memory leaks
+- Avoid unexpected behavior
+- Allow objects to be garbage collected
+- Ensure widgets don't respond to observables they shouldn't
+
 ### Custom Command Triggering
 
 Configure when commands are generated:
@@ -580,6 +618,8 @@ The serialized state includes:
 - Current values
 - Widget-specific configuration
 
+Deserialization restores both the widget state and re-establishes binding relationships with observables. If a widget had property bindings before serialization, those bindings will be recreated during deserialization.
+
 ## Common Patterns and Examples
 
 ### Form Data Binding
@@ -608,6 +648,12 @@ age_spinner = CommandSpinBox()
 name_edit.bind_property("text", person.get_id(), "name")
 email_edit.bind_property("text", person.get_id(), "email")
 age_spinner.bind_property("value", person.get_id(), "age")
+
+# Don't forget to unbind when the form is closed
+def on_form_close():
+    name_edit.unbind_property("text")
+    email_edit.unbind_property("text")
+    age_spinner.unbind_property("value")
 ```
 
 ### Multi-step Operations
@@ -733,15 +779,16 @@ def restore_application_state(filename):
    - Create command-enabled widgets for automatic command generation
    - This ensures UI and data stay synchronized with undo/redo support
 
-4. **Preserve context information**
+4. **Manage observer lifecycle**
+   - Always store observer IDs returned from add_property_observer
+   - Always unbind properties when widgets are no longer needed
+   - Use unregister_widget() for comprehensive cleanup
+   - This prevents memory leaks and unexpected behavior
+
+5. **Preserve context information**
    - Use `set_trigger_widget` to track command sources
    - Use `set_context_info` to store navigation context
    - This improves user experience during undo/redo operations
-
-5. **Manage observer lifecycle**
-   - Remove observers when components are destroyed
-   - Avoid observer reference cycles
-   - This prevents memory leaks and unexpected behavior
 
 6. **Use initialization mode properly**
    - Use `begin_init`/`end_init` during application startup
@@ -757,25 +804,35 @@ def restore_application_state(filename):
 
 ### Common Issues
 
-1. **Command not executing**
+1. **Widget continues updating after unbinding**
+   - Ensure you're calling the correct unbind method (e.g., `unbind_property("text")`)
+   - Make sure you're storing the observer ID returned from add_property_observer
+   - Check if you have multiple bindings to the same property
+
+2. **Command not executing**
    - Check if `is_updating` flag is preventing execution
    - Ensure command is properly created with correct IDs
    - Verify the command manager is not in initialization mode
 
-2. **Observer not receiving notifications**
+3. **Observer not receiving notifications**
    - Check if observer is properly registered
    - Verify property exists on the observable
    - Ensure property changes are happening through the property attribute, not direct variable access
 
-3. **UI not updating after undo/redo**
+4. **UI not updating after undo/redo**
    - Check if widget is properly bound to observable
    - Verify observable property changes are triggering notifications
    - Check for signal blocking or recursive update prevention
 
-4. **ID-related errors**
+5. **ID-related errors**
    - Ensure components are properly registered with the ID system
    - Check for mismatched or invalid IDs
    - Verify ID references point to existing components
+
+6. **Memory leaks**
+   - Check for missing calls to unbind_property()
+   - Ensure observers are properly removed
+   - Verify unregister_widget() is called when widgets are deleted
 
 ### Debugging Techniques
 
@@ -792,7 +849,9 @@ def restore_application_state(filename):
    def trace_property(property_name, old_value, new_value):
        print(f"Property {property_name} changed: {old_value} -> {new_value}")
        
-   observable.add_property_observer("property_name", trace_property)
+   observer_id = observable.add_property_observer("property_name", trace_property)
+   # Don't forget to remove the observer when done
+   observable.remove_property_observer("property_name", observer_id)
    ```
 
 3. **ID Registry Inspection**
@@ -800,6 +859,13 @@ def restore_application_state(filename):
    registry = get_id_registry()
    print(f"Observable ID: {registry.get_id(observable)}")
    print(f"Property IDs: {registry.get_observable_properties(observable_id)}")
+   print(f"Controller properties: {registry.get_controller_properties(widget_id)}")
+   ```
+
+4. **Widget Binding Inspection**
+   ```python
+   # Check which properties are bound to a widget
+   print(f"Controlled properties: {widget._controlled_properties}")
    ```
 
 ## API Reference
@@ -897,6 +963,20 @@ Command for handling serialization of components/containers.
 - `serialize_subcontainer() -> bool`: Get serialization from container's subcontainer
 - `deserialize_subcontainer() -> bool`: Deserialize subcontainer state back to container
 
+### BaseCommandWidget Class
+
+Base class for command-enabled widgets.
+
+**Methods:**
+- `initiate_widget(type_code, container_id=None, location=None)`: Initialize widget
+- `bind_property(widget_property, observable_id, property_name)`: Bind widget property to observable
+- `unbind_property(widget_property)`: Unbind widget property
+- `set_command_trigger_mode(mode, delay_ms=300)`: Configure when commands are generated
+- `update_container(new_container_id)`: Update widget's container
+- `unregister_widget() -> bool`: Unregister widget and clean up resources
+- `get_serialization() -> dict`: Get serialized widget state
+- `deserialize(data) -> bool`: Restore widget state from serialization
+
 ### Command Manager Classes
 
 #### CommandHistory
@@ -937,3 +1017,31 @@ Singleton manager for command execution and history tracking.
 
 **Global Function:**
 - `get_command_manager() -> CommandManager`: Get the singleton command manager instance
+
+## Conclusion
+
+The Command System provides a powerful foundation for building applications with rich undo/redo functionality, property change tracking, and UI integration. By combining the Observable pattern with the Command pattern and leveraging the ID system for relationship management, it enables sophisticated application architectures with minimal boilerplate code.
+
+Key advantages of the system include:
+
+1. **Clean Separation of Concerns**
+   - UI components remain decoupled from data models
+   - Commands encapsulate all the logic for performing and undoing actions
+   - Observables handle property change notification independently
+
+2. **Comprehensive Undo/Redo**
+   - Automatic tracking of property changes
+   - Command composition for complex operations
+   - Consistent undo/redo behavior across the application
+
+3. **Robust Resource Management**
+   - Systematic tracking of component relationships
+   - Clear lifecycle for observers and bindings
+   - Proper cleanup to prevent memory leaks
+
+4. **Flexible UI Integration**
+   - Command-enabled widgets with automatic binding
+   - Configurable command generation timing
+   - Built-in support for serialization and restoration
+
+By following the patterns and best practices described in this document, developers can create applications that are more maintainable, feature-rich, and user-friendly.
