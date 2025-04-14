@@ -1146,5 +1146,5 @@ class TestSystemSerialization:
 if __name__ == "__main__":
     # Run tests when script is executed directly
     setup_module()
-    pytest.main(["-vs", __file__])
+    pytest.main(["-vsx", __file__])
     teardown_module()

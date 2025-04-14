@@ -5,7 +5,7 @@ This module contains the SubscriptionManager class and related functions for
 managing subscriptions to ID changes in the ID system.
 """
 
-from weakref import WeakKeyDictionary
+from command_system.id_system.core.mapping import Mapping
 
 # Global subscription manager instance
 _subscription_manager = None
@@ -89,12 +89,22 @@ class SubscriptionManager:
     
     def __init__(self):
         """Initialize the subscription manager."""
-        # Maps component IDs to sets of callback functions
-        self._subscriptions = {}
+
         
-        # Maps callback functions to sets of component IDs (for cleanup)
-        self._callback_to_ids = WeakKeyDictionary()
-    
+        # Track callbacks to component IDs (for cleanup)
+        self._callback_map = {}
+        
+    def init_mapping(self, registry):
+        """
+        Initiate the mapping for the subscription manager.
+
+        This method is called when the
+        """
+        # Use a mapping to track component IDs to sets of callback functions
+        self._subscriptions = Mapping(update_keys=True, update_values=False)  
+        registry.mappings.append(self._subscriptions)      
+        
+        
     def subscribe(self, component_id, callback):
         """
         Subscribe to changes for a specific component ID.
@@ -109,18 +119,18 @@ class SubscriptionManager:
         if not component_id or not callable(callback):
             return False
         
-        # Initialize the subscription set if needed
-        if component_id not in self._subscriptions:
-            self._subscriptions[component_id] = set()
+        # Get current subscribers or create new set
+        subscribers = self._subscriptions.get(component_id) or set()
         
         # Add the callback to the subscription set
-        self._subscriptions[component_id].add(callback)
+        subscribers.add(callback)
+        self._subscriptions.add(component_id, subscribers)
         
         # Track which IDs this callback is subscribed to
-        if callback not in self._callback_to_ids:
-            self._callback_to_ids[callback] = set()
+        if callback not in self._callback_map:
+            self._callback_map[callback] = set()
         
-        self._callback_to_ids[callback].add(component_id)
+        self._callback_map[callback].add(component_id)
         
         return True
     
@@ -135,40 +145,43 @@ class SubscriptionManager:
         Returns:
             bool: True if unsubscription was successful, False otherwise
         """
-        if not component_id or component_id not in self._subscriptions:
+        subscribers = self._subscriptions.get(component_id)
+        if not component_id or not subscribers:
             return False
         
         if callback is None:
             # Unsubscribe all callbacks for this ID
-            for cb in list(self._subscriptions[component_id]):
-                if cb in self._callback_to_ids:
-                    self._callback_to_ids[cb].discard(component_id)
+            for cb in list(subscribers):
+                if cb in self._callback_map:
+                    self._callback_map[cb].discard(component_id)
                     
                     # Clean up empty sets
-                    if not self._callback_to_ids[cb]:
-                        del self._callback_to_ids[cb]
+                    if not self._callback_map[cb]:
+                        del self._callback_map[cb]
             
             # Remove the subscription set
-            del self._subscriptions[component_id]
+            self._subscriptions.delete(component_id)
         else:
             # Unsubscribe only the specified callback
-            if callback not in self._subscriptions[component_id]:
+            if callback not in subscribers:
                 return False
             
             # Remove from subscription set
-            self._subscriptions[component_id].discard(callback)
+            subscribers.discard(callback)
             
             # Clean up empty sets
-            if not self._subscriptions[component_id]:
-                del self._subscriptions[component_id]
+            if not subscribers:
+                self._subscriptions.delete(component_id)
+            else:
+                self._subscriptions.add(component_id, subscribers)
             
             # Remove from callback tracking
-            if callback in self._callback_to_ids:
-                self._callback_to_ids[callback].discard(component_id)
+            if callback in self._callback_map:
+                self._callback_map[callback].discard(component_id)
                 
                 # Clean up empty sets
-                if not self._callback_to_ids[callback]:
-                    del self._callback_to_ids[callback]
+                if not self._callback_map[callback]:
+                    del self._callback_map[callback]
         
         return True
     
@@ -183,11 +196,12 @@ class SubscriptionManager:
         Returns:
             bool: True if notification was successful, False otherwise
         """
-        if not old_id or not new_id or old_id not in self._subscriptions:
+        subscribers = self._subscriptions.get(old_id)
+        if not old_id or not new_id or not subscribers:
             return False
         
         # Make a copy to avoid modification during iteration
-        callbacks = list(self._subscriptions[old_id])
+        callbacks = list(subscribers)
         
         # Call all callbacks
         for callback in callbacks:
@@ -197,15 +211,12 @@ class SubscriptionManager:
                 # Handle or log the error as needed
                 print(f"Error in ID change callback: {e}")
         
-        # Move subscriptions to the new ID
-        self._subscriptions[new_id] = self._subscriptions[old_id]
-        del self._subscriptions[old_id]
-        
-        # Update callback tracking
+        # The mapping system will automatically update the key,
+        # but we need to ensure the callbacks are properly tracked
         for callback in callbacks:
-            if callback in self._callback_to_ids:
-                self._callback_to_ids[callback].discard(old_id)
-                self._callback_to_ids[callback].add(new_id)
+            if callback in self._callback_map:
+                self._callback_map[callback].discard(old_id)
+                self._callback_map[callback].add(new_id)
         
         return True
     
@@ -219,15 +230,18 @@ class SubscriptionManager:
         Returns:
             list: A list of callback functions subscribed to the ID
         """
-        if not component_id or component_id not in self._subscriptions:
+        subscribers = self._subscriptions.get(component_id)
+        if not component_id or not subscribers:
             return []
         
-        return list(self._subscriptions[component_id])
+        return list(subscribers)
     
     def clear(self):
         """Clear all subscriptions."""
-        self._subscriptions.clear()
-        self._callback_to_ids.clear()
+        self._subscriptions._storage.clear()
+        self._subscriptions._key_log.clear()
+        self._subscriptions._value_log.clear()
+        self._callback_map.clear()
     
     def cleanup_callback(self, callback):
         """
@@ -241,22 +255,25 @@ class SubscriptionManager:
         Returns:
             bool: True if cleanup was successful, False otherwise
         """
-        if not callback or callback not in self._callback_to_ids:
+        if not callback or callback not in self._callback_map:
             return False
         
         # Make a copy to avoid modification during iteration
-        subscribed_ids = list(self._callback_to_ids[callback])
+        subscribed_ids = list(self._callback_map[callback])
         
         # Remove from all subscription sets
         for component_id in subscribed_ids:
-            if component_id in self._subscriptions:
-                self._subscriptions[component_id].discard(callback)
+            subscribers = self._subscriptions.get(component_id)
+            if subscribers:
+                subscribers.discard(callback)
                 
                 # Clean up empty sets
-                if not self._subscriptions[component_id]:
-                    del self._subscriptions[component_id]
+                if not subscribers:
+                    self._subscriptions.delete(component_id)
+                else:
+                    self._subscriptions.add(component_id, subscribers)
         
         # Remove from callback tracking
-        del self._callback_to_ids[callback]
+        del self._callback_map[callback]
         
         return True

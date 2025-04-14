@@ -6,6 +6,7 @@ of the ID system.
 """
 
 from command_system.id_system.core.generator import UniqueIDGenerator
+from command_system.id_system.core.mapping import Mapping
 from command_system.id_system.core.parser import (
     parse_widget_id,
     parse_observable_id,
@@ -69,11 +70,24 @@ class IDRegistry:
         # The unique ID generator
         self._id_generator = UniqueIDGenerator()
         
+        # List of mapping objects to update when IDs change
+        self.mappings = []
+        
         # Callback lists for different events
         self._widget_unregister_callbacks = []
         self._observable_unregister_callbacks = []
         self._property_unregister_callbacks = []
         self._id_changed_callbacks = []
+        
+        # Create the core mappings that the system relies on
+        self._widgets_mapping = Mapping(update_keys=True, update_values=False)
+        self._unique_to_full_id_mapping = Mapping(update_keys=True, update_values=False)
+        self._objects_to_id_mapping = Mapping(update_keys=False, update_values=True)
+        
+        # Add the mappings to the registry
+        self.mappings.append(self._widgets_mapping)
+        self.mappings.append(self._unique_to_full_id_mapping)
+        self.mappings.append(self._objects_to_id_mapping)
         
         # Managers for different component types
         self._widget_manager = WidgetManager(self)
@@ -81,9 +95,44 @@ class IDRegistry:
         
         # Get the subscription manager
         self._subscription_manager = get_subscription_manager()
+        self._subscription_manager.init_mapping(self)
         
-        self._non_controlling_observables = {}  # container_location -> set of observable_ids
-
+        # Create mapping for non-controlling observables
+        self._non_controlling_observables = Mapping(update_keys=True, update_values=True)
+        self.mappings.append(self._non_controlling_observables)
+    
+    #MARK: - Mapping update methods
+    
+    def update_all_mappings(self, old_id, new_id):
+        """
+        Update all mappings when an ID changes.
+        
+        Args:
+            old_id: The current ID string
+            new_id: The new ID string
+        """
+        for mapping in self.mappings:
+            mapping.update(old_id, new_id)
+            
+        # Special case for unique ID mapping - we need to update unique IDs as well
+        if old_id in self._unique_to_full_id_mapping:
+            old_unique_id = get_unique_id_from_id(old_id)
+            new_unique_id = get_unique_id_from_id(new_id)
+            if old_unique_id != new_unique_id:
+                # Update the mapping from unique ID to full ID
+                self._unique_to_full_id_mapping.set(new_unique_id, new_id)
+    
+    def remove_from_all_mappings(self, id_to_remove):
+        """
+        Remove an ID from all mappings when it's unregistered.
+        
+        Args:
+            id_to_remove: The ID to remove from all mappings
+        """
+        for mapping in self.mappings:
+            # Only delete if this ID is a key in the mapping
+            if id_to_remove in mapping:
+                mapping.delete(id_to_remove)
     
     #MARK: - Registration methods
     
@@ -131,6 +180,13 @@ class IDRegistry:
                 final_container_id,
                 location
             )
+            
+            # Use mappings to store the relationships
+            self._widgets_mapping.add(widget_id, widget)
+            self._unique_to_full_id_mapping.add(unique_id, widget_id)
+            if widget is not None:
+                self._objects_to_id_mapping.add(widget, widget_id)
+                
             return widget_id
         except IDRegistrationError as e:
             # Unregister the unique ID since registration failed
@@ -170,6 +226,12 @@ class IDRegistry:
             type_code,
             unique_id
         )
+        
+        # Use mappings to store the relationships
+        self._widgets_mapping.add(observable_id, observable)
+        self._unique_to_full_id_mapping.add(unique_id, observable_id)
+        if observable is not None:
+            self._objects_to_id_mapping.add(observable, observable_id)
         
         return observable_id
     
@@ -216,6 +278,12 @@ class IDRegistry:
             controller_id
         )
         
+        # Use mappings to store the relationships
+        self._widgets_mapping.add(property_id, property_obj)
+        self._unique_to_full_id_mapping.add(unique_id, property_id)
+        if property_obj is not None:
+            self._objects_to_id_mapping.add(property_obj, property_id)
+        
         return property_id
     
     def unregister(self, component_id):
@@ -228,16 +296,46 @@ class IDRegistry:
         Returns:
             bool: True if successful, False otherwise
         """
+        # Get the component object before unregistering
+        component = self._widgets_mapping.get(component_id)
+        
         # Determine component type from ID prefix
         if component_id.startswith(tuple(TypeCodes.get_all_widget_codes())):
             # Widget/Container
-            return self._widget_manager.unregister_widget(component_id)
+            success = self._widget_manager.unregister_widget(component_id)
+            if success:
+                # Remove from mappings
+                unique_id = get_unique_id_from_id(component_id)
+                self.remove_from_all_mappings(component_id)
+                self._unique_to_full_id_mapping.delete(unique_id)
+                if component is not None:
+                    self._objects_to_id_mapping.delete(component)
+                self._id_generator.unregister(unique_id)
+            return success
         elif component_id.startswith(tuple(ObservableTypeCodes.get_all_codes())):
             # Observable
-            return self._observable_manager.unregister_observable(component_id)
+            success = self._observable_manager.unregister_observable(component_id)
+            if success:
+                # Remove from mappings
+                unique_id = get_unique_id_from_id(component_id)
+                self.remove_from_all_mappings(component_id)
+                self._unique_to_full_id_mapping.delete(unique_id)
+                if component is not None:
+                    self._objects_to_id_mapping.delete(component)
+                self._id_generator.unregister(unique_id)
+            return success
         elif component_id.startswith(tuple(PropertyTypeCodes.get_all_codes())):
             # Property
-            return self._observable_manager.unregister_property(component_id)
+            success = self._observable_manager.unregister_property(component_id)
+            if success:
+                # Remove from mappings
+                unique_id = get_unique_id_from_id(component_id)
+                self.remove_from_all_mappings(component_id)
+                self._unique_to_full_id_mapping.delete(unique_id)
+                if component is not None:
+                    self._objects_to_id_mapping.delete(component)
+                self._id_generator.unregister(unique_id)
+            return success
         return False
     
     #MARK: - ID retrieval methods
@@ -252,7 +350,7 @@ class IDRegistry:
         Returns:
             object: The widget object, or None if not found
         """
-        return self._widget_manager.get_widget(widget_id)
+        return self._widgets_mapping.get(widget_id)
     
     def get_observable(self, observable_id):
         """
@@ -264,7 +362,7 @@ class IDRegistry:
         Returns:
             object: The observable object, or None if not found
         """
-        return self._observable_manager.get_observable(observable_id)
+        return self._widgets_mapping.get(observable_id)
     
     def get_observable_property(self, property_id):
         """
@@ -276,7 +374,7 @@ class IDRegistry:
         Returns:
             object: The property object, or None if not found
         """
-        return self._observable_manager.get_property(property_id)
+        return self._widgets_mapping.get(property_id)
     
     def get_id(self, component):
         """
@@ -290,22 +388,7 @@ class IDRegistry:
         """
         if component is None:
             return None
-        # Try to find in widget manager
-        widget_id = self._widget_manager.get_widget_id(component)
-        if widget_id:
-            return widget_id
-        
-        # Try to find in observable manager
-        observable_id = self._observable_manager.get_observable_id(component)
-        if observable_id:
-            return observable_id
-        
-        # Try to find in property manager
-        property_id = self._observable_manager.get_property_id(component)
-        if property_id:
-            return property_id
-        
-        return None
+        return self._objects_to_id_mapping.get(component)
     
     def get_unique_id_from_id(self, id_string):
         """
@@ -333,40 +416,17 @@ class IDRegistry:
         # If no unique ID provided, return None
         if not unique_id:
             return None
-            
-        # If type_code is provided, we can limit our search
-        if type_code:
-            if type_code in TypeCodes.get_all_widget_codes():
-                # Search for widget
-                widget_id = self._widget_manager.get_widget_id_by_unique_id(unique_id)
-                if widget_id:
-                    return widget_id
-            elif type_code in ObservableTypeCodes.get_all_codes():
-                # Search for observable
-                for obs_id in self._observable_manager._observables:
-                    if get_unique_id_from_id(obs_id) == unique_id:
-                        return obs_id
-            elif type_code in PropertyTypeCodes.get_all_codes():
-                # Search for property
-                for prop_id in self._observable_manager._properties:
-                    if get_unique_id_from_id(prop_id) == unique_id:
-                        return prop_id
-        else:
-            # Search in all component types
-            # First check widgets
-            widget_id = self._widget_manager.get_widget_id_by_unique_id(unique_id)
-            if widget_id:
-                return widget_id
-                
-            # Check observables
-            if unique_id in self._observable_manager._unique_id_to_observable_id:
-                return self._observable_manager._unique_id_to_observable_id[unique_id]
-                
-            # Check properties
-            if unique_id in self._observable_manager._unique_id_to_property_id:
-                return self._observable_manager._unique_id_to_property_id[unique_id]
         
-        return None
+        # Get the full ID from the mapping
+        full_id = self._unique_to_full_id_mapping.get(unique_id)
+        
+        # If type_code is provided, check if the ID is of the right type
+        if full_id and type_code:
+            actual_type_code = get_type_code_from_id(full_id)
+            if actual_type_code != type_code:
+                return None
+                
+        return full_id
     
     #MARK: - Container relationship methods
     
@@ -380,13 +440,7 @@ class IDRegistry:
         Returns:
             list: A list of widget IDs in the container
         """
-        # Extract container unique ID if full ID provided
-        container_unique_id = container_id
-        if ID_SEPARATOR in container_id:
-            container_unique_id = get_unique_id_from_id(container_id)
-        
-        # Use get_widgets_by_container_id to get a flat list of widget IDs
-        return self._widget_manager.get_widget_ids_by_container_id(container_unique_id)
+        return self._widget_manager.get_widget_ids_by_container_id(container_id)
     
     #MARK: - Observable relationship methods
     
@@ -400,12 +454,7 @@ class IDRegistry:
         Returns:
             list: A list of property IDs for the observable
         """
-        # Extract observable unique ID if full ID provided
-        observable_unique_id = observable_id
-        if ID_SEPARATOR in observable_id:
-            observable_unique_id = get_unique_id_from_id(observable_id)
-            
-        return self._observable_manager.get_property_ids_by_observable_id(observable_unique_id)
+        return self._observable_manager.get_property_ids_by_observable_id(observable_id)
     
     def get_controller_properties(self, controller_id):
         """
@@ -417,12 +466,7 @@ class IDRegistry:
         Returns:
             list: A list of property IDs controlled by the controller
         """
-        # Extract controller unique ID if full ID provided
-        controller_unique_id = controller_id
-        if ID_SEPARATOR in controller_id:
-            controller_unique_id = get_unique_id_from_id(controller_id)
-            
-        return self._observable_manager.get_property_ids_by_controller_id(controller_unique_id)
+        return self._observable_manager.get_property_ids_by_controller_id(controller_id)
     
     def get_observable_id_from_property_id(self, property_id):
         """
@@ -434,14 +478,7 @@ class IDRegistry:
         Returns:
             str: The full observable ID, or None if not found or invalid property ID
         """
-        # Get the unique ID from the property
-        observable_id = self._observable_manager.get_observable_id_from_property_id(property_id)
-        
-        if not observable_id or observable_id == DEFAULT_NO_OBSERVABLE:
-        
-            return None
-        # Return the full observable ID
-        return observable_id
+        return self._observable_manager.get_observable_id_from_property_id(property_id)
     
     def get_controller_id_from_property_id(self, property_id):
         """
@@ -453,7 +490,6 @@ class IDRegistry:
         Returns:
             str: The full controller ID, or None if not found or invalid property ID
         """
-        # Get the unique ID from the property
         controller_unique_id = self._observable_manager.get_controller_id_from_property_id(property_id)
         
         if not controller_unique_id or controller_unique_id == DEFAULT_NO_CONTROLLER:
@@ -492,12 +528,7 @@ class IDRegistry:
         Returns:
             list: A list of property IDs for the observable and property name
         """
-        # Extract observable unique ID if full ID provided
-        observable_unique_id = observable_id
-        if ID_SEPARATOR in observable_id:
-            observable_unique_id = get_unique_id_from_id(observable_id)
-
-        return self._observable_manager.get_property_ids_by_observable_id_and_property_name(observable_unique_id, property_name)
+        return self._observable_manager.get_property_ids_by_observable_id_and_property_name(observable_id, property_name)
 
     def register_non_controlling_observables(self, container_id, observable_ids):
         """
@@ -520,12 +551,14 @@ class IDRegistry:
         widget_location_id = components['widget_location_id']
         full_location = f"{container_location}/{widget_location_id}"
         
-        # Initialize or update the set for this location
-        if full_location not in self._non_controlling_observables:
-            self._non_controlling_observables[full_location] = set()
+        # Get or create a set for this location
+        current_observables = self._non_controlling_observables.get(full_location) or set()
         
-        # Add the observable IDs to the set
-        self._non_controlling_observables[full_location].update(observable_ids)
+        # Add the new observable IDs
+        current_observables.update(observable_ids)
+        
+        # Update the mapping
+        self._non_controlling_observables.add(full_location, current_observables)
 
     def should_prevent_control(self, widget_id, observable_id):
         """
@@ -546,12 +579,12 @@ class IDRegistry:
         # Extract widget's container location
         container_location = components['container_location']
         
-        # Check all possible parent locations
-        for location in self._non_controlling_observables:
+        # Check all stored non-controlling locations
+        for location, observables in self._non_controlling_observables._storage.items():
             # Check if widget's location starts with a non-controlling location
             if container_location.startswith(location):
                 # Check if this observable is in the non-controlling set
-                if observable_id in self._non_controlling_observables[location]:
+                if observable_id in observables:
                     return True
         
         return False
@@ -589,14 +622,9 @@ class IDRegistry:
             # Widget/Container ID update
             success, updated_id, error = self._widget_manager.update_widget_id(old_id, new_id)
             
-            # If successful, update any properties controlled by this widget
+            # If successful, update mappings and notify subscribers
             if success and updated_id != old_id:
-                old_unique_id = get_unique_id_from_id(old_id)
-                new_unique_id = get_unique_id_from_id(updated_id)
-                if old_unique_id != new_unique_id:
-                    self._update_controller_properties(old_unique_id, new_unique_id)
-                
-                # Notify ID subscribers
+                self.update_all_mappings(old_id, updated_id)
                 self._subscription_manager.notify(old_id, updated_id)
                 self._notify_id_changed_callbacks(old_id, updated_id)
                 
@@ -606,8 +634,9 @@ class IDRegistry:
             # Observable ID update
             success, updated_id, error = self._observable_manager.update_observable_id(old_id, new_id)
             
-            # If successful, notify ID subscribers
+            # If successful, update mappings and notify subscribers
             if success and updated_id != old_id:
+                self.update_all_mappings(old_id, updated_id)
                 self._subscription_manager.notify(old_id, updated_id)
                 self._notify_id_changed_callbacks(old_id, updated_id)
                 
@@ -617,8 +646,9 @@ class IDRegistry:
             # Property ID update
             success, updated_id, error = self._observable_manager.update_property_id(old_id, new_id)
             
-            # If successful, notify ID subscribers
+            # If successful, update mappings and notify subscribers
             if success and updated_id != old_id:
+                self.update_all_mappings(old_id, updated_id)
                 self._subscription_manager.notify(old_id, updated_id)
                 self._notify_id_changed_callbacks(old_id, updated_id)
                 
@@ -641,24 +671,15 @@ class IDRegistry:
         Raises:
             IDRegistrationError: If the widget_location_id already exists in the new container location
         """
-        # Extract container unique ID if full ID provided
-        new_container_unique_id = new_container_id
-        if ID_SEPARATOR in new_container_id:
-            new_container_unique_id = get_unique_id_from_id(new_container_id)
+        old_id = widget_id
         
-        try:    
-            old_id = widget_id
-            new_id = self._widget_manager.update_widget_container(widget_id, new_container_unique_id)
+        try:
+            new_id = self._widget_manager.update_widget_container(widget_id, new_container_id)
             
-            # If the widget is a controller, update its controlled properties
+            # If the widget ID changed, update mappings and notify subscribers
             if old_id != new_id:
-                old_unique_id = get_unique_id_from_id(old_id)
-                self._update_controller_properties(old_unique_id, old_unique_id)
-                
-                # Notify subscribers
+                self.update_all_mappings(old_id, new_id)
                 self._subscription_manager.notify(old_id, new_id)
-                
-                # Notify ID changed callbacks
                 self._notify_id_changed_callbacks(old_id, new_id)
             
             return new_id
@@ -680,19 +701,15 @@ class IDRegistry:
         Raises:
             IDRegistrationError: If the new widget_location_id already exists in the container location
         """
+        old_id = widget_id
+        
         try:
-            old_id = widget_id
             new_id = self._widget_manager.update_widget_location(widget_id, new_location)
             
-            # If the widget is a controller, update its controlled properties
+            # If the widget ID changed, update mappings and notify subscribers
             if old_id != new_id:
-                old_unique_id = get_unique_id_from_id(old_id)
-                self._update_controller_properties(old_unique_id, old_unique_id)
-                
-                # Notify subscribers
+                self.update_all_mappings(old_id, new_id)
                 self._subscription_manager.notify(old_id, new_id)
-                
-                # Notify ID changed callbacks
                 self._notify_id_changed_callbacks(old_id, new_id)
             
             return new_id
@@ -711,19 +728,13 @@ class IDRegistry:
         Returns:
             str: The updated property ID
         """
-        # Extract observable unique ID if full ID provided
-        new_observable_unique_id = new_observable_id
-        if ID_SEPARATOR in new_observable_id:
-            new_observable_unique_id = get_unique_id_from_id(new_observable_id)
-            
         old_id = property_id
-        new_id = self._observable_manager.update_property_observable(property_id, new_observable_unique_id)
+        new_id = self._observable_manager.update_property_observable(property_id, new_observable_id)
         
-        # Notify subscribers if ID changed
+        # If the property ID changed, update mappings and notify subscribers
         if old_id != new_id:
+            self.update_all_mappings(old_id, new_id)
             self._subscription_manager.notify(old_id, new_id)
-            
-            # Notify ID changed callbacks
             self._notify_id_changed_callbacks(old_id, new_id)
         
         return new_id
@@ -742,11 +753,10 @@ class IDRegistry:
         old_id = property_id
         new_id = self._observable_manager.update_property_name(property_id, new_property_name)
         
-        # Notify subscribers if ID changed
+        # If the property ID changed, update mappings and notify subscribers
         if old_id != new_id:
+            self.update_all_mappings(old_id, new_id)
             self._subscription_manager.notify(old_id, new_id)
-            
-            # Notify ID changed callbacks
             self._notify_id_changed_callbacks(old_id, new_id)
         
         return new_id
@@ -762,19 +772,13 @@ class IDRegistry:
         Returns:
             str: The updated property ID
         """
-        # Extract controller unique ID if full ID provided
-        new_controller_unique_id = new_controller_id
-        if ID_SEPARATOR in new_controller_id:
-            new_controller_unique_id = get_unique_id_from_id(new_controller_id)
-            
         old_id = property_id
-        new_id = self._observable_manager.update_property_controller(property_id, new_controller_unique_id)
+        new_id = self._observable_manager.update_property_controller(property_id, new_controller_id)
         
-        # Notify subscribers if ID changed
+        # If the property ID changed, update mappings and notify subscribers
         if old_id != new_id:
+            self.update_all_mappings(old_id, new_id)
             self._subscription_manager.notify(old_id, new_id)
-            
-            # Notify ID changed callbacks
             self._notify_id_changed_callbacks(old_id, new_id)
         
         return new_id
@@ -1070,25 +1074,6 @@ class IDRegistry:
 
     #MARK: - Internal methods
 
-    def _update_controller_properties(self, old_controller_id, new_controller_id):
-        """
-        Update all properties controlled by a widget when its ID changes.
-        
-        Args:
-            old_controller_id: The old controller unique ID
-            new_controller_id: The new controller unique ID
-        """
-        # Use new method in ObservableManager to update all properties
-        property_updates = self._observable_manager.update_properties_for_controller(
-            old_controller_id, new_controller_id)
-        
-        # Notify subscribers of all property ID changes
-        for old_prop_id, new_prop_id in property_updates:
-            self._subscription_manager.notify(old_prop_id, new_prop_id)
-            
-            # Notify ID changed callbacks
-            self._notify_id_changed_callbacks(old_prop_id, new_prop_id)
-
     def _on_widget_unregister(self, widget_id, widget):
         """
         Internal callback for widget unregistration.
@@ -1097,19 +1082,6 @@ class IDRegistry:
             widget_id: The ID of the unregistered widget
             widget: The unregistered widget object
         """
-        # Get the unique ID
-        unique_id = get_unique_id_from_id(widget_id)
-        if unique_id:
-            # First, check if this widget controls any properties
-            # Get the full IDs of properties controlled by this widget
-            property_ids = self.get_controller_properties(widget_id)
-            # If there are properties, unregister each one
-            for property_id in list(property_ids):  # Use list() to create a copy
-                self.unregister(property_id)
-            
-            # Unregister from ID generator
-            self._id_generator.unregister(unique_id)
-        
         # Notify all widget unregister callbacks
         self._notify_widget_unregister_callbacks(widget_id, widget)
 
@@ -1121,12 +1093,6 @@ class IDRegistry:
             observable_id: The ID of the unregistered observable
             observable: The unregistered observable object
         """
-        # Get the unique ID
-        unique_id = get_unique_id_from_id(observable_id)
-        if unique_id:
-            # Unregister from ID generator
-            self._id_generator.unregister(unique_id)
-        
         # Notify all observable unregister callbacks
         self._notify_observable_unregister_callbacks(observable_id, observable)
 
@@ -1138,12 +1104,6 @@ class IDRegistry:
             property_id: The ID of the unregistered property
             property_obj: The unregistered property object
         """
-        # Get the unique ID
-        unique_id = get_unique_id_from_id(property_id)
-        if unique_id:
-            # Unregister from ID generator
-            self._id_generator.unregister(unique_id)
-        
         # Notify all property unregister callbacks
         self._notify_property_unregister_callbacks(property_id, property_obj)
 
@@ -1154,6 +1114,12 @@ class IDRegistry:
         self._widget_manager.clear()
         self._observable_manager.clear()
         self._subscription_manager.clear()
+        
+        # Clear all mappings
+        for mapping in self.mappings:
+            mapping._storage.clear()
+            mapping._key_log.clear()
+            mapping._value_log.clear()
         
         # Clear all callbacks
         self.clear_all_callbacks()
@@ -1172,13 +1138,7 @@ class IDRegistry:
         Returns:
             list: A list of widget IDs at the specified location
         """
-        # Extract container unique ID if full ID provided
-        container_unique_id = container_id
-        if ID_SEPARATOR in container_id:
-            container_unique_id = get_unique_id_from_id(container_id)
-            
-        return self._widget_manager.get_widget_ids_by_container_id_and_location(
-            container_unique_id, location)
+        return self._widget_manager.get_widget_ids_by_container_id_and_location(container_id, location)
         
     def get_widgets_by_container_id(self, container_id):
         """
@@ -1190,12 +1150,7 @@ class IDRegistry:
         Returns:
             list: A list of widget IDs in the container
         """
-        # Extract container unique ID if full ID provided
-        container_unique_id = container_id
-        if ID_SEPARATOR in container_id:
-            container_unique_id = get_unique_id_from_id(container_id)
-
-        return self._widget_manager.get_widget_ids_by_container_id(container_unique_id)
+        return self._widget_manager.get_widget_ids_by_container_id(container_id)
         
     def get_container_id_from_widget_id(self, widget_id):
         """
@@ -1224,12 +1179,7 @@ class IDRegistry:
             container_id: The container's ID
             locations_map: A dictionary mapping subcontainer locations to widget IDs
         """
-        # Extract container unique ID if full ID provided
-        container_unique_id = container_id
-        if ID_SEPARATOR in container_id:
-            container_unique_id = get_unique_id_from_id(container_id)
-            
-        self._widget_manager.set_locations_map(container_unique_id, locations_map)
+        self._widget_manager.set_locations_map(container_id, locations_map)
 
     def get_locations_map(self, container_id):
         """
@@ -1241,16 +1191,11 @@ class IDRegistry:
         Returns:
             dict: A dictionary mapping subcontainer locations to widget IDs
         """
-        # Extract container unique ID if full ID provided
-        container_unique_id = container_id
-        if ID_SEPARATOR in container_id:
-            container_unique_id = get_unique_id_from_id(container_id)
-            
-        return self._widget_manager.get_locations_map(container_unique_id)
+        return self._widget_manager.get_locations_map(container_id)
     
     def is_id_registered(self, component_id):
         """
-        Check if an ID is registered in the registry, regardless of component value.
+        Check if an ID is registered in the registry.
         
         Args:
             component_id: The ID to check
@@ -1258,15 +1203,4 @@ class IDRegistry:
         Returns:
             bool: True if the ID is registered, False otherwise
         """
-        # Determine component type from ID prefix
-        if component_id.startswith(tuple(TypeCodes.get_all_widget_codes())):
-            # Widget/Container
-            return component_id in self._widget_manager._widgets
-        elif component_id.startswith(tuple(ObservableTypeCodes.get_all_codes())):
-            # Observable
-            return component_id in self._observable_manager._observables
-        elif component_id.startswith(tuple(PropertyTypeCodes.get_all_codes())):
-            # Property
-            return component_id in self._observable_manager._properties
-        
-        return False
+        return component_id in self._widgets_mapping
