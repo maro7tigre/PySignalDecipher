@@ -366,6 +366,8 @@ class TestSystemSerialization:
         
         assert result
         assert result in container_widget_ids
+        print(registry.get_widgets_by_container_id(result))
+        
         process_events_and_wait(100)  # Longer wait for complex restoration
         
         # Verify tab was restored
@@ -1144,5 +1146,5 @@ class TestSystemSerialization:
 if __name__ == "__main__":
     # Run tests when script is executed directly
     setup_module()
-    pytest.main(["-v", __file__])
+    pytest.main(["-vs", __file__])
     teardown_module()

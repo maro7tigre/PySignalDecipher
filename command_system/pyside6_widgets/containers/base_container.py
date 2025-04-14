@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout
 from PySide6.QtCore import Qt
 
 from command_system.id_system import get_id_registry, get_simple_id_registry, TypeCodes
+from command_system.id_system.core.parser import parse_widget_id
 from command_system.core import Observable
 from ..base_widget import BaseCommandWidget
 
@@ -120,9 +121,23 @@ class BaseCommandContainer(BaseCommandWidget):
         # Get type info for the content
         type_info = self._widget_types[type_id]
         factory = type_info["factory"]
+        registered_observables = type_info["observables"]
         
-        # Create content using optimized observable resolution
-        content = self._create_content_with_observables(factory, type_info["observables"])
+        # Extract observable IDs (strings) to register as non-controlling
+        observable_ids = []
+        
+        for obs in registered_observables:
+            if isinstance(obs, str):
+                # It's an observable ID - add to non-controlling list
+                observable_ids.append(obs)
+        
+        # Register non-controlling observables if any found
+        if observable_ids:
+            id_registry.register_non_controlling_observables(subcontainer_id, observable_ids)
+            print(f"Subcontainer {subcontainer_id} has non-controlling observables: {observable_ids}")
+        
+        # Create content using observable resolution
+        content = self._create_content_with_observables(factory, registered_observables)
         if not content:
             return subcontainer_id  # Still return ID even if content creation fails
             
@@ -557,7 +572,6 @@ class BaseCommandContainer(BaseCommandWidget):
             ID of the subcontainer
         """
         id_registry = get_id_registry()
-        
         # Handle existing vs. new subcontainer
         if existing_subcontainer_id:
             # Verify the subcontainer still exists
@@ -582,42 +596,8 @@ class BaseCommandContainer(BaseCommandWidget):
         
         # Deserialize children if included
         self._deserialize_children(subcontainer_id, serialized_subcontainer)
-        
+
         return subcontainer_id
-    
-    
-    def _update_subcontainer_id(self, old_id: str, new_id: str):
-        """
-        Update a subcontainer's ID in all internal mappings.
-        
-        Args:
-            old_id: Original subcontainer ID
-            new_id: New subcontainer ID
-        """
-        id_registry = get_id_registry()
-        
-        # Get current values
-        subcontainer = self._subcontainers.get(old_id)
-        location = self._id_to_location_map.get(old_id)
-        type_id = self._types_map.get(old_id)
-        
-        if subcontainer and location and type_id:
-            # Remove old mappings
-            self._subcontainers.pop(old_id, None)
-            self._id_to_location_map.pop(old_id, None)
-            self._types_map.pop(old_id, None)
-            
-            # Update location mapping
-            self._locations_map[location] = new_id
-            
-            # Add new mappings
-            self._subcontainers[new_id] = subcontainer
-            self._id_to_location_map[new_id] = location
-            self._types_map[new_id] = type_id
-            
-            # Update in registry
-            id_registry.unregister(old_id)
-            id_registry.register(subcontainer, self.type_code, new_id)
     
     def _deserialize_children(self, subcontainer_id: str, serialized_data: Dict):
         """
@@ -630,7 +610,41 @@ class BaseCommandContainer(BaseCommandWidget):
         id_registry = get_id_registry()
         
         if 'children' in serialized_data and isinstance(serialized_data['children'], dict):
-            for child_id, child_data in serialized_data['children'].items():
-                child = id_registry.get_widget(child_id)
-                if child and hasattr(child, 'deserialize'):
-                    child.deserialize(child_data)
+            # Get all current child widgets that have this subcontainer as their container
+            current_children_ids = id_registry.get_widgets_by_container_id(subcontainer_id)
+            current_children_widgets = [id_registry.get_widget(child_id) for child_id in current_children_ids]
+            
+            # Create a location map for newly created widgets
+            new_widgets_by_location = {}
+            
+            # First, extract locations from all the current children
+            for child_id in current_children_ids:
+                widget = id_registry.get_widget(child_id)
+                if widget:
+                    # Parse the widget ID to get its location
+                    parsed_id = parse_widget_id(child_id)
+                    if parsed_id:
+                        location_key = f"{parsed_id['container_location']}-{parsed_id['widget_location_id']}"
+                        new_widgets_by_location[location_key] = (child_id, widget)
+            
+            # Process each serialized child
+            for old_child_id, child_data in serialized_data['children'].items():
+                # Parse the old ID to get its location
+                parsed_old_id = parse_widget_id(old_child_id)
+                if not parsed_old_id:
+                    continue
+                
+                # Create a location key that combines container location and widget location ID
+                location_key = f"{parsed_old_id['container_location']}-{parsed_old_id['widget_location_id']}"
+                
+                # Look for a widget with matching location in our current children
+                if location_key in new_widgets_by_location:
+                    new_child_id, new_child_widget = new_widgets_by_location[location_key]
+                    
+                    # Deserialize the child with matching location
+                    if hasattr(new_child_widget, 'deserialize'):
+                        new_child_widget.deserialize(child_data)
+                else:
+                    # No matching widget found - this might happen if widget structure changed
+                    # Log this or handle as needed
+                    pass

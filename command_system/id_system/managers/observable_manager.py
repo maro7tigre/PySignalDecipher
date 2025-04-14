@@ -393,7 +393,7 @@ class ObservableManager:
     
     def update_property_controller(self, property_id, new_controller_id):
         """
-        Update a property's controller reference.
+        Update a property's controller reference with validation for non-controlling observables.
         
         Args:
             property_id: The ID of the property to update
@@ -415,6 +415,26 @@ class ObservableManager:
         # If the controller hasn't changed, no update needed
         if old_controller_id == new_controller_id:
             return property_id
+        
+        # Only check non-controlling relationship if setting a new controller (not removing one)
+        if new_controller_id != DEFAULT_NO_CONTROLLER:
+            # Get the observable ID from the property
+            observable_unique_id = components['observable_unique_id']
+            if observable_unique_id != DEFAULT_NO_OBSERVABLE:
+                # Find the full observable ID
+                observable_id = None
+                for obs_id in self._observables:
+                    if get_unique_id_from_id(obs_id) == observable_unique_id:
+                        observable_id = obs_id
+                        break
+                
+                # If we found the observable, check if control should be prevented
+                if observable_id:
+                    # Get the controller widget ID
+                    controller_widget_id = self.registry.get_full_id_from_unique_id(new_controller_id)
+                    if controller_widget_id and self.registry.should_prevent_control(controller_widget_id, observable_id):
+                        # Skip setting this controller
+                        return property_id
         
         # Create the updated property ID
         new_property_id = create_property_id(

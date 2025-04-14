@@ -81,6 +81,9 @@ class IDRegistry:
         
         # Get the subscription manager
         self._subscription_manager = get_subscription_manager()
+        
+        self._non_controlling_observables = {}  # container_location -> set of observable_ids
+
     
     #MARK: - Registration methods
     
@@ -495,6 +498,63 @@ class IDRegistry:
             observable_unique_id = get_unique_id_from_id(observable_id)
 
         return self._observable_manager.get_property_ids_by_observable_id_and_property_name(observable_unique_id, property_name)
+
+    def register_non_controlling_observables(self, container_id, observable_ids):
+        """
+        Register observables that should not be controlled by widgets in a container location.
+        
+        Args:
+            container_id: The container's ID
+            observable_ids: List of observable IDs that should not be controlled
+        """
+        if not container_id or not observable_ids:
+            return
+            
+        # Extract container components to get the location
+        components = parse_widget_id(container_id)
+        if not components:
+            return
+            
+        # Use container_location/widget_location_id as the key for the mapping
+        container_location = components['container_location']
+        widget_location_id = components['widget_location_id']
+        full_location = f"{container_location}/{widget_location_id}"
+        
+        # Initialize or update the set for this location
+        if full_location not in self._non_controlling_observables:
+            self._non_controlling_observables[full_location] = set()
+        
+        # Add the observable IDs to the set
+        self._non_controlling_observables[full_location].update(observable_ids)
+
+    def should_prevent_control(self, widget_id, observable_id):
+        """
+        Check if a widget should not control a specific observable.
+        
+        Args:
+            widget_id: The widget's ID
+            observable_id: The observable's ID
+            
+        Returns:
+            bool: True if control should be prevented, False otherwise
+        """
+        # Get the container hierarchy for this widget
+        components = parse_widget_id(widget_id)
+        if not components:
+            return False
+            
+        # Extract widget's container location
+        container_location = components['container_location']
+        
+        # Check all possible parent locations
+        for location in self._non_controlling_observables:
+            # Check if widget's location starts with a non-controlling location
+            if container_location.startswith(location):
+                # Check if this observable is in the non-controlling set
+                if observable_id in self._non_controlling_observables[location]:
+                    return True
+        
+        return False
     
     #MARK: - ID update methods
     
