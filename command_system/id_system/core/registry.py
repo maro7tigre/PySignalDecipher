@@ -1187,3 +1187,26 @@ class IDRegistry:
             container_unique_id = get_unique_id_from_id(container_id)
             
         return self._widget_manager.get_locations_map(container_unique_id)
+    
+    def is_id_registered(self, component_id):
+        """
+        Check if an ID is registered in the registry, regardless of component value.
+        
+        Args:
+            component_id: The ID to check
+            
+        Returns:
+            bool: True if the ID is registered, False otherwise
+        """
+        # Determine component type from ID prefix
+        if component_id.startswith(tuple(TypeCodes.get_all_widget_codes())):
+            # Widget/Container
+            return component_id in self._widget_manager._widgets
+        elif component_id.startswith(tuple(ObservableTypeCodes.get_all_codes())):
+            # Observable
+            return component_id in self._observable_manager._observables
+        elif component_id.startswith(tuple(PropertyTypeCodes.get_all_codes())):
+            # Property
+            return component_id in self._observable_manager._properties
+        
+        return False

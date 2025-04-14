@@ -104,6 +104,7 @@ registry = get_id_registry()
 | `register_observable(observable, type_code, observable_id=None)` | Register an observable object. Returns the observable's full ID as a string. |
 | `register_observable_property(property_obj, type_code, property_id=None, property_name="0", observable_id="0", controller_id=None)` | Register a property with relationships. Returns the property's full ID as a string. |
 | `unregister(component_id)` | Unregister any component. Returns True if successful, False otherwise. |
+| `is_id_registered(component_id)` | Check if an ID is registered, regardless of its component value. Returns True if registered, False otherwise. |
 
 #### Example: Register Components
 
@@ -133,6 +134,9 @@ property_id = registry.register_observable_property(
     observable_id="0",  # Observable ID (default: none)
     controller_id="0"   # Controller widget ID (default: none)
 )
+
+# Check if an ID is registered
+is_registered = registry.is_id_registered(some_id)
 ```
 
 ### Component Retrieval Methods
@@ -163,6 +167,10 @@ component_id = registry.get_id(component_object)
 
 # Extract the unique ID portion from any ID string
 unique_id = registry.get_unique_id_from_id(component_id)
+
+# Check if an ID is registered
+if registry.is_id_registered(component_id):
+    print(f"Component {component_id} is registered")
 ```
 
 ### Container Relationship Methods
@@ -786,6 +794,10 @@ button_id = id_registry.register(button, "pb", None, tab_id)
 
 # Later, get a widget by its ID
 retrieved_button = id_registry.get_widget(button_id)
+
+# Check if ID is registered
+if id_registry.is_id_registered(button_id):
+    print("Button is still registered")
 ```
 
 ### Example 2: Observable Property Binding

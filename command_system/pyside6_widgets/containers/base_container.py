@@ -574,27 +574,17 @@ class BaseCommandContainer(BaseCommandWidget):
             subcontainer_id = self.add_subcontainer(type_id, location)
             if not subcontainer_id:
                 return None
-        
-        # Handle ID consistency with serialized data
-        self._ensure_consistent_id(subcontainer_id, serialized_subcontainer)
+                
+        # Update the subcontainer's ID
+        success, subcontainer_id, error = id_registry.update_id(subcontainer_id, serialized_subcontainer['id'])
+        if not success:
+            raise ValueError(f"Failed to update ID for subcontainer {subcontainer_id}: {error}")
         
         # Deserialize children if included
         self._deserialize_children(subcontainer_id, serialized_subcontainer)
         
         return subcontainer_id
     
-    def _ensure_consistent_id(self, subcontainer_id: str, serialized_data: Dict):
-        """
-        Ensure consistent ID between current subcontainer and serialized data.
-        
-        Args:
-            subcontainer_id: Current subcontainer ID
-            serialized_data: Serialized data with potentially different ID
-        """
-        # Update the ID if it's different
-        if subcontainer_id != serialized_data['id']:
-            # Update our internal mappings
-            self._update_subcontainer_id(subcontainer_id, serialized_data['id'])
     
     def _update_subcontainer_id(self, old_id: str, new_id: str):
         """

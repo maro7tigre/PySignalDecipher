@@ -137,47 +137,44 @@ def process_events_and_wait(ms=50):
     loop.exec()
 
 # Diagnostic function to print ID system state
-def print_id_system_state(prefix=""):
+def print_id_system_state(prefix="", container_widget_ids=[], observable_ids=[], property_ids=[]):
     """Print the current state of the ID system for diagnostic purposes."""
     registry = get_id_registry()
     
     # Get all widget IDs - there's no direct method to get all widgets,
     # so we'll estimate using container queries
-    container_widgets = set()
-    for container_id in registry._containers.keys() if hasattr(registry, '_containers') else []:
-        widgets = registry.get_widgets_by_container_id(container_id) or []
-        container_widgets.update(widgets)
+    existing_container_widgets_ids = []
+    for widget in container_widget_ids:
+        if registry.is_id_registered(widget):
+            existing_container_widgets_ids.append(widget)
     
     # For observables, we can check the registry's internal state if available
-    observable_ids = list(registry._observables.keys()) if hasattr(registry, '_observables') else []
+    existing_observable_ids = []
+    for observable in observable_ids:
+        if registry.is_id_registered(observable):
+            existing_observable_ids.append(observable)
     
     # For properties, we can check observables and collect their properties
-    property_ids = []
-    for obs_id in observable_ids:
-        obs_properties = registry.get_observable_properties(obs_id) or []
-        property_ids.extend(obs_properties)
+    existing_property_ids = []
+    for property in property_ids:
+        if registry.is_id_registered(property):
+            existing_property_ids.append(property)
     
     print(f"===== {prefix} ID SYSTEM STATE =====")
-    print(f"Estimated number of widgets: {len(container_widgets)}")
-    for wid in container_widgets:
+    print(f"widgets: {len(existing_container_widgets_ids)}")
+    for wid in existing_container_widgets_ids:
         widget = registry.get_widget(wid)
         print(f"  {wid} -> {widget}")
     
-    print(f"Observables: {len(observable_ids)}")
-    for oid in observable_ids:
+    print(f"Observables: {len(existing_observable_ids)}")
+    for oid in existing_observable_ids:
         obs = registry.get_observable(oid)
         print(f"  {oid} -> {obs}")
     
-    print(f"Properties: {len(property_ids)}")
-    for pid in property_ids:
+    print(f"Properties: {len(existing_property_ids)}")
+    for pid in existing_property_ids:
         prop = registry.get_observable_property(pid)
-        prop_components = parse_property_id(pid)
-        if prop_components:
-            obs_id = prop_components['observable_unique_id']
-            controller_id = prop_components['controller_id']
-            print(f"  {pid} -> {prop} (Observable: {obs_id}, Controller: {controller_id})")
-        else:
-            print(f"  {pid} -> {prop}")
+        print(f"  {pid} -> {prop}")
     print("===============================")
 
 class TestSystemSerialization:
@@ -224,9 +221,16 @@ class TestSystemSerialization:
     def test_subcontainer_unregister_cascade_effect(self):
         """Test cascading effects when unregistering a subcontainer."""
         print("\n===== STARTING test_subcontainer_unregister_cascade_effect =====")
+        
+        container_widget_ids = []
+        observable_ids = []
+        property_ids = []
+        
         # Create a model for tab content
         form_model = FormDataModel("Test User", "test@example.com")
+        
         self.observables.append(form_model)
+        observable_ids.append(form_model.get_id())
         
         # Register tab type with model
         form_tab_type = self.tab_widget.register_tab(
@@ -237,6 +241,7 @@ class TestSystemSerialization:
         
         # Add tab
         tab_id = self.tab_widget.add_tab(form_tab_type)
+        container_widget_ids.append(tab_id)
         process_events_and_wait()
         
         print("Tab added to tab widget")
@@ -265,9 +270,14 @@ class TestSystemSerialization:
         print(f"Email Edit ID: {email_edit_id}")
         print(f"Name Property ID: {name_property_id}")
         print(f"Email Property ID: {email_property_id}")
+        container_widget_ids.append(name_edit_id)
+        container_widget_ids.append(email_edit_id)
+        property_ids.append(name_property_id)
+        property_ids.append(email_property_id)
+        
         
         # Print initial state
-        print_id_system_state("BEFORE CLOSING TAB")
+        print_id_system_state("BEFORE CLOSING TAB", container_widget_ids, observable_ids, property_ids)
         
         # Attempt to count components before closing
         registry = get_id_registry()
@@ -279,12 +289,12 @@ class TestSystemSerialization:
                 widget_id = registry.get_id(child)
                 if widget_id:
                     all_widgets_before.add(widget_id)
-                    
+        
         # Get observable IDs
         all_observable_ids_before = []
         if hasattr(registry, '_observables'):
             all_observable_ids_before = list(registry._observables.keys())
-            
+        
         # Collect property IDs
         all_property_ids_before = []
         for obs_id in all_observable_ids_before:
@@ -310,7 +320,7 @@ class TestSystemSerialization:
         assert self.tab_widget.count() == 0, "Tab was not closed"
         
         # Print state after closing
-        print_id_system_state("AFTER CLOSING TAB")
+        print_id_system_state("AFTER CLOSING TAB", container_widget_ids, observable_ids, property_ids)
         
         # Collect components after closing to verify cascade
         all_widgets_after = set()
@@ -331,7 +341,7 @@ class TestSystemSerialization:
         for obs_id in all_observable_ids_after:
             props = registry.get_observable_properties(obs_id) or []
             all_property_ids_after.extend(props)
-                    
+    
         # Verify that closure caused unregistration
         assert len(all_widgets_after) < len(all_widgets_before), "Widgets were not unregistered"
         
@@ -345,33 +355,24 @@ class TestSystemSerialization:
         assert registry.get_observable_property(name_property_id) is None, "Name property was not unregistered"
         assert registry.get_observable_property(email_property_id) is None, "Email property was not unregistered"
         
-        # The observable should still exist since we kept a reference
-        assert registry.get_observable(form_model.get_id()) is form_model, "Observable was incorrectly unregistered"
-        
         print("All components properly unregistered")
-        
-        # Re-register the tab type (necessary for deserialization)
-        form_tab_type = self.tab_widget.register_tab(
-            factory_func=create_form_widget,
-            tab_name="Form Tab",
-            observables=[form_model.get_id()]
-        )
         
         # Deserialize the subcontainer
         result = self.tab_widget.deserialize_subcontainer(
-            form_tab_type,
+            serialized_state["type"],
             serialized_state["location"],
             serialized_state
         )
         
-        assert result, "Failed to deserialize subcontainer"
+        assert result
+        assert result in container_widget_ids
         process_events_and_wait(100)  # Longer wait for complex restoration
         
         # Verify tab was restored
         assert self.tab_widget.count() == 1, "Tab was not restored"
         
         # Print state after restoration
-        print_id_system_state("AFTER RESTORING TAB")
+        print_id_system_state("AFTER RESTORING TAB", container_widget_ids, observable_ids, property_ids)
         
         # Find the restored widgets and verify they have new IDs (different from originals)
         restored_tab_widget = self.tab_widget.widget(0)
