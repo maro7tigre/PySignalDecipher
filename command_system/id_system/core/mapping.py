@@ -115,11 +115,13 @@ class Mapping:
             return False
         
         value = self._storage[key]
-        if isinstance(value, list):
+        if isinstance(value, collections.abc.Iterable) and not isinstance(value, (str, bytes)): # Check if iterable (but not string/bytes)
             for item in value:
-                self._value_log.discard(item)
+                try: hash(item); self._value_log.discard(item) # Remove hashable items
+                except TypeError: pass
         else:
-            self._value_log.discard(value)
+            try: hash(value); self._value_log.discard(value) # Remove hashable value
+            except TypeError: pass
         
         del self._storage[key]
         self._key_log.discard(key)
