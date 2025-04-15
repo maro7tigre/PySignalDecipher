@@ -603,6 +603,8 @@ class ObservableManager:
                             self._controller_to_properties.add(full_controller_id, controller_props)
                 
                 property_updates.append((prop_id, new_prop_id))
+                if prop_id != new_prop_id:
+                    self.registry.update_all_mappings(prop_id, new_prop_id)
         
         # 7. Update observable_to_properties mapping
         if properties:

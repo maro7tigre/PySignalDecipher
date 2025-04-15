@@ -986,4 +986,4 @@ class TestComplexSerialization:
 
 if __name__ == "__main__":
     # Run tests when executed directly
-    pytest.main(["-v", __file__])
+    pytest.main(["-vsx", __file__])
