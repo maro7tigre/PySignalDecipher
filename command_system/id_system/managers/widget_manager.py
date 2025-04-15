@@ -851,6 +851,10 @@ class WidgetManager:
                 
                 # Update container's locations map
                 self._update_container_locations_map(new_child_id)
+            
+            # Update mappigns
+            if child_id != new_child_id:
+                self.registry.update_all_mappings(child_id, new_child_id)
         
         # Update the mapping with the modified set
         self._container_to_widgets.add(container_full_id, container_widgets)
