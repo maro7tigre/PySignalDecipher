@@ -282,6 +282,14 @@ class IDRegistry:
         """
         Unregister a component from the registry.
         
+        When a widget that controls properties is unregistered, all properties it controls
+        will also be unregistered.
+        
+        When an observable's last property is unregistered, the observable itself will also
+        be unregistered.
+        
+        When a container is unregistered, all widgets within it will be unregistered.
+        
         Args:
             component_id: The ID of the component to unregister
             
@@ -293,6 +301,9 @@ class IDRegistry:
         
         # Determine component type from ID prefix
         if component_id.startswith(tuple(TypeCodes.get_all_widget_codes())):
+            # Check if this widget is controlling any properties
+            controlled_properties = self.get_controller_properties(component_id)
+            
             # Widget/Container
             success = self._widget_manager.unregister_widget(component_id)
             if success:
@@ -303,7 +314,14 @@ class IDRegistry:
                 if component is not None:
                     self._objects_to_id_mapping.delete(component)
                 self._id_generator.unregister(unique_id)
-            return success
+                
+                # Unregister all properties this widget was controlling
+                for property_id in controlled_properties:
+                    self.unregister(property_id)
+                    
+                return True
+            return False
+        
         elif component_id.startswith(tuple(ObservableTypeCodes.get_all_codes())):
             # Observable
             success = self._observable_manager.unregister_observable(component_id)
@@ -315,8 +333,13 @@ class IDRegistry:
                 if component is not None:
                     self._objects_to_id_mapping.delete(component)
                 self._id_generator.unregister(unique_id)
-            return success
+                return True
+            return False
+        
         elif component_id.startswith(tuple(PropertyTypeCodes.get_all_codes())):
+            # Get observable ID before unregistering the property
+            observable_id = self.get_observable_id_from_property_id(component_id)
+            
             # Property
             success = self._observable_manager.unregister_property(component_id)
             if success:
@@ -327,7 +350,15 @@ class IDRegistry:
                 if component is not None:
                     self._objects_to_id_mapping.delete(component)
                 self._id_generator.unregister(unique_id)
-            return success
+                
+                # Check if this was the last property of the observable
+                if observable_id and not self.get_observable_properties(observable_id):
+                    # If no properties left, unregister the observable
+                    self.unregister(observable_id)
+                    
+                return True
+            return False
+        
         return False
     
     #MARK: - ID retrieval methods
