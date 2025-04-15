@@ -649,7 +649,13 @@ class IDRegistry:
             
             # If successful, update mappings and notify subscribers
             if success and updated_id != old_id:
+                # Check if widget is a controller for any properties and update them
+                property_updates = self._observable_manager.update_properties_for_controller(old_id, updated_id)
+                
+                # Update mappings for all changed IDs (widget and its properties)
                 self.update_all_mappings(old_id, updated_id)
+                for old_prop_id, new_prop_id in property_updates:
+                    self.update_all_mappings(old_prop_id, new_prop_id)
                 
             return success, updated_id, error
             

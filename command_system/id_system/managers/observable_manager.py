@@ -481,7 +481,6 @@ class ObservableManager:
             return []
         
         updates = []
-        
         # Get all properties controlled by old_controller_id using the full ID
         props = self._controller_to_properties.get(old_controller_id)
         if props:
@@ -521,6 +520,8 @@ class ObservableManager:
                                 self._observable_to_properties.add(full_observable_id, obs_props)
                     
                     updates.append((property_id, new_property_id))
+                    if property_id != new_property_id:
+                        self.registry.update_all_mappings(new_property_id, property_id)
             
             # Update the controller mapping
             self._controller_to_properties.add(new_controller_id, props)
