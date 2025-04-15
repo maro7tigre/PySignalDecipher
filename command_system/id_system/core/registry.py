@@ -6,7 +6,7 @@ of the ID system.
 """
 
 from command_system.id_system.core.generator import UniqueIDGenerator
-from command_system.id_system.core.mapping import Mapping
+from command_system.id_system.core.mapping import Mapping, UniqueIdMapping
 from command_system.id_system.core.parser import (
     parse_widget_id,
     parse_observable_id,
@@ -81,7 +81,7 @@ class IDRegistry:
         
         # Create the core mappings that the system relies on
         self._widgets_mapping = Mapping(update_keys=True, update_values=False)
-        self._unique_to_full_id_mapping = Mapping(update_keys=True, update_values=False)
+        self._unique_to_full_id_mapping = UniqueIdMapping()
         self._objects_to_id_mapping = Mapping(update_keys=False, update_values=True)
         
         # Add the mappings to the registry
@@ -113,14 +113,6 @@ class IDRegistry:
         """
         for mapping in self.mappings:
             mapping.update(old_id, new_id)
-            
-        # Special case for unique ID mapping - we need to update unique IDs as well
-        if old_id in self._unique_to_full_id_mapping:
-            old_unique_id = get_unique_id_from_id(old_id)
-            new_unique_id = get_unique_id_from_id(new_id)
-            if old_unique_id != new_unique_id:
-                # Update the mapping from unique ID to full ID
-                self._unique_to_full_id_mapping.set(new_unique_id, new_id)
     
     def remove_from_all_mappings(self, id_to_remove):
         """
@@ -183,7 +175,7 @@ class IDRegistry:
             
             # Use mappings to store the relationships
             self._widgets_mapping.add(widget_id, widget)
-            self._unique_to_full_id_mapping.add(unique_id, widget_id)
+            self._unique_to_full_id_mapping.add_id_mapping(widget_id)
             if widget is not None:
                 self._objects_to_id_mapping.add(widget, widget_id)
                 
@@ -229,7 +221,7 @@ class IDRegistry:
         
         # Use mappings to store the relationships
         self._widgets_mapping.add(observable_id, observable)
-        self._unique_to_full_id_mapping.add(unique_id, observable_id)
+        self._unique_to_full_id_mapping.add_id_mapping(observable_id)
         if observable is not None:
             self._objects_to_id_mapping.add(observable, observable_id)
         
@@ -280,7 +272,7 @@ class IDRegistry:
         
         # Use mappings to store the relationships
         self._widgets_mapping.add(property_id, property_obj)
-        self._unique_to_full_id_mapping.add(unique_id, property_id)
+        self._unique_to_full_id_mapping.add_id_mapping(property_id)
         if property_obj is not None:
             self._objects_to_id_mapping.add(property_obj, property_id)
         

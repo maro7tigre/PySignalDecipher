@@ -4,9 +4,16 @@ Mapping module.
 This module provides a trackable dictionary-like class that automatically updates
 when IDs change within the ID system.
 """
-
+from command_system.id_system.core.parser import (
+    parse_widget_id,
+    get_unique_id_from_id,
+)
 import collections.abc # Use this for robust checking
+from command_system.id_system.core.generator import LocationIDGenerator
+from command_system.id_system.types import DEFAULT_ROOT_LOCATION, TypeCodes
 
+
+# MARK:-Mapping
 class Mapping:
     """
     A dictionary-like class that tracks keys and values and updates automatically
@@ -154,3 +161,250 @@ class Mapping:
     
     def __repr__(self): 
         return str(self)
+    
+# MARK:- uniqueIdMapping
+class UniqueIdMapping(Mapping):
+    """
+    A specialized mapping for handling unique ID to full ID relationships.
+    
+    This class extends the base Mapping class with functionality specifically
+    for managing unique ID to full ID mappings. It ensures that when full IDs
+    are updated, the corresponding unique ID mappings are updated correctly.
+    """
+    
+    def __init__(self):
+        """Initialize the unique ID mapping."""
+        super().__init__(update_keys=True, update_values=False)
+    
+    def update(self, old_id, new_id):
+        """
+        Update mapping when a full ID changes by handling the unique ID aspects.
+        
+        Args:
+            old_id: The old full ID
+            new_id: The new full ID
+            
+        Returns:
+            bool: True if any updates were made, False otherwise
+        """
+        old_unique_id = get_unique_id_from_id(old_id)
+        new_unique_id = get_unique_id_from_id(new_id)
+        
+        # If unique IDs are the same, we just need to update the value
+        if old_unique_id == new_unique_id:
+            # If this unique ID is mapped, update its corresponding full ID
+            if old_unique_id in self._storage:
+                self._storage[old_unique_id] = new_id
+                return True
+            return False
+        
+        # If unique IDs changed, we need to update both key and value
+        if old_unique_id in self._storage:
+            # Store the value and remove the old mapping
+            old_value = self._storage[old_unique_id]
+            del self._storage[old_unique_id]
+            self._key_log.discard(old_unique_id)
+            
+            # Create the new mapping
+            self._storage[new_unique_id] = new_id
+            self._key_log.add(new_unique_id)
+            return True
+            
+        return False
+    
+    def add_id_mapping(self, full_id):
+        """
+        Add a mapping from unique ID to full ID.
+        
+        Args:
+            full_id: The full ID to add
+            
+        Returns:
+            str: The unique ID extracted from the full ID
+        """
+        unique_id = get_unique_id_from_id(full_id)
+        if unique_id:
+            self.add(unique_id, full_id)
+        return unique_id
+    
+# MARK:- generatorMapping
+class GeneratorMapping(Mapping):
+    """
+    A specialized mapping for managing widget location generators.
+    
+    This class extends the base Mapping class with functionality specifically
+    for managing location generators for widgets. It ensures that when widget IDs
+    are updated or deleted, the corresponding location generators are updated correctly.
+    """
+    
+    def __init__(self):
+        """Initialize the generator mapping."""
+        super().__init__(update_keys=True, update_values=False)
+        # Ensure the root location always has a generator
+        self._storage[DEFAULT_ROOT_LOCATION] = LocationIDGenerator()
+    
+    def get_generator(self, container_location):
+        """
+        Get or create a location generator for a specific container location.
+        
+        Args:
+            container_location: The container location
+            
+        Returns:
+            LocationIDGenerator: The location generator for the container
+        """
+        if container_location not in self._storage:
+            self._storage[container_location] = LocationIDGenerator()
+            self._key_log.add(container_location)
+        
+        return self._storage[container_location]
+    
+    def get_generator_for_widget(self, widget_id):
+        """
+        Get the location generator for a widget.
+        
+        Args:
+            widget_id: The widget ID
+            
+        Returns:
+            tuple: (generator, container_location, widget_location_id) or (None, None, None) if invalid
+        """
+        components = parse_widget_id(widget_id)
+        if not components:
+            return None, None, None
+        
+        container_location = components['container_location']
+        widget_location_id = components['widget_location_id']
+        
+        generator = self.get_generator(container_location)
+        return generator, container_location, widget_location_id
+    
+    def delete_widget_location(self, widget_id):
+        """
+        Delete a widget's location from the appropriate generator.
+        
+        Args:
+            widget_id: The widget ID
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        generator, container_location, widget_location_id = self.get_generator_for_widget(widget_id)
+        if not generator:
+            return False
+        
+        return generator.unregister(widget_location_id)
+    
+    def register_widget_location(self, widget_id):
+        """
+        Register a widget's location with the appropriate generator.
+        
+        Args:
+            widget_id: The widget ID
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        generator, container_location, widget_location_id = self.get_generator_for_widget(widget_id)
+        if not generator:
+            return False
+        
+        return generator.register(widget_location_id)
+    
+    def is_location_registered(self, container_location, widget_location_id):
+        """
+        Check if a widget location is already registered.
+        
+        Args:
+            container_location: The container location
+            widget_location_id: The widget location ID
+            
+        Returns:
+            bool: True if registered, False otherwise
+        """
+        generator = self.get_generator(container_location)
+        return generator.is_registered(widget_location_id)
+    
+    def generate_location_id(self, container_location):
+        """
+        Generate a new widget location ID for a container.
+        
+        Args:
+            container_location: The container location
+            
+        Returns:
+            str: A new widget location ID
+        """
+        generator = self.get_generator(container_location)
+        return generator.generate()
+    
+    def update(self, old_id, new_id):
+        """
+        Update widget location registrations when a widget ID changes.
+        
+        Args:
+            old_id: The old widget ID
+            new_id: The new widget ID
+            
+        Returns:
+            bool: True if any updates were made, False otherwise
+        """
+        # Only process widget IDs
+        if not old_id.startswith(tuple(TypeCodes.get_all_widget_codes())):
+            return False
+            
+        old_components = parse_widget_id(old_id)
+        new_components = parse_widget_id(new_id)
+        
+        if not old_components or not new_components:
+            return False
+        
+        old_container_location = old_components['container_location']
+        old_widget_location_id = old_components['widget_location_id']
+        
+        new_container_location = new_components['container_location']
+        new_widget_location_id = new_components['widget_location_id']
+        
+        # If neither location changed, nothing to do
+        if (old_container_location == new_container_location and 
+            old_widget_location_id == new_widget_location_id):
+            return False
+        
+        # Unregister from old location
+        old_generator = self.get_generator(old_container_location)
+        old_generator.unregister(old_widget_location_id)
+        
+        # Register with new location
+        new_generator = self.get_generator(new_container_location)
+        return new_generator.register(new_widget_location_id)
+    
+    def cleanup_container_locations(self, container_path):
+        """
+        Clean up all location generators for a container and its children.
+        
+        This is called when a container is unregistered to ensure all
+        its location generators are removed.
+        
+        Args:
+            container_path: The container's full path
+            
+        Returns:
+            bool: True if any generators were removed
+        """
+        updated = False
+        
+        # Remove the exact container path generator
+        if container_path in self._storage and container_path != DEFAULT_ROOT_LOCATION:
+            del self._storage[container_path]
+            self._key_log.discard(container_path)
+            updated = True
+        
+        # Also remove any child paths (starting with container_path/)
+        prefix = container_path + "/"
+        for path in list(self._storage.keys()):
+            if path.startswith(prefix):
+                del self._storage[path]
+                self._key_log.discard(path)
+                updated = True
+        
+        return updated

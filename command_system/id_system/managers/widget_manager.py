@@ -5,8 +5,8 @@ This module contains the WidgetManager class for managing widgets and their
 relationships with containers in the ID system.
 """
 
-from command_system.id_system.core.generator import LocationIDGenerator
 from command_system.id_system.core.mapping import Mapping
+from command_system.id_system.core.mapping import GeneratorMapping
 from command_system.id_system.core.parser import (
     parse_widget_id,
     create_widget_id,
@@ -53,8 +53,9 @@ class WidgetManager:
         self.registry.mappings.append(self._container_to_widgets)
         self.registry.mappings.append(self._container_locations_map)
         
-        # Maps container locations to location generators
-        self._container_location_generators = {}
+        # Create the specialized generator mapping
+        self._location_generators = GeneratorMapping()
+        self.registry.mappings.append(self._location_generators)
     
     #MARK: - Registration methods
     
@@ -81,26 +82,25 @@ class WidgetManager:
         if container_id and ID_SEPARATOR in container_id:
             container_unique_id = get_unique_id_from_id(container_id)
             
-        # Determine container location and widget location ID based on container
+        # Determine container location based on container
         container_location = self._get_container_location(container_unique_id)
-        
-        # Get the location generator for this container path
-        location_gen = self._get_location_generator(container_location)
         
         # Determine widget_location_id
         widget_location_id = location
         if widget_location_id is None:
             # Generate a new widget_location_id
-            widget_location_id = location_gen.generate()
+            widget_location_id = self._location_generators.generate_location_id(container_location)
         else:
             # Check if the widget_location_id is available
-            if location_gen.is_registered(widget_location_id):
+            if self._location_generators.is_location_registered(container_location, widget_location_id):
                 raise IDRegistrationError(
                     f"Widget location ID '{widget_location_id}' already exists in container location '{container_location}'"
                 )
             
             # Register the widget location ID
-            location_gen.register(widget_location_id)
+            self._location_generators.register_widget_location(
+                create_widget_id(type_code, unique_id, container_unique_id, container_location, widget_location_id)
+            )
         
         # Create the widget ID
         widget_id = create_widget_id(
@@ -167,7 +167,7 @@ class WidgetManager:
                 
             # Clean up any location generators for this container's locations
             full_container_path = f"{container_location}/{widget_location_id}"
-            self._cleanup_container_location_generators(full_container_path)
+            self._location_generators.cleanup_container_locations(full_container_path)
         
         # Remove from container's widgets set
         container_widgets = self._container_to_widgets.get(container_unique_id) or set()
@@ -178,9 +178,7 @@ class WidgetManager:
             self._update_container_locations_map(container_unique_id)
         
         # Unregister from location generator
-        if container_location in self._container_location_generators:
-            location_gen = self._container_location_generators[container_location]
-            location_gen.unregister(widget_location_id)
+        self._location_generators.delete_widget_location(widget_id)
         
         # If this widget is in any container's locations map, remove it
         self._remove_from_locations_maps(widget_id)
@@ -227,9 +225,7 @@ class WidgetManager:
         is_container = ContainerTypeCodes.is_valid_code(type_code)
         
         # Unregister from old location generator
-        if old_container_location in self._container_location_generators:
-            old_location_gen = self._container_location_generators[old_container_location]
-            old_location_gen.unregister(widget_location_id)
+        self._location_generators.delete_widget_location(widget_id)
         
         # Remove from old container's widget set
         old_container_widgets = self._container_to_widgets.get(old_container_id) or set()
@@ -242,17 +238,12 @@ class WidgetManager:
         # Determine the new container location based on container
         new_container_location = self._get_container_location(new_container_unique_id)
         
-        # Get the location generator for the new container path
-        new_location_gen = self._get_location_generator(new_container_location)
-        
         # Check if the widget_location_id is available in the new container
-        if new_location_gen.is_registered(widget_location_id):
+        if self._location_generators.is_location_registered(new_container_location, widget_location_id):
             # Generate a new widget_location_id
-            final_widget_location_id = new_location_gen.generate()
+            final_widget_location_id = self._location_generators.generate_location_id(new_container_location)
         else:
             final_widget_location_id = widget_location_id
-            # Register the widget location ID
-            new_location_gen.register(final_widget_location_id)
         
         # Create the updated widget ID
         new_widget_id = create_widget_id(
@@ -262,6 +253,9 @@ class WidgetManager:
             new_container_location,
             final_widget_location_id
         )
+        
+        # Register with the new location generator
+        self._location_generators.register_widget_location(new_widget_id)
         
         # Add to new container's widget set
         new_container_widgets = self._container_to_widgets.get(new_container_unique_id) or set()
@@ -314,18 +308,12 @@ class WidgetManager:
         # Check if this is a container with children
         is_container = ContainerTypeCodes.is_valid_code(type_code)
         
-        # Get the location generator
-        location_gen = self._get_location_generator(container_location)
-        
         # Unregister from old location
-        location_gen.unregister(old_widget_location_id)
+        self._location_generators.delete_widget_location(widget_id)
         
         # Check if the new widget_location_id is available
-        if location_gen.is_registered(new_location):
+        if self._location_generators.is_location_registered(container_location, new_location):
             raise IDRegistrationError(f"Widget location ID '{new_location}' already exists in container location '{container_location}'")
-        
-        # Register the new widget_location_id
-        location_gen.register(new_location)
         
         # Create the updated widget ID
         new_widget_id = create_widget_id(
@@ -335,6 +323,9 @@ class WidgetManager:
             container_location,
             new_location
         )
+        
+        # Register with the new location
+        self._location_generators.register_widget_location(new_widget_id)
         
         # Update container's widget set
         container_widgets = self._container_to_widgets.get(container_unique_id) or set()
@@ -421,40 +412,22 @@ class WidgetManager:
         old_widget_location_id = old_components['widget_location_id']
         new_widget_location_id = new_components['widget_location_id']
         
-        # If container location changing, unregister from old location generator
+        # Unregister from old location
+        self._location_generators.delete_widget_location(old_widget_id)
+        
+        # If container location changing or widget location changing, check availability
+        final_widget_location_id = new_widget_location_id
         if old_container_location != new_container_location:
-            if old_container_location in self._container_location_generators:
-                old_location_gen = self._container_location_generators[old_container_location]
-                old_location_gen.unregister(old_widget_location_id)
-            
-            # Get or create the new location generator
-            new_location_gen = self._get_location_generator(new_container_location)
-            
             # Check if the widget_location_id is available in the new container
-            if new_location_gen.is_registered(new_widget_location_id):
+            if self._location_generators.is_location_registered(new_container_location, new_widget_location_id):
                 # Generate a new widget_location_id
-                final_widget_location_id = new_location_gen.generate()
-            else:
-                final_widget_location_id = new_widget_location_id
-                # Register the widget location ID
-                new_location_gen.register(final_widget_location_id)
+                final_widget_location_id = self._location_generators.generate_location_id(new_container_location)
         else:
             # Same container location, just updating widget_location_id
             if old_widget_location_id != new_widget_location_id:
-                location_gen = self._get_location_generator(old_container_location)
-                
-                # Unregister old location ID
-                location_gen.unregister(old_widget_location_id)
-                
                 # Check if new location ID is available
-                if location_gen.is_registered(new_widget_location_id):
+                if self._location_generators.is_location_registered(new_container_location, new_widget_location_id):
                     return False, old_widget_id, f"Widget location ID '{new_widget_location_id}' already exists in container location '{old_container_location}'"
-                
-                # Register new location ID
-                location_gen.register(new_widget_location_id)
-                final_widget_location_id = new_widget_location_id
-            else:
-                final_widget_location_id = old_widget_location_id
         
         # Create the final widget ID
         final_widget_id = create_widget_id(
@@ -464,6 +437,9 @@ class WidgetManager:
             new_container_location,
             final_widget_location_id
         )
+        
+        # Register with the location generator
+        self._location_generators.register_widget_location(final_widget_id)
         
         # If this is the same as the original ID, nothing to do
         if final_widget_id == old_widget_id:
@@ -656,21 +632,6 @@ class WidgetManager:
         # Update the container's locations map
         self._container_locations_map.add(container_unique_id, location_map)
     
-    def _get_location_generator(self, container_location):
-        """
-        Get or create a location generator for a specific container location.
-        
-        Args:
-            container_location: The container location
-            
-        Returns:
-            LocationIDGenerator: The location generator
-        """
-        if container_location not in self._container_location_generators:
-            self._container_location_generators[container_location] = LocationIDGenerator()
-        
-        return self._container_location_generators[container_location]
-    
     def _get_container_location(self, container_id):
         """
         Get the container's location path.
@@ -737,6 +698,10 @@ class WidgetManager:
                 new_path,
                 child_widget_location_id
             )
+            
+            # Update location generator registration
+            self._location_generators.delete_widget_location(child_id)
+            self._location_generators.register_widget_location(new_child_id)
             
             # Update container's widget set
             container_widgets.discard(child_id)
@@ -815,30 +780,9 @@ class WidgetManager:
             if updated:
                 self._container_locations_map.add(container_id, locations_map)
     
-    def _cleanup_container_location_generators(self, container_path):
-        """
-        Clean up all location generators for a container and its children.
-        
-        This is called when a container is unregistered to ensure all
-        its location generators are removed.
-        
-        Args:
-            container_path: The container's full path
-        """
-        # Remove the exact container path generator
-        if container_path in self._container_location_generators:
-            del self._container_location_generators[container_path]
-        
-        # Also remove any child paths (starting with container_path/)
-        prefix = container_path + "/"
-        for path in list(self._container_location_generators.keys()):
-            if path.startswith(prefix):
-                del self._container_location_generators[path]
-    
     def clear(self):
         """Clear all widget registrations."""
         for mapping in [self._container_to_widgets, self._container_locations_map]:
             mapping._storage.clear()
             mapping._key_log.clear()
             mapping._value_log.clear()
-        self._container_location_generators.clear()
