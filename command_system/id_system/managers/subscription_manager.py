@@ -17,7 +17,7 @@ def subscribe_to_id(component_id, callback):
     Subscribe to changes for a specific component ID.
     
     Args:
-        component_id: The component ID to subscribe to
+        component_id: The full component ID to subscribe to
         callback: The callback function that takes old_id and new_id as arguments
         
     Returns:
@@ -35,7 +35,7 @@ def unsubscribe_from_id(component_id, callback=None):
     Unsubscribe from changes for a specific component ID.
     
     Args:
-        component_id: The component ID to unsubscribe from
+        component_id: The full component ID to unsubscribe from
         callback: The callback function to unsubscribe, or None to unsubscribe all
         
     Returns:
@@ -89,8 +89,6 @@ class SubscriptionManager:
     
     def __init__(self):
         """Initialize the subscription manager."""
-
-        
         # Track callbacks to component IDs (for cleanup)
         self._callback_map = {}
         
@@ -98,19 +96,19 @@ class SubscriptionManager:
         """
         Initiate the mapping for the subscription manager.
 
-        This method is called when the
+        Args:
+            registry: The parent IDRegistry to add the mapping to
         """
-        # Use a mapping to track component IDs to sets of callback functions
+        # Use a mapping to track full component IDs to sets of callback functions
         self._subscriptions = Mapping(update_keys=True, update_values=False)  
         registry.mappings.append(self._subscriptions)      
-        
         
     def subscribe(self, component_id, callback):
         """
         Subscribe to changes for a specific component ID.
         
         Args:
-            component_id: The component ID to subscribe to
+            component_id: The full component ID to subscribe to
             callback: The callback function that takes old_id and new_id as arguments
             
         Returns:
@@ -139,7 +137,7 @@ class SubscriptionManager:
         Unsubscribe from changes for a specific component ID.
         
         Args:
-            component_id: The component ID to unsubscribe from
+            component_id: The full component ID to unsubscribe from
             callback: The callback function to unsubscribe, or None to unsubscribe all
             
         Returns:
@@ -190,8 +188,8 @@ class SubscriptionManager:
         Notify subscribers of an ID change.
         
         Args:
-            old_id: The old component ID
-            new_id: The new component ID
+            old_id: The old full component ID
+            new_id: The new full component ID
             
         Returns:
             bool: True if notification was successful, False otherwise
@@ -225,7 +223,7 @@ class SubscriptionManager:
         Get all subscribers for a specific component ID.
         
         Args:
-            component_id: The component ID
+            component_id: The full component ID
             
         Returns:
             list: A list of callback functions subscribed to the ID
@@ -238,9 +236,10 @@ class SubscriptionManager:
     
     def clear(self):
         """Clear all subscriptions."""
-        self._subscriptions._storage.clear()
-        self._subscriptions._key_log.clear()
-        self._subscriptions._value_log.clear()
+        if hasattr(self, '_subscriptions'):
+            self._subscriptions._storage.clear()
+            self._subscriptions._key_log.clear()
+            self._subscriptions._value_log.clear()
         self._callback_map.clear()
     
     def cleanup_callback(self, callback):

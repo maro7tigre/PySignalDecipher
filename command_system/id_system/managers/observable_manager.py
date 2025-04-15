@@ -34,7 +34,7 @@ class ObservableManager:
         """Initialize the observable manager."""
         self.registry = registry
         
-        # Create mappings - now using full IDs instead of unique IDs
+        # Create mappings using full IDs for consistency
         self._observable_to_properties = Mapping(update_keys=True, update_values=True)
         self._controller_to_properties = Mapping(update_keys=True, update_values=True)
         
@@ -69,7 +69,7 @@ class ObservableManager:
         Unregister an observable from the manager.
         
         Args:
-            observable_id: The ID of the observable to unregister
+            observable_id: The full ID of the observable to unregister
             
         Returns:
             bool: True if successful, False otherwise
@@ -100,9 +100,9 @@ class ObservableManager:
     #MARK: - Property registration methods
     
     def register_property(self, property_obj, type_code, unique_id, 
-                         observable_id=DEFAULT_NO_OBSERVABLE,
-                         property_name=DEFAULT_NO_PROPERTY_NAME, 
-                         controller_id=DEFAULT_NO_CONTROLLER):
+                          observable_id=DEFAULT_NO_OBSERVABLE,
+                          property_name=DEFAULT_NO_PROPERTY_NAME, 
+                          controller_id=DEFAULT_NO_CONTROLLER):
         """
         Register a property with the manager.
         
@@ -110,9 +110,9 @@ class ObservableManager:
             property_obj: The property object to register (can be None for descriptor properties)
             type_code: The property type code
             unique_id: The unique ID for the property
-            observable_id: The observable ID or unique ID (default: "0")
+            observable_id: The full observable ID or unique ID (default: "0")
             property_name: The name of the property (default: "0")
-            controller_id: The controller ID or unique ID (default: "0")
+            controller_id: The full controller ID or unique ID (default: "0")
             
         Returns:
             str: The generated property ID
@@ -138,37 +138,31 @@ class ObservableManager:
             controller_unique_id
         )
         
-        # Get the full observable ID if provided
-        full_observable_id = None
-        if observable_unique_id != DEFAULT_NO_OBSERVABLE:
-            full_observable_id = self.registry.get_full_id_from_unique_id(observable_unique_id)
-            if not full_observable_id:
-                # If no full ID found but observable_id was provided directly, use that
-                if observable_id and observable_id != DEFAULT_NO_OBSERVABLE and ID_SEPARATOR in observable_id:
-                    full_observable_id = observable_id
+        # Add to observable's property set if applicable - using full observable ID
+        if observable_id and observable_id != DEFAULT_NO_OBSERVABLE:
+            # For unique ID provided, get the full ID
+            full_observable_id = observable_id
+            if ID_SEPARATOR not in observable_id:
+                full_observable_id = self.registry.get_full_id_from_unique_id(observable_id)
+                
+            if full_observable_id:
+                # Get current properties for this observable
+                props = self._observable_to_properties.get(full_observable_id) or set()
+                props.add(property_id)
+                self._observable_to_properties.add(full_observable_id, props)
         
-        # Add to observable's property set if applicable
-        if full_observable_id:
-            # Get current properties for this observable
-            props = self._observable_to_properties.get(full_observable_id) or set()
-            props.add(property_id)
-            self._observable_to_properties.add(full_observable_id, props)
-        
-        # Get the full controller ID if provided
-        full_controller_id = None
-        if controller_unique_id != DEFAULT_NO_CONTROLLER:
-            full_controller_id = self.registry.get_full_id_from_unique_id(controller_unique_id)
-            if not full_controller_id:
-                # If no full ID found but controller_id was provided directly, use that
-                if controller_id and controller_id != DEFAULT_NO_CONTROLLER and ID_SEPARATOR in controller_id:
-                    full_controller_id = controller_id
-                    
-        # Add to controller's property set if applicable
-        if full_controller_id:
-            # Get current properties for this controller
-            props = self._controller_to_properties.get(full_controller_id) or set()
-            props.add(property_id)
-            self._controller_to_properties.add(full_controller_id, props)
+        # Add to controller's property set if applicable - using full controller ID
+        if controller_id and controller_id != DEFAULT_NO_CONTROLLER:
+            # For unique ID provided, get the full ID
+            full_controller_id = controller_id
+            if ID_SEPARATOR not in controller_id:
+                full_controller_id = self.registry.get_full_id_from_unique_id(controller_id)
+                
+            if full_controller_id:
+                # Get current properties for this controller
+                props = self._controller_to_properties.get(full_controller_id) or set()
+                props.add(property_id)
+                self._controller_to_properties.add(full_controller_id, props)
         
         return property_id
     
@@ -177,7 +171,7 @@ class ObservableManager:
         Unregister a property from the manager.
         
         Args:
-            property_id: The ID of the property to unregister
+            property_id: The full ID of the property to unregister
                 
         Returns:
             bool: True if successful, False otherwise
@@ -187,9 +181,6 @@ class ObservableManager:
         if not components:
             return False
         
-        observable_unique_id = components['observable_unique_id']
-        controller_id = components['controller_id']
-        
         # Get the property object
         property_obj = self.registry.get_observable_property(property_id)
         
@@ -197,6 +188,7 @@ class ObservableManager:
         self.registry._on_property_unregister(property_id, property_obj)
         
         # Remove from observable's property set if applicable
+        observable_unique_id = components['observable_unique_id']
         if observable_unique_id != DEFAULT_NO_OBSERVABLE:
             # Get the full observable ID
             full_observable_id = self.registry.get_full_id_from_unique_id(observable_unique_id)
@@ -212,6 +204,7 @@ class ObservableManager:
                         self._observable_to_properties.add(full_observable_id, props)
         
         # Remove from controller's property set if applicable
+        controller_id = components['controller_id']
         if controller_id != DEFAULT_NO_CONTROLLER:
             # Get the full controller ID
             full_controller_id = self.registry.get_full_id_from_unique_id(controller_id)
@@ -230,13 +223,13 @@ class ObservableManager:
     
     #MARK: - Update methods
     
-    def update_property_observable(self, property_id, new_observable_unique_id):
+    def update_property_observable(self, property_id, new_observable_id):
         """
         Update a property's observable reference.
         
         Args:
-            property_id: The ID of the property to update
-            new_observable_unique_id: The new observable's unique ID
+            property_id: The full ID of the property to update
+            new_observable_id: The full or unique ID of the new observable
             
         Returns:
             str: The updated property ID
@@ -250,6 +243,11 @@ class ObservableManager:
         if not components:
             return property_id
         
+        # Extract observable unique ID if full ID provided
+        new_observable_unique_id = new_observable_id
+        if new_observable_id and new_observable_id != DEFAULT_NO_OBSERVABLE and ID_SEPARATOR in new_observable_id:
+            new_observable_unique_id = get_unique_id_from_id(new_observable_id)
+            
         old_observable_unique_id = components['observable_unique_id']
         
         # If the observable hasn't changed, no update needed
@@ -283,7 +281,15 @@ class ObservableManager:
         # Add to new observable's property set
         if new_observable_unique_id != DEFAULT_NO_OBSERVABLE:
             # Get the full observable ID
-            new_full_observable_id = self.registry.get_full_id_from_unique_id(new_observable_unique_id)
+            new_full_observable_id = None
+            
+            # If a full ID was provided, use that directly
+            if new_observable_id and new_observable_id != DEFAULT_NO_OBSERVABLE and ID_SEPARATOR in new_observable_id:
+                new_full_observable_id = new_observable_id
+            else:
+                # Otherwise, get it from the unique ID
+                new_full_observable_id = self.registry.get_full_id_from_unique_id(new_observable_unique_id)
+                
             if new_full_observable_id:
                 props = self._observable_to_properties.get(new_full_observable_id) or set()
                 props.add(new_property_id)
@@ -296,7 +302,7 @@ class ObservableManager:
         Update a property's name.
         
         Args:
-            property_id: The ID of the property to update
+            property_id: The full ID of the property to update
             new_property_name: The new property name
             
         Returns:
@@ -357,8 +363,8 @@ class ObservableManager:
         Update a property's controller reference with validation for non-controlling observables.
         
         Args:
-            property_id: The ID of the property to update
-            new_controller_id: The new controller's unique ID
+            property_id: The full ID of the property to update
+            new_controller_id: The full or unique ID of the new controller
             
         Returns:
             str: The updated property ID
@@ -372,10 +378,15 @@ class ObservableManager:
         if not components:
             return property_id
         
+        # Extract controller unique ID if full ID provided
+        new_controller_unique_id = new_controller_id
+        if new_controller_id and new_controller_id != DEFAULT_NO_CONTROLLER and ID_SEPARATOR in new_controller_id:
+            new_controller_unique_id = get_unique_id_from_id(new_controller_id)
+            
         old_controller_id = components['controller_id']
         
         # If the controller hasn't changed, no update needed
-        if old_controller_id == new_controller_id:
+        if old_controller_id == new_controller_unique_id:
             return property_id
         
         # Only check non-controlling relationship if setting a new controller (not removing one)
@@ -388,8 +399,11 @@ class ObservableManager:
                 
                 # If we found the observable, check if control should be prevented
                 if observable_id:
-                    # Get the controller widget ID
-                    controller_widget_id = self.registry.get_full_id_from_unique_id(new_controller_id)
+                    # Get the controller widget ID - use the full ID if provided
+                    controller_widget_id = new_controller_id
+                    if ID_SEPARATOR not in new_controller_id:
+                        controller_widget_id = self.registry.get_full_id_from_unique_id(new_controller_unique_id)
+                        
                     if controller_widget_id and self.registry.should_prevent_control(controller_widget_id, observable_id):
                         # Skip setting this controller
                         return property_id
@@ -400,7 +414,7 @@ class ObservableManager:
             components['unique_id'],
             components['observable_unique_id'],
             components['property_name'],
-            new_controller_id
+            new_controller_unique_id
         )
         
         # Remove from old controller's property set
@@ -419,9 +433,17 @@ class ObservableManager:
                         self._controller_to_properties.add(old_full_controller_id, props)
         
         # Add to new controller's property set
-        if new_controller_id != DEFAULT_NO_CONTROLLER:
+        if new_controller_unique_id != DEFAULT_NO_CONTROLLER:
             # Get the full controller ID
-            new_full_controller_id = self.registry.get_full_id_from_unique_id(new_controller_id)
+            new_full_controller_id = None
+            
+            # If a full ID was provided, use that directly
+            if new_controller_id and new_controller_id != DEFAULT_NO_CONTROLLER and ID_SEPARATOR in new_controller_id:
+                new_full_controller_id = new_controller_id
+            else:
+                # Otherwise, get it from the unique ID
+                new_full_controller_id = self.registry.get_full_id_from_unique_id(new_controller_unique_id)
+                
             if new_full_controller_id:
                 props = self._controller_to_properties.get(new_full_controller_id) or set()
                 props.add(new_property_id)
@@ -460,7 +482,7 @@ class ObservableManager:
         
         updates = []
         
-        # Get all properties controlled by old_controller_id
+        # Get all properties controlled by old_controller_id using the full ID
         props = self._controller_to_properties.get(old_controller_id)
         if props:
             # Make a copy to avoid modification during iteration
@@ -514,8 +536,8 @@ class ObservableManager:
         including property relationships.
         
         Args:
-            old_observable_id: The current observable ID
-            new_observable_id: The new observable ID to use
+            old_observable_id: The current full observable ID
+            new_observable_id: The new full observable ID to use
             
         Returns:
             tuple: (success, actual_new_id, error_message) where:
@@ -549,7 +571,7 @@ class ObservableManager:
         if new_unique_id != old_unique_id and self.registry.get_full_id_from_unique_id(new_unique_id):
             return False, old_observable_id, f"Unique ID '{new_unique_id}' is already in use"
         
-        # 4. Find all properties referencing this observable
+        # 4. Find all properties referencing this observable using the full observable ID
         properties = self._observable_to_properties.get(old_observable_id) or set()
         
         # 5. Create new observable ID
@@ -598,8 +620,8 @@ class ObservableManager:
         This method updates the property's ID and all references to it.
         
         Args:
-            old_property_id: The current property ID
-            new_property_id: The new property ID to use
+            old_property_id: The current full property ID
+            new_property_id: The new full property ID to use
             
         Returns:
             tuple: (success, actual_new_id, error_message) where:
@@ -720,10 +742,10 @@ class ObservableManager:
         Get the observable ID associated with a property ID.
         
         Args:
-            property_id: The property ID
+            property_id: The full property ID
             
         Returns:
-            str: The observable ID, or None if not found or invalid property ID
+            str: The full observable ID, or None if not found or invalid property ID
         """
         # Parse the property ID
         components = parse_property_id(property_id)
@@ -800,7 +822,7 @@ class ObservableManager:
         Get the controller unique ID associated with a property ID.
         
         Args:
-            property_id: The property ID
+            property_id: The full property ID
             
         Returns:
             str: The controller unique ID, or None if not found or invalid property ID

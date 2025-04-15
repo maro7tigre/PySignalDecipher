@@ -45,7 +45,7 @@ class WidgetManager:
         """
         self.registry = registry
         
-        # Create mappings for containers and locations
+        # Create mappings using full IDs
         self._container_to_widgets = Mapping(update_keys=True, update_values=True)
         self._container_locations_map = Mapping(update_keys=True, update_values=True)
         
@@ -68,7 +68,7 @@ class WidgetManager:
             widget: The widget object to register
             type_code: The widget type code
             unique_id: The unique ID for the widget
-            container_id: The container's ID or unique ID (default: "0")
+            container_id: The container's full ID or unique ID (default: "0")
             location: The widget_location_id (default: None, will be generated)
             
         Returns:
@@ -98,9 +98,8 @@ class WidgetManager:
                 )
             
             # Register the widget location ID
-            self._location_generators.register_widget_location(
-                create_widget_id(type_code, unique_id, container_unique_id, container_location, widget_location_id)
-            )
+            temp_widget_id = create_widget_id(type_code, unique_id, container_unique_id, container_location, widget_location_id)
+            self._location_generators.register_widget_location(temp_widget_id)
         
         # Create the widget ID
         widget_id = create_widget_id(
@@ -111,18 +110,30 @@ class WidgetManager:
             widget_location_id
         )
         
-        # Add to the container's widget set
-        container_widgets = self._container_to_widgets.get(container_unique_id) or set()
-        container_widgets.add(widget_id)
-        self._container_to_widgets.add(container_unique_id, container_widgets)
+        # Add to the container's widget set - using the full container ID
+        if container_id != DEFAULT_ROOT_CONTAINER_ID:
+            # When a unique ID is provided, get the full ID
+            container_full_id = container_id
+            if ID_SEPARATOR not in container_id:
+                container_full_id = self.registry.get_full_id_from_unique_id(container_unique_id)
+                
+            if container_full_id:
+                container_widgets = self._container_to_widgets.get(container_full_id) or set()
+                container_widgets.add(widget_id)
+                self._container_to_widgets.add(container_full_id, container_widgets)
+        else:
+            # Handle root container case
+            container_widgets = self._container_to_widgets.get(DEFAULT_ROOT_CONTAINER_ID) or set()
+            container_widgets.add(widget_id)
+            self._container_to_widgets.add(DEFAULT_ROOT_CONTAINER_ID, container_widgets)
         
         # Update the container's locations map
-        self._update_container_locations_map(container_unique_id)
+        self._update_container_locations_map(container_id if container_id != DEFAULT_ROOT_CONTAINER_ID else DEFAULT_ROOT_CONTAINER_ID)
         
         # If this widget is a container, initialize its widgets set
         if ContainerTypeCodes.is_valid_code(type_code):
-            self._container_to_widgets.add(unique_id, set())
-            self._container_locations_map.add(unique_id, {})
+            self._container_to_widgets.add(widget_id, set())
+            self._container_locations_map.add(widget_id, {})
         
         return widget_id
     
@@ -131,7 +142,7 @@ class WidgetManager:
         Unregister a widget from the manager.
         
         Args:
-            widget_id: The ID of the widget to unregister
+            widget_id: The full ID of the widget to unregister
             
         Returns:
             bool: True if successful, False otherwise
@@ -153,29 +164,41 @@ class WidgetManager:
         self.registry._on_widget_unregister(widget_id, widget)
         
         # If it's a container, handle its children first
-        if unique_id in self._container_to_widgets:
+        if widget_id in self._container_to_widgets:
             # Make a copy to avoid modification during iteration
-            container_widgets = self._container_to_widgets.get(unique_id) or set()
+            container_widgets = self._container_to_widgets.get(widget_id) or set()
             child_widgets = list(container_widgets)
             for child_id in child_widgets:
                 # Unregister all child widgets
                 self.registry.unregister(child_id)
             
             # Clean up container data
-            self._container_to_widgets.delete(unique_id)
-            self._container_locations_map.delete(unique_id)
+            self._container_to_widgets.delete(widget_id)
+            self._container_locations_map.delete(widget_id)
                 
             # Clean up any location generators for this container's locations
             full_container_path = f"{container_location}/{widget_location_id}"
             self._location_generators.cleanup_container_locations(full_container_path)
         
-        # Remove from container's widgets set
-        container_widgets = self._container_to_widgets.get(container_unique_id) or set()
-        if widget_id in container_widgets:
-            container_widgets.discard(widget_id)
-            self._container_to_widgets.add(container_unique_id, container_widgets)
-            # Update the container's locations map after removing widget
-            self._update_container_locations_map(container_unique_id)
+        # Remove from container's widgets set using full container ID
+        if container_unique_id != DEFAULT_ROOT_CONTAINER_ID:
+            # Get the full container ID
+            container_full_id = self.registry.get_full_id_from_unique_id(container_unique_id)
+            if container_full_id:
+                container_widgets = self._container_to_widgets.get(container_full_id) or set()
+                if widget_id in container_widgets:
+                    container_widgets.discard(widget_id)
+                    self._container_to_widgets.add(container_full_id, container_widgets)
+                    # Update the container's locations map after removing widget
+                    self._update_container_locations_map(container_full_id)
+        else:
+            # Handle root container case
+            container_widgets = self._container_to_widgets.get(DEFAULT_ROOT_CONTAINER_ID) or set()
+            if widget_id in container_widgets:
+                container_widgets.discard(widget_id)
+                self._container_to_widgets.add(DEFAULT_ROOT_CONTAINER_ID, container_widgets)
+                # Update the container's locations map after removing widget
+                self._update_container_locations_map(DEFAULT_ROOT_CONTAINER_ID)
         
         # Unregister from location generator
         self._location_generators.delete_widget_location(widget_id)
@@ -192,8 +215,8 @@ class WidgetManager:
         Update a widget's container reference.
         
         Args:
-            widget_id: The ID of the widget to update
-            new_container_id: The new container's unique ID
+            widget_id: The full ID of the widget to update
+            new_container_id: The new container's full ID or unique ID
             
         Returns:
             str: The updated widget ID
@@ -228,12 +251,24 @@ class WidgetManager:
         self._location_generators.delete_widget_location(widget_id)
         
         # Remove from old container's widget set
-        old_container_widgets = self._container_to_widgets.get(old_container_id) or set()
-        if widget_id in old_container_widgets:
-            old_container_widgets.discard(widget_id)
-            self._container_to_widgets.add(old_container_id, old_container_widgets)
-            # Update old container's locations map
-            self._update_container_locations_map(old_container_id)
+        if old_container_id != DEFAULT_ROOT_CONTAINER_ID:
+            # Get the full old container ID
+            old_full_container_id = self.registry.get_full_id_from_unique_id(old_container_id)
+            if old_full_container_id:
+                old_container_widgets = self._container_to_widgets.get(old_full_container_id) or set()
+                if widget_id in old_container_widgets:
+                    old_container_widgets.discard(widget_id)
+                    self._container_to_widgets.add(old_full_container_id, old_container_widgets)
+                    # Update old container's locations map
+                    self._update_container_locations_map(old_full_container_id)
+        else:
+            # Handle root container case
+            old_container_widgets = self._container_to_widgets.get(DEFAULT_ROOT_CONTAINER_ID) or set()
+            if widget_id in old_container_widgets:
+                old_container_widgets.discard(widget_id)
+                self._container_to_widgets.add(DEFAULT_ROOT_CONTAINER_ID, old_container_widgets)
+                # Update old container's locations map
+                self._update_container_locations_map(DEFAULT_ROOT_CONTAINER_ID)
         
         # Determine the new container location based on container
         new_container_location = self._get_container_location(new_container_unique_id)
@@ -258,12 +293,25 @@ class WidgetManager:
         self._location_generators.register_widget_location(new_widget_id)
         
         # Add to new container's widget set
-        new_container_widgets = self._container_to_widgets.get(new_container_unique_id) or set()
-        new_container_widgets.add(new_widget_id)
-        self._container_to_widgets.add(new_container_unique_id, new_container_widgets)
-        
-        # Update new container's locations map
-        self._update_container_locations_map(new_container_unique_id)
+        if new_container_unique_id != DEFAULT_ROOT_CONTAINER_ID:
+            # Get the full new container ID
+            new_full_container_id = new_container_id
+            if ID_SEPARATOR not in new_container_id:
+                new_full_container_id = self.registry.get_full_id_from_unique_id(new_container_unique_id)
+                
+            if new_full_container_id:
+                new_container_widgets = self._container_to_widgets.get(new_full_container_id) or set()
+                new_container_widgets.add(new_widget_id)
+                self._container_to_widgets.add(new_full_container_id, new_container_widgets)
+                # Update new container's locations map
+                self._update_container_locations_map(new_full_container_id)
+        else:
+            # Handle root container case
+            new_container_widgets = self._container_to_widgets.get(DEFAULT_ROOT_CONTAINER_ID) or set()
+            new_container_widgets.add(new_widget_id)
+            self._container_to_widgets.add(DEFAULT_ROOT_CONTAINER_ID, new_container_widgets)
+            # Update new container's locations map
+            self._update_container_locations_map(DEFAULT_ROOT_CONTAINER_ID)
         
         # If it's a container, update all its children's container locations
         if is_container:
@@ -281,7 +329,7 @@ class WidgetManager:
         Update a widget's location ID within its container.
         
         Args:
-            widget_id: The ID of the widget to update
+            widget_id: The full ID of the widget to update
             new_location: The new widget_location_id
             
         Returns:
@@ -328,13 +376,26 @@ class WidgetManager:
         self._location_generators.register_widget_location(new_widget_id)
         
         # Update container's widget set
-        container_widgets = self._container_to_widgets.get(container_unique_id) or set()
-        if widget_id in container_widgets:
-            container_widgets.discard(widget_id)
-            container_widgets.add(new_widget_id)
-            self._container_to_widgets.add(container_unique_id, container_widgets)
-            # Update container's locations map
-            self._update_container_locations_map(container_unique_id)
+        if container_unique_id != DEFAULT_ROOT_CONTAINER_ID:
+            # Get the full container ID
+            container_full_id = self.registry.get_full_id_from_unique_id(container_unique_id)
+            if container_full_id:
+                container_widgets = self._container_to_widgets.get(container_full_id) or set()
+                if widget_id in container_widgets:
+                    container_widgets.discard(widget_id)
+                    container_widgets.add(new_widget_id)
+                    self._container_to_widgets.add(container_full_id, container_widgets)
+                    # Update container's locations map
+                    self._update_container_locations_map(container_full_id)
+        else:
+            # Handle root container case
+            container_widgets = self._container_to_widgets.get(DEFAULT_ROOT_CONTAINER_ID) or set()
+            if widget_id in container_widgets:
+                container_widgets.discard(widget_id)
+                container_widgets.add(new_widget_id)
+                self._container_to_widgets.add(DEFAULT_ROOT_CONTAINER_ID, container_widgets)
+                # Update container's locations map
+                self._update_container_locations_map(DEFAULT_ROOT_CONTAINER_ID)
         
         # If it's a container, update all its children's container locations
         if is_container:
@@ -355,8 +416,8 @@ class WidgetManager:
         and allows changing multiple aspects of the ID at once.
         
         Args:
-            old_widget_id: The current widget ID
-            new_widget_id: The new widget ID
+            old_widget_id: The current full widget ID
+            new_widget_id: The new full widget ID
             
         Returns:
             tuple: (success, actual_new_id, error_message) where:
@@ -394,17 +455,25 @@ class WidgetManager:
         
         # Handle container change if necessary
         if old_container_id != new_container_id:
-            # Verify the new container exists if it's not the root
-            if new_container_id != DEFAULT_ROOT_CONTAINER_ID and new_container_id not in self._container_to_widgets:
-                return False, old_widget_id, f"Container with ID '{new_container_id}' does not exist"
+            # Get the full old container ID if not root
+            old_full_container_id = DEFAULT_ROOT_CONTAINER_ID
+            if old_container_id != DEFAULT_ROOT_CONTAINER_ID:
+                old_full_container_id = self.registry.get_full_id_from_unique_id(old_container_id)
                 
+            # Verify the new container exists if it's not the root
+            if new_container_id != DEFAULT_ROOT_CONTAINER_ID:
+                new_full_container_id = self.registry.get_full_id_from_unique_id(new_container_id)
+                if not new_full_container_id:
+                    return False, old_widget_id, f"Container with ID '{new_container_id}' does not exist"
+                    
             # Remove from old container's widget set
-            old_container_widgets = self._container_to_widgets.get(old_container_id) or set()
-            if old_widget_id in old_container_widgets:
-                old_container_widgets.discard(old_widget_id)
-                self._container_to_widgets.add(old_container_id, old_container_widgets)
-                # Update old container's locations map
-                self._update_container_locations_map(old_container_id)
+            if old_full_container_id:
+                old_container_widgets = self._container_to_widgets.get(old_full_container_id) or set()
+                if old_widget_id in old_container_widgets:
+                    old_container_widgets.discard(old_widget_id)
+                    self._container_to_widgets.add(old_full_container_id, old_container_widgets)
+                    # Update old container's locations map
+                    self._update_container_locations_map(old_full_container_id)
         
         # Handle location changes
         old_container_location = old_components['container_location']
@@ -448,20 +517,30 @@ class WidgetManager:
         # Update container's widget set with the new ID
         if old_container_id != new_container_id:
             # Add to new container's widget set
-            new_container_widgets = self._container_to_widgets.get(new_container_id) or set()
-            new_container_widgets.add(final_widget_id)
-            self._container_to_widgets.add(new_container_id, new_container_widgets)
-            # Update new container's locations map
-            self._update_container_locations_map(new_container_id)
+            new_full_container_id = DEFAULT_ROOT_CONTAINER_ID
+            if new_container_id != DEFAULT_ROOT_CONTAINER_ID:
+                new_full_container_id = self.registry.get_full_id_from_unique_id(new_container_id)
+                
+            if new_full_container_id:
+                new_container_widgets = self._container_to_widgets.get(new_full_container_id) or set()
+                new_container_widgets.add(final_widget_id)
+                self._container_to_widgets.add(new_full_container_id, new_container_widgets)
+                # Update new container's locations map
+                self._update_container_locations_map(new_full_container_id)
         else:
             # Update the same container's widget set
-            container_widgets = self._container_to_widgets.get(old_container_id) or set()
-            if old_widget_id in container_widgets:
-                container_widgets.discard(old_widget_id)
-                container_widgets.add(final_widget_id)
-                self._container_to_widgets.add(old_container_id, container_widgets)
-                # Update container's locations map
-                self._update_container_locations_map(old_container_id)
+            container_full_id = DEFAULT_ROOT_CONTAINER_ID
+            if old_container_id != DEFAULT_ROOT_CONTAINER_ID:
+                container_full_id = self.registry.get_full_id_from_unique_id(old_container_id)
+                
+            if container_full_id:
+                container_widgets = self._container_to_widgets.get(container_full_id) or set()
+                if old_widget_id in container_widgets:
+                    container_widgets.discard(old_widget_id)
+                    container_widgets.add(final_widget_id)
+                    self._container_to_widgets.add(container_full_id, container_widgets)
+                    # Update container's locations map
+                    self._update_container_locations_map(container_full_id)
         
         # If this is a container, update all its children's container locations
         is_container = ContainerTypeCodes.is_valid_code(old_components['type_code'])
@@ -469,16 +548,16 @@ class WidgetManager:
             # Update internal container mappings if unique ID changed
             if old_unique_id != new_unique_id:
                 # Transfer container's widget set
-                container_widgets = self._container_to_widgets.get(old_unique_id) or set()
+                container_widgets = self._container_to_widgets.get(old_widget_id) or set()
                 if container_widgets:
-                    self._container_to_widgets.add(new_unique_id, container_widgets)
-                    self._container_to_widgets.delete(old_unique_id)
+                    self._container_to_widgets.add(final_widget_id, container_widgets)
+                    self._container_to_widgets.delete(old_widget_id)
                 
                 # Transfer container's locations map
-                container_locations = self._container_locations_map.get(old_unique_id) or {}
+                container_locations = self._container_locations_map.get(old_widget_id) or {}
                 if container_locations:
-                    self._container_locations_map.add(new_unique_id, container_locations)
-                    self._container_locations_map.delete(old_unique_id)
+                    self._container_locations_map.add(final_widget_id, container_locations)
+                    self._container_locations_map.delete(old_widget_id)
             
             # Update child container locations if path changed
             if old_container_location != new_container_location or old_widget_location_id != final_widget_location_id:
@@ -498,35 +577,56 @@ class WidgetManager:
         Set the container's locations map.
         
         Args:
-            container_id: The container's unique ID
+            container_id: The container's full ID or unique ID
             locations_map: A dictionary mapping subcontainer locations to widget IDs
         """
-        self._container_locations_map.add(container_id, locations_map.copy())
+        # Use the full ID for the mapping
+        if container_id != DEFAULT_ROOT_CONTAINER_ID and ID_SEPARATOR in container_id:
+            self._container_locations_map.add(container_id, locations_map.copy())
+        else:
+            # For unique ID or root container ID, get or use the full ID
+            full_container_id = container_id
+            if container_id != DEFAULT_ROOT_CONTAINER_ID:
+                full_container_id = self.registry.get_full_id_from_unique_id(container_id)
+                
+            if full_container_id:
+                self._container_locations_map.add(full_container_id, locations_map.copy())
     
     def get_locations_map(self, container_id):
         """
         Get the container's locations map.
         
         Args:
-            container_id: The container's unique ID
+            container_id: The container's full ID or unique ID
             
         Returns:
             dict: A dictionary mapping subcontainer locations to widget IDs
         """
-        return self._container_locations_map.get(container_id) or {}
+        # Use the full ID for the lookup
+        if container_id != DEFAULT_ROOT_CONTAINER_ID and ID_SEPARATOR in container_id:
+            return self._container_locations_map.get(container_id) or {}
+        else:
+            # For unique ID or root container ID, get or use the full ID
+            full_container_id = container_id
+            if container_id != DEFAULT_ROOT_CONTAINER_ID:
+                full_container_id = self.registry.get_full_id_from_unique_id(container_id)
+                
+            if full_container_id:
+                return self._container_locations_map.get(full_container_id) or {}
+            return {}
     
     def get_subcontainer_id_at_location(self, container_id, location):
         """
         Get the subcontainer widget ID at a specific location.
         
         Args:
-            container_id: The container's unique ID
+            container_id: The container's full ID or unique ID
             location: The subcontainer location within the container
             
         Returns:
             str: The widget ID of the subcontainer, or None if not found
         """
-        locations_map = self._container_locations_map.get(container_id) or {}
+        locations_map = self.get_locations_map(container_id)
         return locations_map.get(location)
     
     def get_widgets_at_location(self, container_id, container_location):
@@ -534,13 +634,20 @@ class WidgetManager:
         Get all widgets at a specific container location.
         
         Args:
-            container_id: The container's unique ID
+            container_id: The container's full ID or unique ID
             container_location: The container location
             
         Returns:
             list: A list of widget IDs at the specified location
         """
-        container_widgets = self._container_to_widgets.get(container_id) or set()
+        # Get the full container ID for the lookup
+        full_container_id = container_id
+        if container_id != DEFAULT_ROOT_CONTAINER_ID and ID_SEPARATOR not in container_id:
+            full_container_id = self.registry.get_full_id_from_unique_id(container_id)
+            if not full_container_id:
+                return []
+                
+        container_widgets = self._container_to_widgets.get(full_container_id) or set()
         
         widgets = []
         for widget_id in container_widgets:
@@ -557,7 +664,7 @@ class WidgetManager:
         Get the container ID from a widget ID.
         
         Args:
-            widget_id: The widget ID
+            widget_id: The full widget ID
             
         Returns:
             str: The container's unique ID, or None if invalid
@@ -568,30 +675,44 @@ class WidgetManager:
         
         return components['container_unique_id']
     
-    def get_widget_ids_by_container_id(self, container_unique_id):
+    def get_widget_ids_by_container_id(self, container_id):
         """
         Get all widget IDs for a specific container.
         
         Args:
-            container_unique_id: The container's unique ID
+            container_id: The container's full ID or unique ID
             
         Returns:
             list: A list of widget IDs in the container
         """
-        return list(self._container_to_widgets.get(container_unique_id) or [])
+        # Get the full container ID for the lookup
+        full_container_id = container_id
+        if container_id != DEFAULT_ROOT_CONTAINER_ID and ID_SEPARATOR not in container_id:
+            full_container_id = self.registry.get_full_id_from_unique_id(container_id)
+            if not full_container_id:
+                return []
+                
+        return list(self._container_to_widgets.get(full_container_id) or [])
     
-    def get_widget_ids_by_container_id_and_location(self, container_unique_id, container_location):
+    def get_widget_ids_by_container_id_and_location(self, container_id, container_location):
         """
         Get all widget IDs for a specific container and location.
         
         Args:
-            container_unique_id: The container's unique ID
+            container_id: The container's full ID or unique ID
             container_location: The container location
             
         Returns:
             list: A list of widget IDs in the container at the specified location
         """
-        container_widgets = self._container_to_widgets.get(container_unique_id) or set()
+        # Get the full container ID for the lookup
+        full_container_id = container_id
+        if container_id != DEFAULT_ROOT_CONTAINER_ID and ID_SEPARATOR not in container_id:
+            full_container_id = self.registry.get_full_id_from_unique_id(container_id)
+            if not full_container_id:
+                return []
+                
+        container_widgets = self._container_to_widgets.get(full_container_id) or set()
         
         widgets = []
         for widget_id in container_widgets:
@@ -603,7 +724,7 @@ class WidgetManager:
     
     #MARK: - Helper methods
     
-    def _update_container_locations_map(self, container_unique_id):
+    def _update_container_locations_map(self, container_id):
         """
         Update the container's locations map based on current widget relationships.
         
@@ -611,12 +732,19 @@ class WidgetManager:
         _container_to_widgets for a specific container.
         
         Args:
-            container_unique_id: The container's unique ID
+            container_id: The container's full ID or unique ID
         """
-        container_widgets = self._container_to_widgets.get(container_unique_id)
+        # Get the full container ID for consistent mapping
+        full_container_id = container_id
+        if container_id != DEFAULT_ROOT_CONTAINER_ID and ID_SEPARATOR not in container_id:
+            full_container_id = self.registry.get_full_id_from_unique_id(container_id)
+            if not full_container_id:
+                return
+                
+        container_widgets = self._container_to_widgets.get(full_container_id)
         if not container_widgets:
             # If container has no widgets, ensure it has an empty map
-            self._container_locations_map.add(container_unique_id, {})
+            self._container_locations_map.add(full_container_id, {})
             return
         
         # Group widgets by their container location
@@ -630,7 +758,7 @@ class WidgetManager:
                 location_map[location].append(widget_id)
         
         # Update the container's locations map
-        self._container_locations_map.add(container_unique_id, location_map)
+        self._container_locations_map.add(full_container_id, location_map)
     
     def _get_container_location(self, container_id):
         """
@@ -645,7 +773,7 @@ class WidgetManager:
         if container_id == DEFAULT_ROOT_CONTAINER_ID:
             return DEFAULT_ROOT_LOCATION
         
-        # Get the container's widget ID
+        # Get the container's full widget ID
         container_widget_id = self.registry.get_full_id_from_unique_id(container_id)
         if not container_widget_id:
             return DEFAULT_ROOT_LOCATION
@@ -674,7 +802,12 @@ class WidgetManager:
             old_path: The container's old location path
             new_path: The container's new location path
         """
-        container_widgets = self._container_to_widgets.get(container_unique_id)
+        # Get the full container ID for the lookup
+        container_full_id = self.registry.get_full_id_from_unique_id(container_unique_id)
+        if not container_full_id:
+            return
+            
+        container_widgets = self._container_to_widgets.get(container_full_id)
         if not container_widgets:
             return
         
@@ -717,10 +850,10 @@ class WidgetManager:
                 self._update_children_container_locations(child_unique_id, old_child_path, new_child_path)
                 
                 # Update container's locations map
-                self._update_container_locations_map(child_unique_id)
+                self._update_container_locations_map(new_child_id)
         
         # Update the mapping with the modified set
-        self._container_to_widgets.add(container_unique_id, container_widgets)
+        self._container_to_widgets.add(container_full_id, container_widgets)
     
     def _update_locations_map_references(self, old_widget_id, new_widget_id):
         """
