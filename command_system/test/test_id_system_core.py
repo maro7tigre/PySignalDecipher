@@ -513,4 +513,4 @@ class TestIDSystemCore:
 
 if __name__ == "__main__":
     # Run the tests directly if this script is executed
-    pytest.main(["-v", __file__])
+    pytest.main(["-vs", __file__])

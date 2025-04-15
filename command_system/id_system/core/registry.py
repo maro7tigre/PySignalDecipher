@@ -111,6 +111,8 @@ class IDRegistry:
             old_id: The current ID string
             new_id: The new ID string
         """
+        self._subscription_manager.notify(old_id, new_id)
+        self._notify_id_changed_callbacks(old_id, new_id)
         for mapping in self.mappings:
             mapping.update(old_id, new_id)
     
@@ -648,8 +650,6 @@ class IDRegistry:
             # If successful, update mappings and notify subscribers
             if success and updated_id != old_id:
                 self.update_all_mappings(old_id, updated_id)
-                self._subscription_manager.notify(old_id, updated_id)
-                self._notify_id_changed_callbacks(old_id, updated_id)
                 
             return success, updated_id, error
             
@@ -660,8 +660,6 @@ class IDRegistry:
             # If successful, update mappings and notify subscribers
             if success and updated_id != old_id:
                 self.update_all_mappings(old_id, updated_id)
-                self._subscription_manager.notify(old_id, updated_id)
-                self._notify_id_changed_callbacks(old_id, updated_id)
                 
             return success, updated_id, error
             
@@ -672,8 +670,6 @@ class IDRegistry:
             # If successful, update mappings and notify subscribers
             if success and updated_id != old_id:
                 self.update_all_mappings(old_id, updated_id)
-                self._subscription_manager.notify(old_id, updated_id)
-                self._notify_id_changed_callbacks(old_id, updated_id)
                 
             return success, updated_id, error
         
@@ -702,8 +698,6 @@ class IDRegistry:
             # If the widget ID changed, update mappings and notify subscribers
             if old_id != new_id:
                 self.update_all_mappings(old_id, new_id)
-                self._subscription_manager.notify(old_id, new_id)
-                self._notify_id_changed_callbacks(old_id, new_id)
             
             return new_id
         except IDRegistrationError as e:
@@ -732,8 +726,6 @@ class IDRegistry:
             # If the widget ID changed, update mappings and notify subscribers
             if old_id != new_id:
                 self.update_all_mappings(old_id, new_id)
-                self._subscription_manager.notify(old_id, new_id)
-                self._notify_id_changed_callbacks(old_id, new_id)
             
             return new_id
         except IDRegistrationError as e:
@@ -757,8 +749,6 @@ class IDRegistry:
         # If the property ID changed, update mappings and notify subscribers
         if old_id != new_id:
             self.update_all_mappings(old_id, new_id)
-            self._subscription_manager.notify(old_id, new_id)
-            self._notify_id_changed_callbacks(old_id, new_id)
         
         return new_id
     
@@ -779,8 +769,6 @@ class IDRegistry:
         # If the property ID changed, update mappings and notify subscribers
         if old_id != new_id:
             self.update_all_mappings(old_id, new_id)
-            self._subscription_manager.notify(old_id, new_id)
-            self._notify_id_changed_callbacks(old_id, new_id)
         
         return new_id
     
@@ -801,8 +789,6 @@ class IDRegistry:
         # If the property ID changed, update mappings and notify subscribers
         if old_id != new_id:
             self.update_all_mappings(old_id, new_id)
-            self._subscription_manager.notify(old_id, new_id)
-            self._notify_id_changed_callbacks(old_id, new_id)
         
         return new_id
     
