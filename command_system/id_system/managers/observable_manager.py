@@ -34,7 +34,7 @@ class ObservableManager:
         """Initialize the observable manager."""
         self.registry = registry
         
-        # Create mappings
+        # Create mappings - now using full IDs instead of unique IDs
         self._observable_to_properties = Mapping(update_keys=True, update_values=True)
         self._controller_to_properties = Mapping(update_keys=True, update_values=True)
         
@@ -60,7 +60,7 @@ class ObservableManager:
         observable_id = create_observable_id(type_code, unique_id)
         
         # Initialize empty property set for this observable
-        self._observable_to_properties.add(unique_id, set())
+        self._observable_to_properties.add(observable_id, set())
         
         return observable_id
     
@@ -79,8 +79,6 @@ class ObservableManager:
         if not components:
             return False
         
-        unique_id = components['unique_id']
-        
         # Get the observable object
         observable = self.registry.get_observable(observable_id)
         
@@ -88,14 +86,14 @@ class ObservableManager:
         self.registry._on_observable_unregister(observable_id, observable)
         
         # Handle associated properties - get all property IDs for this observable
-        property_ids = self.get_property_ids_by_observable_id(unique_id)
+        property_ids = self.get_property_ids_by_observable_id(observable_id)
         
         # Unregister all associated properties
         for property_id in list(property_ids):
             self.registry.unregister(property_id)
         
         # Remove from observable mapping
-        self._observable_to_properties.delete(unique_id)
+        self._observable_to_properties.delete(observable_id)
         
         return True
     
@@ -140,19 +138,37 @@ class ObservableManager:
             controller_unique_id
         )
         
-        # Add to observable's property set if applicable
+        # Get the full observable ID if provided
+        full_observable_id = None
         if observable_unique_id != DEFAULT_NO_OBSERVABLE:
-            # Get current properties for this observable
-            props = self._observable_to_properties.get(observable_unique_id) or set()
-            props.add(property_id)
-            self._observable_to_properties.add(observable_unique_id, props)
+            full_observable_id = self.registry.get_full_id_from_unique_id(observable_unique_id)
+            if not full_observable_id:
+                # If no full ID found but observable_id was provided directly, use that
+                if observable_id and observable_id != DEFAULT_NO_OBSERVABLE and ID_SEPARATOR in observable_id:
+                    full_observable_id = observable_id
         
-        # Add to controller's property set if applicable
-        if controller_unique_id != DEFAULT_NO_CONTROLLER:
-            # Get current properties for this controller
-            props = self._controller_to_properties.get(controller_unique_id) or set()
+        # Add to observable's property set if applicable
+        if full_observable_id:
+            # Get current properties for this observable
+            props = self._observable_to_properties.get(full_observable_id) or set()
             props.add(property_id)
-            self._controller_to_properties.add(controller_unique_id, props)
+            self._observable_to_properties.add(full_observable_id, props)
+        
+        # Get the full controller ID if provided
+        full_controller_id = None
+        if controller_unique_id != DEFAULT_NO_CONTROLLER:
+            full_controller_id = self.registry.get_full_id_from_unique_id(controller_unique_id)
+            if not full_controller_id:
+                # If no full ID found but controller_id was provided directly, use that
+                if controller_id and controller_id != DEFAULT_NO_CONTROLLER and ID_SEPARATOR in controller_id:
+                    full_controller_id = controller_id
+                    
+        # Add to controller's property set if applicable
+        if full_controller_id:
+            # Get current properties for this controller
+            props = self._controller_to_properties.get(full_controller_id) or set()
+            props.add(property_id)
+            self._controller_to_properties.add(full_controller_id, props)
         
         return property_id
     
@@ -182,32 +198,33 @@ class ObservableManager:
         
         # Remove from observable's property set if applicable
         if observable_unique_id != DEFAULT_NO_OBSERVABLE:
-            props = self._observable_to_properties.get(observable_unique_id)
-            if props:
-                props.discard(property_id)
-                if not props:
-                    # If this was the last property, remove the observable
-                    self._observable_to_properties.delete(observable_unique_id)
-                    
-                    # Find the observable_id and unregister it
-                    observable_id = self.registry.get_full_id_from_unique_id(observable_unique_id)
-                    if observable_id:
-                        self.registry.unregister(observable_id)
-                else:
-                    # Update the property set
-                    self._observable_to_properties.add(observable_unique_id, props)
+            # Get the full observable ID
+            full_observable_id = self.registry.get_full_id_from_unique_id(observable_unique_id)
+            if full_observable_id:
+                props = self._observable_to_properties.get(full_observable_id)
+                if props:
+                    props.discard(property_id)
+                    if not props:
+                        # If this was the last property, remove the observable
+                        self._observable_to_properties.delete(full_observable_id)
+                    else:
+                        # Update the property set
+                        self._observable_to_properties.add(full_observable_id, props)
         
         # Remove from controller's property set if applicable
         if controller_id != DEFAULT_NO_CONTROLLER:
-            props = self._controller_to_properties.get(controller_id)
-            if props:
-                props.discard(property_id)
-                if not props:
-                    # If this was the last property, remove the entry
-                    self._controller_to_properties.delete(controller_id)
-                else:
-                    # Update the property set
-                    self._controller_to_properties.add(controller_id, props)
+            # Get the full controller ID
+            full_controller_id = self.registry.get_full_id_from_unique_id(controller_id)
+            if full_controller_id:
+                props = self._controller_to_properties.get(full_controller_id)
+                if props:
+                    props.discard(property_id)
+                    if not props:
+                        # If this was the last property, remove the entry
+                        self._controller_to_properties.delete(full_controller_id)
+                    else:
+                        # Update the property set
+                        self._controller_to_properties.add(full_controller_id, props)
         
         return True
     
@@ -250,21 +267,27 @@ class ObservableManager:
         
         # Remove from old observable's property set
         if old_observable_unique_id != DEFAULT_NO_OBSERVABLE:
-            props = self._observable_to_properties.get(old_observable_unique_id)
-            if props:
-                props.discard(property_id)
-                if not props:
-                    # If this was the last property, remove the observable
-                    self._observable_to_properties.delete(old_observable_unique_id)
-                else:
-                    # Update the property set
-                    self._observable_to_properties.add(old_observable_unique_id, props)
+            # Get the full observable ID
+            old_full_observable_id = self.registry.get_full_id_from_unique_id(old_observable_unique_id)
+            if old_full_observable_id:
+                props = self._observable_to_properties.get(old_full_observable_id)
+                if props:
+                    props.discard(property_id)
+                    if not props:
+                        # If this was the last property, remove the observable
+                        self._observable_to_properties.delete(old_full_observable_id)
+                    else:
+                        # Update the property set
+                        self._observable_to_properties.add(old_full_observable_id, props)
         
         # Add to new observable's property set
         if new_observable_unique_id != DEFAULT_NO_OBSERVABLE:
-            props = self._observable_to_properties.get(new_observable_unique_id) or set()
-            props.add(new_property_id)
-            self._observable_to_properties.add(new_observable_unique_id, props)
+            # Get the full observable ID
+            new_full_observable_id = self.registry.get_full_id_from_unique_id(new_observable_unique_id)
+            if new_full_observable_id:
+                props = self._observable_to_properties.get(new_full_observable_id) or set()
+                props.add(new_property_id)
+                self._observable_to_properties.add(new_full_observable_id, props)
         
         return new_property_id
     
@@ -306,20 +329,26 @@ class ObservableManager:
         # Update observable's property set
         observable_unique_id = components['observable_unique_id']
         if observable_unique_id != DEFAULT_NO_OBSERVABLE:
-            props = self._observable_to_properties.get(observable_unique_id)
-            if props:
-                props.discard(property_id)
-                props.add(new_property_id)
-                self._observable_to_properties.add(observable_unique_id, props)
+            # Get the full observable ID
+            full_observable_id = self.registry.get_full_id_from_unique_id(observable_unique_id)
+            if full_observable_id:
+                props = self._observable_to_properties.get(full_observable_id)
+                if props:
+                    props.discard(property_id)
+                    props.add(new_property_id)
+                    self._observable_to_properties.add(full_observable_id, props)
         
         # Update controller's property set
         controller_id = components['controller_id']
         if controller_id != DEFAULT_NO_CONTROLLER:
-            props = self._controller_to_properties.get(controller_id)
-            if props:
-                props.discard(property_id)
-                props.add(new_property_id)
-                self._controller_to_properties.add(controller_id, props)
+            # Get the full controller ID
+            full_controller_id = self.registry.get_full_id_from_unique_id(controller_id)
+            if full_controller_id:
+                props = self._controller_to_properties.get(full_controller_id)
+                if props:
+                    props.discard(property_id)
+                    props.add(new_property_id)
+                    self._controller_to_properties.add(full_controller_id, props)
         
         return new_property_id
     
@@ -376,30 +405,39 @@ class ObservableManager:
         
         # Remove from old controller's property set
         if old_controller_id != DEFAULT_NO_CONTROLLER:
-            props = self._controller_to_properties.get(old_controller_id)
-            if props:
-                props.discard(property_id)
-                if not props:
-                    # If this was the last property, remove the controller
-                    self._controller_to_properties.delete(old_controller_id)
-                else:
-                    # Update the property set
-                    self._controller_to_properties.add(old_controller_id, props)
+            # Get the full controller ID
+            old_full_controller_id = self.registry.get_full_id_from_unique_id(old_controller_id)
+            if old_full_controller_id:
+                props = self._controller_to_properties.get(old_full_controller_id)
+                if props:
+                    props.discard(property_id)
+                    if not props:
+                        # If this was the last property, remove the controller
+                        self._controller_to_properties.delete(old_full_controller_id)
+                    else:
+                        # Update the property set
+                        self._controller_to_properties.add(old_full_controller_id, props)
         
         # Add to new controller's property set
         if new_controller_id != DEFAULT_NO_CONTROLLER:
-            props = self._controller_to_properties.get(new_controller_id) or set()
-            props.add(new_property_id)
-            self._controller_to_properties.add(new_controller_id, props)
+            # Get the full controller ID
+            new_full_controller_id = self.registry.get_full_id_from_unique_id(new_controller_id)
+            if new_full_controller_id:
+                props = self._controller_to_properties.get(new_full_controller_id) or set()
+                props.add(new_property_id)
+                self._controller_to_properties.add(new_full_controller_id, props)
         
         # Update observable's property set
         observable_unique_id = components['observable_unique_id']
         if observable_unique_id != DEFAULT_NO_OBSERVABLE:
-            props = self._observable_to_properties.get(observable_unique_id)
-            if props:
-                props.discard(property_id)
-                props.add(new_property_id)
-                self._observable_to_properties.add(observable_unique_id, props)
+            # Get the full observable ID
+            full_observable_id = self.registry.get_full_id_from_unique_id(observable_unique_id)
+            if full_observable_id:
+                props = self._observable_to_properties.get(full_observable_id)
+                if props:
+                    props.discard(property_id)
+                    props.add(new_property_id)
+                    self._observable_to_properties.add(full_observable_id, props)
         
         return new_property_id
     
@@ -411,8 +449,8 @@ class ObservableManager:
         all properties it controls.
         
         Args:
-            old_controller_id: The controller's old unique ID
-            new_controller_id: The controller's new unique ID
+            old_controller_id: The controller's old full ID
+            new_controller_id: The controller's new full ID
             
         Returns:
             list: A list of (old_property_id, new_property_id) tuples
@@ -428,10 +466,43 @@ class ObservableManager:
             # Make a copy to avoid modification during iteration
             property_ids = list(props)
             
+            # Get the unique controller IDs
+            old_controller_unique_id = get_unique_id_from_id(old_controller_id)
+            new_controller_unique_id = get_unique_id_from_id(new_controller_id)
+            
             # Update each property
             for property_id in property_ids:
-                new_property_id = self.update_property_controller(property_id, new_controller_id)
-                updates.append((property_id, new_property_id))
+                components = parse_property_id(property_id)
+                if components and components['controller_id'] == old_controller_unique_id:
+                    new_property_id = create_property_id(
+                        components['type_code'],
+                        components['unique_id'],
+                        components['observable_unique_id'],
+                        components['property_name'],
+                        new_controller_unique_id
+                    )
+                    
+                    # Update the mapping
+                    props.discard(property_id)
+                    props.add(new_property_id)
+                    
+                    # Update observable mapping
+                    observable_unique_id = components['observable_unique_id']
+                    if observable_unique_id != DEFAULT_NO_OBSERVABLE:
+                        # Get the full observable ID
+                        full_observable_id = self.registry.get_full_id_from_unique_id(observable_unique_id)
+                        if full_observable_id:
+                            obs_props = self._observable_to_properties.get(full_observable_id)
+                            if obs_props:
+                                obs_props.discard(property_id)
+                                obs_props.add(new_property_id)
+                                self._observable_to_properties.add(full_observable_id, obs_props)
+                    
+                    updates.append((property_id, new_property_id))
+            
+            # Update the controller mapping
+            self._controller_to_properties.add(new_controller_id, props)
+            self._controller_to_properties.delete(old_controller_id)
         
         return updates
     
@@ -471,31 +542,52 @@ class ObservableManager:
         new_unique_id = new_components['unique_id']
         
         # If no change in unique ID, nothing to do
-        if old_unique_id == new_unique_id:
+        if old_unique_id == new_unique_id and old_observable_id == new_observable_id:
             return True, old_observable_id, None
         
         # 3. Check for ID collision
-        if self.registry.get_full_id_from_unique_id(new_unique_id):
+        if new_unique_id != old_unique_id and self.registry.get_full_id_from_unique_id(new_unique_id):
             return False, old_observable_id, f"Unique ID '{new_unique_id}' is already in use"
         
         # 4. Find all properties referencing this observable
-        property_ids = self.get_property_ids_by_observable_id(old_unique_id)
+        properties = self._observable_to_properties.get(old_observable_id) or set()
         
         # 5. Create new observable ID
         final_observable_id = create_observable_id(old_components['type_code'], new_unique_id)
         
         # 6. Update all property references
         property_updates = []
-        for prop_id in property_ids:
-            new_prop_id = self.update_property_observable(prop_id, new_unique_id)
-            property_updates.append((prop_id, new_prop_id))
+        for prop_id in list(properties):
+            components = parse_property_id(prop_id)
+            if components and components['observable_unique_id'] == old_unique_id:
+                new_prop_id = create_property_id(
+                    components['type_code'],
+                    components['unique_id'],
+                    new_unique_id,
+                    components['property_name'],
+                    components['controller_id']
+                )
+                
+                # Update controller mapping if applicable
+                controller_id = components['controller_id']
+                if controller_id != DEFAULT_NO_CONTROLLER:
+                    full_controller_id = self.registry.get_full_id_from_unique_id(controller_id)
+                    if full_controller_id:
+                        controller_props = self._controller_to_properties.get(full_controller_id)
+                        if controller_props:
+                            controller_props.discard(prop_id)
+                            controller_props.add(new_prop_id)
+                            self._controller_to_properties.add(full_controller_id, controller_props)
+                
+                property_updates.append((prop_id, new_prop_id))
         
-        # 7. Update mappings
-        # Move the properties from old observable to new one
-        props = self._observable_to_properties.get(old_unique_id)
-        if props:
-            self._observable_to_properties.add(new_unique_id, props)
-            self._observable_to_properties.delete(old_unique_id)
+        # 7. Update observable_to_properties mapping
+        if properties:
+            updated_properties = set()
+            for old_prop_id, new_prop_id in property_updates:
+                updated_properties.add(new_prop_id)
+            self._observable_to_properties.add(final_observable_id, updated_properties)
+            self._observable_to_properties.delete(old_observable_id)
         
         return True, final_observable_id, None
     
@@ -570,60 +662,54 @@ class ObservableManager:
             return True, old_property_id, None
         
         # Update observable mappings
-        if old_observable_id != new_observable_id:
-            # Remove from old observable's property set
-            if old_observable_id != DEFAULT_NO_OBSERVABLE:
-                props = self._observable_to_properties.get(old_observable_id)
+        if old_observable_id != DEFAULT_NO_OBSERVABLE:
+            # Get old observable's full ID
+            old_full_observable_id = self.registry.get_full_id_from_unique_id(old_observable_id)
+            if old_full_observable_id:
+                # Remove from old observable's property set
+                props = self._observable_to_properties.get(old_full_observable_id)
                 if props:
                     props.discard(old_property_id)
                     if not props:
                         # If this was the last property, remove the observable
-                        self._observable_to_properties.delete(old_observable_id)
+                        self._observable_to_properties.delete(old_full_observable_id)
                     else:
                         # Update the property set
-                        self._observable_to_properties.add(old_observable_id, props)
-            
-            # Add to new observable's property set
-            if new_observable_id != DEFAULT_NO_OBSERVABLE:
-                props = self._observable_to_properties.get(new_observable_id) or set()
+                        self._observable_to_properties.add(old_full_observable_id, props)
+        
+        # Add to new observable's property set
+        if new_observable_id != DEFAULT_NO_OBSERVABLE:
+            # Get new observable's full ID
+            new_full_observable_id = self.registry.get_full_id_from_unique_id(new_observable_id)
+            if new_full_observable_id:
+                props = self._observable_to_properties.get(new_full_observable_id) or set()
                 props.add(final_property_id)
-                self._observable_to_properties.add(new_observable_id, props)
-        else:
-            # Just update the property ID in the same observable
-            if old_observable_id != DEFAULT_NO_OBSERVABLE:
-                props = self._observable_to_properties.get(old_observable_id)
-                if props:
-                    props.discard(old_property_id)
-                    props.add(final_property_id)
-                    self._observable_to_properties.add(old_observable_id, props)
+                self._observable_to_properties.add(new_full_observable_id, props)
         
         # Update controller mappings
-        if old_controller_id != new_controller_id:
-            # Remove from old controller's property set
-            if old_controller_id != DEFAULT_NO_CONTROLLER:
-                props = self._controller_to_properties.get(old_controller_id)
+        if old_controller_id != DEFAULT_NO_CONTROLLER:
+            # Get old controller's full ID
+            old_full_controller_id = self.registry.get_full_id_from_unique_id(old_controller_id)
+            if old_full_controller_id:
+                # Remove from old controller's property set
+                props = self._controller_to_properties.get(old_full_controller_id)
                 if props:
                     props.discard(old_property_id)
                     if not props:
                         # If this was the last property, remove the controller
-                        self._controller_to_properties.delete(old_controller_id)
+                        self._controller_to_properties.delete(old_full_controller_id)
                     else:
                         # Update the property set
-                        self._controller_to_properties.add(old_controller_id, props)
-            
-            # Add to new controller's property set
-            if new_controller_id != DEFAULT_NO_CONTROLLER:
-                props = self._controller_to_properties.get(new_controller_id) or set()
+                        self._controller_to_properties.add(old_full_controller_id, props)
+        
+        # Add to new controller's property set
+        if new_controller_id != DEFAULT_NO_CONTROLLER:
+            # Get new controller's full ID
+            new_full_controller_id = self.registry.get_full_id_from_unique_id(new_controller_id)
+            if new_full_controller_id:
+                props = self._controller_to_properties.get(new_full_controller_id) or set()
                 props.add(final_property_id)
-                self._controller_to_properties.add(new_controller_id, props)
-        else:
-            # Just update the property ID in the same controller
-            if old_controller_id != DEFAULT_NO_CONTROLLER:
-                props = self._controller_to_properties.get(old_controller_id)
-                if props:
-                    props.discard(old_property_id)
-                    props.add(final_property_id)
-                    self._controller_to_properties.add(old_controller_id, props)
+                self._controller_to_properties.add(new_full_controller_id, props)
         
         return True, final_property_id, None
     
@@ -654,34 +740,34 @@ class ObservableManager:
         # Look up the full observable ID by unique ID
         return self.registry.get_full_id_from_unique_id(observable_unique_id)
     
-    def get_property_ids_by_observable_id(self, observable_unique_id):
+    def get_property_ids_by_observable_id(self, observable_id):
         """
         Get all property IDs for a specific observable.
         
         Args:
-            observable_unique_id: The observable's unique ID
+            observable_id: The observable's full ID
             
         Returns:
             list: A list of property IDs for the observable
         """
-        props = self._observable_to_properties.get(observable_unique_id)
+        props = self._observable_to_properties.get(observable_id)
         if not props:
             return []
         
         return list(props)
     
-    def get_property_ids_by_observable_id_and_property_name(self, observable_unique_id, property_name):
+    def get_property_ids_by_observable_id_and_property_name(self, observable_id, property_name):
         """
         Get all property IDs for a specific observable and property name.
         
         Args:
-            observable_unique_id: The observable's unique ID
+            observable_id: The observable's full ID
             property_name: The property name
             
         Returns:
             list: A list of property IDs matching the criteria
         """
-        props = self._observable_to_properties.get(observable_unique_id)
+        props = self._observable_to_properties.get(observable_id)
         if not props:
             return []
         
@@ -693,17 +779,17 @@ class ObservableManager:
         
         return matching_props
     
-    def get_property_ids_by_controller_id(self, controller_unique_id):
+    def get_property_ids_by_controller_id(self, controller_id):
         """
         Get all property IDs for a specific controller.
         
         Args:
-            controller_unique_id: The controller's unique ID
+            controller_id: The controller's full ID
             
         Returns:
             list: A list of property IDs controlled by the controller
         """
-        props = self._controller_to_properties.get(controller_unique_id)
+        props = self._controller_to_properties.get(controller_id)
         if not props:
             return []
         
