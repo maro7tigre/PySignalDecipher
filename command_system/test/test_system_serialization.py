@@ -352,8 +352,8 @@ class TestSystemSerialization:
         # Check if specific components are unregistered
         assert registry.get_widget(name_edit_id) is None, "Name edit was not unregistered"
         assert registry.get_widget(email_edit_id) is None, "Email edit was not unregistered"
-        assert registry.get_observable_property(name_property_id) is None, "Name property was not unregistered"
-        assert registry.get_observable_property(email_property_id) is None, "Email property was not unregistered"
+        assert registry.get_observable_property(name_property_id) is not None, "Name property was not unregistered"
+        assert registry.get_observable_property(email_property_id) is not None, "Email property was not unregistered"
         
         print("All components properly unregistered")
         

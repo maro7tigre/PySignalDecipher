@@ -37,10 +37,12 @@ class ObservableManager:
         # Create mappings using full IDs for consistency
         self._observable_to_properties = Mapping(update_keys=True, update_values=True)
         self._controller_to_properties = Mapping(update_keys=True, update_values=True)
+        self._property_controller_history = Mapping(update_keys=True, update_values=True)
         
         # Add mappings to registry for automatic updates
         self.registry.mappings.append(self._observable_to_properties)
         self.registry.mappings.append(self._controller_to_properties)
+        self.registry.mappings.append(self._property_controller_history)
     
     #MARK: - Observable registration methods
     
@@ -408,6 +410,16 @@ class ObservableManager:
                         # Skip setting this controller
                         return property_id
         
+        # Before changing the controller, store the old one in history
+        old_controller_id = components['controller_id']
+        if old_controller_id != DEFAULT_NO_CONTROLLER:
+            # Get or create the history list for this property
+            history = self._property_controller_history.get(property_id) or []
+            # Add the old controller to history
+            history.append(old_controller_id)
+            # Update the history mapping
+            self._property_controller_history.add(property_id, history)
+            
         # Create the updated property ID
         new_property_id = create_property_id(
             components['type_code'],
@@ -737,6 +749,46 @@ class ObservableManager:
                 self._controller_to_properties.add(new_full_controller_id, props)
         
         return True, final_property_id, None
+    
+    def restore_previous_controller(self, property_id):
+        """
+        Restore a previous controller for a property, or set to DEFAULT_NO_CONTROLLER
+        if no valid previous controllers exist.
+        
+        Args:
+            property_id: The property ID to restore a controller for
+            
+        Returns:
+            str: The updated property ID
+        """
+        # Get the history list for this property
+        history = self._property_controller_history.get(property_id) or []
+        
+        # Get the observable for this property
+        observable_id = self.get_observable_id_from_property_id(property_id)
+        if not observable_id:
+            # If no observable, just remove controller
+            return self.update_property_controller(property_id, DEFAULT_NO_CONTROLLER)
+        
+        # Try previous controllers until we find one that can control, or run out of history
+        while history:
+            # Get the most recent previous controller
+            prev_controller_id = history.pop()
+            
+            # Get the full controller ID
+            controller_widget_id = self.registry.get_full_id_from_unique_id(prev_controller_id)
+            if not controller_widget_id:
+                continue
+                
+            # Check if this controller should be prevented
+            if not self.registry.should_prevent_control(controller_widget_id, observable_id):
+                # Found a valid controller, update
+                self._property_controller_history.add(property_id, history)  # Save updated history
+                return self.update_property_controller(property_id, prev_controller_id)
+        
+        # No valid controllers in history, set to default
+        self._property_controller_history.add(property_id, [])  # Clear history
+        return self.update_property_controller(property_id, DEFAULT_NO_CONTROLLER)
     
     #MARK: - Query methods
     

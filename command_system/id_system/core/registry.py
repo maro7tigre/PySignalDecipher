@@ -614,6 +614,33 @@ class IDRegistry:
         
         return False
     
+    def validate_controllers_after_location_change(self, widget_id):
+        """
+        Validate that a widget should still control its properties after changing location.
+        If not, restore previous controllers.
+        
+        Args:
+            widget_id: The widget ID whose controller status needs validation
+        """
+        print(f"== Validating controllers after location change for widget: {widget_id}")
+        # Get properties controlled by this widget
+        controlled_properties = self.get_controller_properties(widget_id)
+        
+        # For each property, check if control should be prevented
+        for property_id in controlled_properties:
+            # Get the observable for this property
+            observable_id = self.get_observable_id_from_property_id(property_id)
+            if not observable_id:
+                continue
+                
+            # Check if control should be prevented
+            if self.should_prevent_control(widget_id, observable_id):
+                # Control should be prevented, restore previous controller
+                new_property_id = self._observable_manager.restore_previous_controller(property_id)
+                if property_id != new_property_id:
+                    self.update_all_mappings(property_id, new_property_id)
+            
+    
     #MARK: - ID update methods
     
     def update_id(self, old_id, new_id):
@@ -704,6 +731,9 @@ class IDRegistry:
             # If the widget ID changed, update mappings and notify subscribers
             if old_id != new_id:
                 self.update_all_mappings(old_id, new_id)
+                
+            # Validate controllers after location change
+            self.validate_controllers_after_location_change(new_id)
             
             return new_id
         except IDRegistrationError as e:
@@ -732,6 +762,9 @@ class IDRegistry:
             # If the widget ID changed, update mappings and notify subscribers
             if old_id != new_id:
                 self.update_all_mappings(old_id, new_id)
+            
+            # Validate controllers after location change
+            self.validate_controllers_after_location_change(new_id)
             
             return new_id
         except IDRegistrationError as e:
