@@ -50,7 +50,7 @@ class BaseCommandWidget:
         
         # Register with ID system
         id_registry = get_id_registry()
-        self.widget_id = id_registry.register(self, type_code, None, container_id, location)
+        self._initial_widget_id = id_registry.register(self, type_code, None, container_id, location)
         
         # Controlled properties tracking
         self._controlled_properties: Dict[str, str] = {}  # Widget property -> Property ID
@@ -74,6 +74,17 @@ class BaseCommandWidget:
         # Widget lifecycle state
         self._initialized = True
     
+    def get_id(self) -> str:
+        """
+        Get the current widget ID from the registry.
+        
+        Returns:
+            str: The current widget ID
+        """
+        # Always get the most up-to-date ID from the registry
+        id_registry = get_id_registry()
+        return id_registry.get_id(self)
+    
     # MARK: - Command Trigger Configuration
     def set_command_trigger_mode(self, mode: CommandTriggerMode, delay_ms: int = 300):
         """
@@ -93,18 +104,17 @@ class BaseCommandWidget:
         
         Args:
             new_container_id: New container ID or None
+            widget_location_id: Optional location within the container
             
         Returns:
             str: Updated widget ID
         """
-        id_registry = get_id_registry()
         if new_container_id is not None:
             # Update container in the ID system
-            updated_id = id_registry.update_container(self.widget_id, new_container_id, widget_location_id)
-            if updated_id != self.widget_id:
-                # Update our stored widget ID if it changed
-                self.widget_id = updated_id
-        return self.widget_id
+            id_registry = get_id_registry()
+            updated_id = id_registry.update_container(self.get_id(), new_container_id, widget_location_id)
+            return updated_id
+        return self.get_id()
     
     # MARK: - Property Binding
     def bind_property(self, widget_property: str, observable_id: str, 
@@ -136,7 +146,7 @@ class BaseCommandWidget:
             
             # Property already exists, update controller reference
             property_id = property_ids[0]
-            property_id = id_registry.update_controller_reference(property_id, self.widget_id)
+            property_id = id_registry.update_controller_reference(property_id, self.get_id())
         else:
             # This shouldn't happen with ObservableProperty attributes
             # They should be registered when the Observable is initialized
@@ -350,7 +360,7 @@ class BaseCommandWidget:
         
         # Create and execute the command
         command = PropertyCommand(property_id, new_value)
-        command.set_trigger_widget(self.widget_id)
+        command.set_trigger_widget(self.get_id())
         
         # Execute the command
         get_command_manager().execute(command)
@@ -371,7 +381,7 @@ class BaseCommandWidget:
             self.unbind_property(widget_property)
             
         id_registry = get_id_registry()
-        return id_registry.unregister(self.widget_id)
+        return id_registry.unregister(self.get_id())
     
     # MARK: - Serialization
     def get_serialization(self) -> dict:
@@ -382,7 +392,7 @@ class BaseCommandWidget:
             Dict containing serialized widget state
         """
         result = {
-            'id': self.widget_id,
+            'id': self.get_id(),
             'properties': {}
         }
         
@@ -424,14 +434,12 @@ class BaseCommandWidget:
         id_registry = get_id_registry()
         
         # Update widget ID if needed
-        if 'id' in data and data['id'] != self.widget_id:
-            success, updated_id, error = id_registry.update_id(self.widget_id, data['id'])
-            if success:
-                self.widget_id = updated_id
-            else:
+        if 'id' in data and data['id'] != self.get_id():
+            success, updated_id, error = id_registry.update_id(self.get_id(), data['id'])
+            if not success:
                 # Alternative: re-register with the desired ID
-                id_registry.unregister(self.widget_id)
-                self.widget_id = id_registry.register(
+                id_registry.unregister(self.get_id())
+                id_registry.register(
                     self, 
                     self.type_code, 
                     get_unique_id_from_id(data['id'])

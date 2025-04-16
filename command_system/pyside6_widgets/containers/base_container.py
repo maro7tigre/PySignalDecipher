@@ -110,7 +110,7 @@ class BaseCommandContainer(BaseCommandWidget):
         
         # Register the subcontainer with the ID system - using consistent container type
         id_registry = get_id_registry()
-        subcontainer_id = id_registry.register(subcontainer, self.type_code, None, self.widget_id, location)
+        subcontainer_id = id_registry.register(subcontainer, self.type_code, None, self.get_id(), location)
         
         # Store mappings - now with bidirectional references for faster lookups
         self._types_map[subcontainer_id] = type_id
@@ -308,13 +308,13 @@ class BaseCommandContainer(BaseCommandWidget):
         """
         # First check if this container is inside another container
         id_registry = get_id_registry()
-        container_id = id_registry.get_container_id_from_widget_id(self.widget_id)
+        container_id = id_registry.get_container_id_from_widget_id(self.get_id())
         
         if container_id and container_id != "0":
             # If we have a parent container, ask it to navigate to us first
             parent_container = id_registry.get_widget(container_id)
             if parent_container and hasattr(parent_container, 'navigate_to_widget'):
-                parent_container.navigate_to_widget(self.widget_id)
+                parent_container.navigate_to_widget(self.get_id())
         
         # Get the container of the target widget
         target_container_id = id_registry.get_container_id_from_widget_id(target_widget_id)
@@ -401,7 +401,7 @@ class BaseCommandContainer(BaseCommandWidget):
             Dict containing serialized container state
         """
         result = {
-            'id': self.widget_id,
+            'id': self.get_id(),
             'subcontainers': []
         }
         
@@ -425,6 +425,7 @@ class BaseCommandContainer(BaseCommandWidget):
         """
         # Quick validation with early returns
         if subcontainer_id not in self._subcontainers:
+            print(f"Not in subcontainers : {self._subcontainers}")
             return None
             
         # Get subcontainer info from direct mappings
@@ -432,11 +433,13 @@ class BaseCommandContainer(BaseCommandWidget):
         location = self._id_to_location_map.get(subcontainer_id)
         
         if not subcontainer_type or not location:
+            print(f"Not in type : {self._types_map} or not in location : {self._id_to_location_map}")
             return None
             
         # Get the subcontainer widget from our cache
         subcontainer = self._subcontainers.get(subcontainer_id)
         if not subcontainer:
+            print(f"it should be in: {self._subcontainers}")
             return None
             
         # Create serialization for the subcontainer
@@ -486,11 +489,10 @@ class BaseCommandContainer(BaseCommandWidget):
         Args:
             serialized_data: Serialized container data
         """
-        if 'id' in serialized_data and serialized_data['id'] != self.widget_id:
+        if 'id' in serialized_data and serialized_data['id'] != self.get_id():
             id_registry = get_id_registry()
             # Register with specified ID to keep consistent with serialized state
-            id_registry.unregister(self.widget_id)
-            self.widget_id = id_registry.register(self, self.type_code, None)
+            id_registry.unregister(self.get_id())
     
     def _deserialize_subcontainers(self, serialized_data: Dict) -> bool:
         """
@@ -644,7 +646,7 @@ class BaseCommandContainer(BaseCommandWidget):
                 
                 # Create a location key that combines container location and widget location ID
                 location_key = f"{parsed_old_id['container_location']}-{parsed_old_id['widget_location_id']}"
-                print(f"location_key: {location_key}")
+                
                 
                 # Look for a widget with matching location in our current children
                 if location_key in new_widgets_by_location:
@@ -652,6 +654,7 @@ class BaseCommandContainer(BaseCommandWidget):
                     
                     # Deserialize the child with matching location
                     if hasattr(new_child_widget, 'deserialize'):
+                        print(f"location_key: {location_key}")
                         new_child_widget.deserialize(child_data)
                 else:
                     # No matching widget found - this might happen if widget structure changed

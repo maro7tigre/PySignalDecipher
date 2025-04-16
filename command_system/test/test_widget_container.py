@@ -173,18 +173,18 @@ class TestCommandTabWidget:
     def test_tab_widget_registration(self):
         """Test that tab widget is properly registered with the ID system."""
         # Verify tab widget is registered
-        assert self.tab_widget.widget_id is not None
+        assert self.tab_widget.get_id() is not None
         
         # Verify registry can retrieve the widget
         registry = get_id_registry()
-        assert registry.get_widget(self.tab_widget.widget_id) is self.tab_widget
+        assert registry.get_widget(self.tab_widget.get_id()) is self.tab_widget
         
         # Verify container relationship
-        container_id = registry.get_container_id_from_widget_id(self.tab_widget.widget_id)
+        container_id = registry.get_container_id_from_widget_id(self.tab_widget.get_id())
         assert container_id == self.main_container_id
         
         # Verify type code
-        assert get_type_code_from_id(self.tab_widget.widget_id) == ContainerTypeCodes.TAB
+        assert get_type_code_from_id(self.tab_widget.get_id()) == ContainerTypeCodes.TAB
     
     def test_tab_type_registration(self):
         """Test registering tab types with the tab widget."""
@@ -589,7 +589,7 @@ class TestCommandTabWidget:
         registry = get_id_registry()
         
         # Verify inner tab widget container is the outer tab
-        inner_container_id = registry.get_container_id_from_widget_id(inner_tab_widget.widget_id)
+        inner_container_id = registry.get_container_id_from_widget_id(inner_tab_widget.get_id())
         assert inner_container_id == outer_tab_id
         
         # Verify navigation function works through hierarchy
@@ -742,7 +742,7 @@ class TestCommandTabWidget:
         
         # Simulate tab widget destruction
         registry = get_id_registry()
-        tab_widget_id = self.tab_widget.widget_id
+        tab_widget_id = self.tab_widget.get_id()
         
         # Store tab IDs for checking
         tab1_widget = self.tab_widget.widget(0)
@@ -767,10 +767,10 @@ class TestCommandTabWidget:
         self.main_layout.addWidget(self.tab_widget)
         
         # Verify it has a new ID
-        assert self.tab_widget.widget_id != tab_widget_id
+        assert self.tab_widget.get_id() != tab_widget_id
         
         # Verify it has a new ID
-        assert self.tab_widget.widget_id != tab_widget_id
+        assert self.tab_widget.get_id() != tab_widget_id
         
         # Register a new tab type
         new_tab_type = self.tab_widget.register_tab(

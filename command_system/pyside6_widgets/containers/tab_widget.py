@@ -87,8 +87,8 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             return subcontainer_id
         
         # Create a command for adding a tab
-        cmd = AddTabCommand(type_id, self.widget_id)
-        cmd.set_trigger_widget(self.widget_id)
+        cmd = AddTabCommand(type_id, self.get_id())
+        cmd.set_trigger_widget(self.get_id())
         get_command_manager().execute(cmd)
         return cmd.component_id
     
@@ -315,8 +315,8 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             return
         
         # Create a command to close the tab
-        cmd = CloseTabCommand(subcontainer_id, subcontainer_type, self.widget_id, index)
-        cmd.set_trigger_widget(self.widget_id)
+        cmd = CloseTabCommand(subcontainer_id, subcontainer_type, self.get_id(), index)
+        cmd.set_trigger_widget(self.get_id())
         get_command_manager().execute(cmd)
     
     @Slot(int)
@@ -334,8 +334,8 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             
         # Only create command if index actually changed
         if old_index != index:
-            cmd = TabSelectionCommand(self.widget_id, old_index, index)
-            cmd.set_trigger_widget(self.widget_id)
+            cmd = TabSelectionCommand(self.get_id(), old_index, index)
+            cmd.set_trigger_widget(self.get_id())
             get_command_manager().execute(cmd)
     
     # MARK: - Overridden QTabWidget methods
@@ -514,16 +514,18 @@ class CloseTabCommand(SerializationCommand):
     def execute(self):
         """Execute captures state and closes tab."""
         container = get_id_registry().get_widget(self.container_id)
+        print(f"contaiener id : {self.container_id} component id : {self.component_id}")
         if container and self.component_id:
             # Save serialization before closing
             self.serialized_state = container.serialize_subcontainer(self.component_id)
-            
+            print(f" Serialized state : {self.serialized_state}")
             # Close the tab
             try:
                 tab_index = int(self.location)
                 container.close_tab(tab_index)
-            except ValueError:
-                pass
+            except ValueError as e:
+                print(f"ValueError occurred: {e}")
+                
 
     def undo(self):
         """Undo restores the tab."""
