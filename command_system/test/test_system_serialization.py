@@ -565,7 +565,9 @@ class TestSystemSerialization:
         form_model1 = FormDataModel("User One", "one@example.com")
         form_model2 = FormDataModel("User Two", "two@example.com")
         self.observables.extend([form_model1, form_model2])
-        
+        container_widget_ids = []
+        observable_ids = []
+        property_ids = []
         # Register tab type with model class
         form_tab_type = self.tab_widget.register_tab(
             factory_func=create_form_widget,
@@ -576,6 +578,8 @@ class TestSystemSerialization:
         # Add two tabs with separate instances
         tab1_id = self.tab_widget.add_tab(form_tab_type)
         tab2_id = self.tab_widget.add_tab(form_tab_type)
+        container_widget_ids.extend([tab1_id, tab2_id])
+        
         process_events_and_wait()
         
         # Verify tabs were added
@@ -608,6 +612,7 @@ class TestSystemSerialization:
         print(f"Tab 1 Email Edit ID: {email_edit1_id}")
         print(f"Tab 2 Name Edit ID: {name_edit2_id}")
         print(f"Tab 2 Email Edit ID: {email_edit2_id}")
+        container_widget_ids.extend([name_edit1_id, email_edit1_id, name_edit2_id, email_edit2_id])
         
         # Identify the observable models created for each tab
         # They should be different instances since we passed the class
@@ -633,6 +638,12 @@ class TestSystemSerialization:
         
         print(f"Tab 1 Model ID: {observable1_id}")
         print(f"Tab 2 Model ID: {observable2_id}")
+        print(f"property1_tab1_id: {name_property1_id}")
+        print(f"property2_tab1_id: {email_property1_id}")
+        print(f"property1_tab2_id: {name_property2_id}")
+        print(f"property2_tab2_id: {email_property2_id}")
+        observable_ids.extend([observable1_id, observable2_id])
+        property_ids.extend([name_property1_id, email_property1_id, name_property2_id, email_property2_id])
         
         # Set values via edits
         name_edit1.setText("Modified User One")
@@ -646,7 +657,7 @@ class TestSystemSerialization:
         assert tab2_model.email == "modified_two@example.com", "Tab 2 model email not updated"
         
         # Print state before closing tab
-        print_id_system_state("BEFORE CLOSING TAB")
+        print_id_system_state("BEFORE CLOSING TAB", container_widget_ids, observable_ids, property_ids)
         
         # Reset command tracking
         self.command_executions = []
@@ -663,7 +674,7 @@ class TestSystemSerialization:
         assert self.tab_widget.count() == 1, "Tab was not closed"
         
         # Print state after closing tab
-        print_id_system_state("AFTER CLOSING TAB")
+        print_id_system_state("AFTER CLOSING TAB", container_widget_ids, observable_ids, property_ids)
         
         # Verify first tab components were unregistered
         assert registry.get_widget(name_edit1_id) is None, "Name edit 1 still registered"
@@ -691,7 +702,7 @@ class TestSystemSerialization:
         assert self.tab_widget.count() == 2, "First tab not restored"
         
         # Print state after undo
-        print_id_system_state("AFTER UNDO TAB CLOSE")
+        print_id_system_state("AFTER UNDO TAB CLOSE", container_widget_ids, observable_ids, property_ids)
         
         # Find restored first tab widgets
         restored_tab1_widget = self.tab_widget.widget(0)
@@ -734,7 +745,7 @@ class TestSystemSerialization:
         assert self.tab_widget.count() == 1, "First tab not closed again"
         
         # Print final state
-        print_id_system_state("FINAL STATE")
+        print_id_system_state("FINAL STATE", container_widget_ids, observable_ids, property_ids)
         
         print("Close tab undo/redo test completed successfully")
         print("===== COMPLETED test_close_tab_undo_redo =====")

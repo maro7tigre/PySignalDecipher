@@ -622,7 +622,6 @@ class IDRegistry:
         Args:
             widget_id: The widget ID whose controller status needs validation
         """
-        print(f"== Validating controllers after location change for widget: {widget_id}")
         # Get properties controlled by this widget
         controlled_properties = self.get_controller_properties(widget_id)
         

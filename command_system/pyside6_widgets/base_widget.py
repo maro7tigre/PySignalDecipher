@@ -136,9 +136,7 @@ class BaseCommandWidget:
             
             # Property already exists, update controller reference
             property_id = property_ids[0]
-            print(f"Property IDs before controll update: {property_id}")
             property_id = id_registry.update_controller_reference(property_id, self.widget_id)
-            print(f"Property IDs after controll update: {property_id}")
         else:
             # This shouldn't happen with ObservableProperty attributes
             # They should be registered when the Observable is initialized

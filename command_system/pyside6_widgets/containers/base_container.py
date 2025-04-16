@@ -571,6 +571,7 @@ class BaseCommandContainer(BaseCommandWidget):
         Returns:
             ID of the subcontainer
         """
+        print("___________________________________")
         id_registry = get_id_registry()
         # Handle existing vs. new subcontainer
         if existing_subcontainer_id:
@@ -589,14 +590,18 @@ class BaseCommandContainer(BaseCommandWidget):
             if not subcontainer_id:
                 return None
                 
+        print(f"The initial subcontainer_id: {subcontainer_id}")
+        print(f"current_children_ids: {id_registry.get_widgets_by_container_id(subcontainer_id)}")
         # Update the subcontainer's ID
         success, subcontainer_id, error = id_registry.update_id(subcontainer_id, serialized_subcontainer['id'])
         if not success:
             raise ValueError(f"Failed to update ID for subcontainer {subcontainer_id}: {error}")
-        
+        print(f"The subcontainer_id after update: {subcontainer_id}")
+        print(f"current_children_ids: {id_registry.get_widgets_by_container_id(subcontainer_id)}")
         # Deserialize children if included
         self._deserialize_children(subcontainer_id, serialized_subcontainer)
 
+        print(f"___________________________________")
         return subcontainer_id
     
     def _deserialize_children(self, subcontainer_id: str, serialized_data: Dict):
@@ -607,8 +612,9 @@ class BaseCommandContainer(BaseCommandWidget):
             subcontainer_id: Subcontainer ID
             serialized_data: Serialized subcontainer data
         """
+        print("######################################")
         id_registry = get_id_registry()
-        
+        print(f"subcontainer : {subcontainer_id} serialized_data: {serialized_data}")
         if 'children' in serialized_data and isinstance(serialized_data['children'], dict):
             # Get all current child widgets that have this subcontainer as their container
             current_children_ids = id_registry.get_widgets_by_container_id(subcontainer_id)
@@ -648,3 +654,4 @@ class BaseCommandContainer(BaseCommandWidget):
                     # No matching widget found - this might happen if widget structure changed
                     # Log this or handle as needed
                     pass
+        print("######################################")

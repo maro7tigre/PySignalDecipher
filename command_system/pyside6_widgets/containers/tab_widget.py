@@ -527,15 +527,20 @@ class CloseTabCommand(SerializationCommand):
 
     def undo(self):
         """Undo restores the tab."""
+        print("+++++++++++++++++++++++++")
         if self.serialized_state:
+            print(f" Serialized state : {self.serialized_state}")
             container = get_id_registry().get_widget(self.container_id)
+            print(f" Container : {container}, with id : {self.container_id}")
             if container:
                 # Restore from serialization
+                print(f" Location : {self.location}, Type ID : {self.type_id}")
                 container.deserialize_subcontainer(
                     self.type_id,
                     self.location,
                     self.serialized_state
                 )
+        print("++++++++++++++++++++++++++")
         
 class TabSelectionCommand(Command):
     """Command for changing the selected tab."""
