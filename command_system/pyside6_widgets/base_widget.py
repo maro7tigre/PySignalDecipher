@@ -87,7 +87,7 @@ class BaseCommandWidget:
         self._change_delay_ms = delay_ms
     
     # MARK: - Container Management
-    def update_container(self, new_container_id: Optional[str] = None):
+    def update_container(self, new_container_id: Optional[str] = None, widget_location_id: int = None):
         """
         Update the container for this widget.
         
@@ -100,7 +100,7 @@ class BaseCommandWidget:
         id_registry = get_id_registry()
         if new_container_id is not None:
             # Update container in the ID system
-            updated_id = id_registry.update_container(self.widget_id, new_container_id)
+            updated_id = id_registry.update_container(self.widget_id, new_container_id, widget_location_id)
             if updated_id != self.widget_id:
                 # Update our stored widget ID if it changed
                 self.widget_id = updated_id

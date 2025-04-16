@@ -220,13 +220,14 @@ class BaseCommandContainer(BaseCommandWidget):
         # Use non-recursive approach for better performance with deep hierarchies
         id_registry = get_id_registry()
         widgets_to_process = [widget]
-        
+        count = 0
         while widgets_to_process:
             current_widget = widgets_to_process.pop(0)
             
             # Set this container as the widget's container
             if hasattr(current_widget, "update_container"):
-                current_widget.update_container(container_id)
+                current_widget.update_container(container_id, count)
+                count += 1
             
             # Process child widgets - even for container widgets
             # This allows nested containers to work properly
@@ -614,11 +615,11 @@ class BaseCommandContainer(BaseCommandWidget):
         """
         print("######################################")
         id_registry = get_id_registry()
-        print(f"subcontainer : {subcontainer_id} serialized_data: {serialized_data}")
+        print(f"subcontainer : {subcontainer_id} serialized_data: {serialized_data['children']}")
         if 'children' in serialized_data and isinstance(serialized_data['children'], dict):
+            print("Passed first check")
             # Get all current child widgets that have this subcontainer as their container
             current_children_ids = id_registry.get_widgets_by_container_id(subcontainer_id)
-            current_children_widgets = [id_registry.get_widget(child_id) for child_id in current_children_ids]
             
             # Create a location map for newly created widgets
             new_widgets_by_location = {}
@@ -632,6 +633,7 @@ class BaseCommandContainer(BaseCommandWidget):
                     if parsed_id:
                         location_key = f"{parsed_id['container_location']}-{parsed_id['widget_location_id']}"
                         new_widgets_by_location[location_key] = (child_id, widget)
+            print(f"new_widgets_by_location: {new_widgets_by_location}")
             
             # Process each serialized child
             for old_child_id, child_data in serialized_data['children'].items():
@@ -642,6 +644,7 @@ class BaseCommandContainer(BaseCommandWidget):
                 
                 # Create a location key that combines container location and widget location ID
                 location_key = f"{parsed_old_id['container_location']}-{parsed_old_id['widget_location_id']}"
+                print(f"location_key: {location_key}")
                 
                 # Look for a widget with matching location in our current children
                 if location_key in new_widgets_by_location:

@@ -708,7 +708,7 @@ class IDRegistry:
         # Unknown component type
         return False, old_id, f"Unknown component type: {type_code}"
     
-    def update_container(self, widget_id, new_container_id):
+    def update_container(self, widget_id, new_container_id, widget_location_id: int = None):
         """
         Update a widget's container.
         
@@ -725,7 +725,7 @@ class IDRegistry:
         old_id = widget_id
         
         try:
-            new_id = self._widget_manager.update_widget_container(widget_id, new_container_id)
+            new_id = self._widget_manager.update_widget_container(widget_id, new_container_id, widget_location_id)
             
             # If the widget ID changed, update mappings and notify subscribers
             if old_id != new_id:

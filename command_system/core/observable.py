@@ -335,7 +335,7 @@ class Observable:
         property_id = data.get('property_id')
         value = data.get('value')
         observable_id = data.get('observable_id')
-        
+        print(f"Deserializing property {property_name} with ID {property_id} and value {value} for observable {observable_id}")
         if not property_id or not observable_id:
             return False
         
@@ -364,7 +364,7 @@ class Observable:
         if hasattr(self, property_name):
             # Get the property ID for the existing property
             existing_property_id = self._get_property_id(property_name)
-            print(f"Existing property ID: {existing_property_id}, Property ID: {property_id}")
+            print(f"Existing property ID: {existing_property_id}, Property ID: {property_id}, Property Name: {property_name}")
             # Update the property value
             setattr(self, property_name, value)
             
