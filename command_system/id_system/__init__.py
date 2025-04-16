@@ -17,6 +17,9 @@ from command_system.id_system.managers.widget_manager import IDRegistrationError
 # Import simple registry for basic ID management
 from command_system.id_system.simple.simple_registry import SimpleIDRegistry, get_simple_id_registry
 
+# Import Mapping
+from command_system.id_system.core.mapping import Mapping
+
 # Import subscription functions
 from command_system.id_system.managers.subscription_manager import (
     subscribe_to_id,

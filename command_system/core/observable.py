@@ -10,6 +10,7 @@ from ..id_system import (
     get_id_registry,
     parse_property_id
 )
+from ..id_system.core.mapping import Mapping
 from ..id_system.types import ObservableTypeCodes, PropertyTypeCodes
 
 # Type variable for generic property types
@@ -81,7 +82,7 @@ class Observable:
         # Update status tracking
         self._is_updating = False
         
-        # Store observer callbacks with improved structure
+        # Store observer callbacks with improved structure using Mapping
         # property_name -> {observer_id: callback}
         self._property_observers = {}
         
@@ -112,7 +113,8 @@ class Observable:
                     )
                     
                 # Initialize observer dict for this property
-                self._property_observers[attr_name] = {}
+                self._property_observers[attr_name] = Mapping(update_keys=True, update_values=False)
+                self.id_registry.mappings.append(self._property_observers[attr_name])
     
     def _get_property_id(self, property_name: str) -> Optional[str]:
         """
@@ -163,11 +165,13 @@ class Observable:
             return
         
         # Notify all observers - iterate through values (callbacks)
-        for observer_id, callback in list(self._property_observers[property_name].items()):
-            try:
-                callback(property_name, old_value, new_value)
-            except Exception as e:
-                print(f"Error in property observer callback: {e}")
+        for observer_id in self._property_observers[property_name]:
+            callback = self._property_observers[property_name].get(observer_id)
+            if callback:
+                try:
+                    callback(property_name, old_value, new_value)
+                except Exception as e:
+                    print(f"Error in property observer callback: {e}")
     
     # MARK: - Observer Management
     def add_property_observer(self, property_name: str, 
@@ -205,7 +209,8 @@ class Observable:
             
         # Ensure we have an observer dict for this property
         if property_name not in self._property_observers:
-            self._property_observers[property_name] = {}
+            self._property_observers[property_name] = Mapping(update_keys=True, update_values=False)
+            self.id_registry.mappings.append(self._property_observers[property_name])
             
         # Add the callback to our observer dict with observer_id as key
         self._property_observers[property_name][observer_id] = callback
@@ -229,7 +234,7 @@ class Observable:
             
         # Direct lookup using observer_id as key
         if observer_id in self._property_observers[property_name]:
-            del self._property_observers[property_name][observer_id]
+            self._property_observers[property_name].delete(observer_id)
             return True
             
         return False
@@ -268,8 +273,10 @@ class Observable:
         if not property_id:
             return False
         
-        # Remove property observers
+        # Remove property observers and cleanup mapping
         if property_name in self._property_observers:
+            if self._property_observers[property_name] in self.id_registry.mappings:
+                self.id_registry.mappings.remove(self._property_observers[property_name])
             self._property_observers.pop(property_name, None)
             
         return self.id_registry.unregister(property_id)
@@ -283,7 +290,11 @@ class Observable:
         Returns:
             bool: True if successful, False otherwise
         """
-        # Clear property observers
+        # Clean up property observers
+        for property_name, observer_mapping in list(self._property_observers.items()):
+            if observer_mapping in self.id_registry.mappings:
+                self.id_registry.mappings.remove(observer_mapping)
+        
         self._property_observers.clear()
         
         return self.id_registry.unregister(self.get_id())
@@ -386,7 +397,8 @@ class Observable:
             setattr(self, property_name, value)
             
             # Make sure we have an observer set for this property
-            self._property_observers[property_name] = {}
+            self._property_observers[property_name] = Mapping(update_keys=True, update_values=False)
+            self.id_registry.mappings.append(self._property_observers[property_name])
             
             # Now register the property with the ID system
             # First get the original property components to extract controller information

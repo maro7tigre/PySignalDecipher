@@ -9,6 +9,7 @@ from PySide6.QtWidgets import QTabWidget, QWidget, QTabBar, QVBoxLayout
 from PySide6.QtCore import Signal, Slot, Qt
 
 from command_system.id_system import get_id_registry, ContainerTypeCodes
+from command_system.id_system.core.mapping import Mapping
 from command_system.core import get_command_manager, Command, SerializationCommand, Observable
 from .base_container import BaseCommandContainer
 
@@ -32,8 +33,10 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         # Initialize container with TAB type code
         self.initiate_container(ContainerTypeCodes.TAB, container_id, location)
         
-        # Enhanced tab tracking with direct index-to-id mapping
-        self._tab_index_to_id = {}  # index -> subcontainer_id
+        # Enhanced tab tracking with direct index-to-id mapping using Mapping
+        self._tab_index_to_id = Mapping(update_keys=False, update_values=True)
+        self.id_registry.mappings.append(self._tab_index_to_id)
+        
         self._tab_closable_map = {}  # index -> closable flag
         
         # Connect signals
@@ -170,7 +173,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             return False
             
         # Get the subcontainer ID
-        id_registry = get_id_registry()
+        id_registry = self.id_registry
         subcontainer_id = id_registry.get_id(tab_widget)
         if not subcontainer_id:
             return False
@@ -196,8 +199,9 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
     
     def _update_tab_mappings(self):
         """Update all internal tab mappings after changes."""
-        # Clear existing mappings
-        self._tab_index_to_id.clear()
+        # Clear existing mappings - don't use clear() as it won't properly trigger updates
+        for index in list(self._tab_index_to_id):
+            self._tab_index_to_id.delete(index)
         self._tab_closable_map.clear()
         
         # Rebuild all mappings
@@ -205,7 +209,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             tab_widget = self.widget(i)
             if tab_widget:
                 # Update widget-to-index mapping
-                widget_id = get_id_registry().get_id(tab_widget)
+                widget_id = self.id_registry.get_id(tab_widget)
                 if widget_id:
                     self._tab_index_to_id[i] = widget_id
                     
@@ -301,7 +305,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             return
             
         # Get the subcontainer ID
-        id_registry = get_id_registry()
+        id_registry = self.id_registry
         subcontainer_id = id_registry.get_id(tab_widget)
         if not subcontainer_id:
             return
@@ -360,9 +364,14 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
     def closeEvent(self, event):
         """Handle widget close event."""
         # Clean up all subcontainers
-        for subcontainer_id in list(self._subcontainers.keys()):
+        for subcontainer_id in list(self._subcontainers):
             self.close_subcontainer(subcontainer_id)
             
+        # Remove tab mappings from the registry's tracking
+        if hasattr(self, 'id_registry') and hasattr(self.id_registry, 'mappings'):
+            if self._tab_index_to_id in self.id_registry.mappings:
+                self.id_registry.mappings.remove(self._tab_index_to_id)
+        
         # Unregister from ID system
         self.unregister_widget()
         

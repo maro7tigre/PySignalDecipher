@@ -98,16 +98,16 @@ class TestCommandLineEdit:
     def test_widget_registration(self):
         """Test that widgets are properly registered with the ID system."""
         # Verify widgets are registered
-        assert self.name_edit.widget_id is not None
-        assert self.email_edit.widget_id is not None
+        assert self.name_edit.get_id() is not None
+        assert self.email_edit.get_id() is not None
         
         # Verify registry can retrieve widgets
         registry = get_id_registry()
-        assert registry.get_widget(self.name_edit.widget_id) is self.name_edit
-        assert registry.get_widget(self.email_edit.widget_id) is self.email_edit
+        assert registry.get_widget(self.name_edit.get_id()) is self.name_edit
+        assert registry.get_widget(self.email_edit.get_id()) is self.email_edit
         
         # Verify container relationship
-        container_id = registry.get_container_id_from_widget_id(self.name_edit.widget_id)
+        container_id = registry.get_container_id_from_widget_id(self.name_edit.get_id())
         assert container_id == self.container_id
     
     def test_basic_property_binding(self):
@@ -345,7 +345,7 @@ class TestCommandLineEdit:
         email_edit_state = self.email_edit.get_serialization()
         
         # Verify serialized state contains proper data
-        assert name_edit_state["id"] == self.name_edit.widget_id
+        assert name_edit_state["id"] == self.name_edit.get_id()
         assert "properties" in name_edit_state
         assert "text" in name_edit_state["properties"]
         assert name_edit_state["properties"]["text"]["value"] == "Serialization Test"

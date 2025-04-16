@@ -10,6 +10,7 @@ import uuid
 
 from .command import Command
 from ..id_system import get_id_registry
+from ..id_system.core.mapping import Mapping
 
 # MARK: - Command History
 class CommandHistory:
@@ -131,11 +132,21 @@ class CommandManager:
         self._is_updating = False  # Flag to prevent recursive command execution
         self._is_initializing = False  # Flag to disable history tracking during init
         
-        # Command lifecycle callbacks
-        self._before_execute_callbacks: Dict[str, Callable[[Command], None]] = {}
-        self._after_execute_callbacks: Dict[str, Callable[[Command, bool], None]] = {}
-        self._before_undo_callbacks: Dict[str, Callable[[Command], None]] = {}
-        self._after_undo_callbacks: Dict[str, Callable[[Command, bool], None]] = {}
+        # Get the ID registry
+        self.id_registry = get_id_registry()
+        
+        # Command lifecycle callbacks using Mapping class
+        self._before_execute_callbacks = Mapping(update_keys=True, update_values=False)
+        self.id_registry.mappings.append(self._before_execute_callbacks)
+        
+        self._after_execute_callbacks = Mapping(update_keys=True, update_values=False)
+        self.id_registry.mappings.append(self._after_execute_callbacks)
+        
+        self._before_undo_callbacks = Mapping(update_keys=True, update_values=False)
+        self.id_registry.mappings.append(self._before_undo_callbacks)
+        
+        self._after_undo_callbacks = Mapping(update_keys=True, update_values=False)
+        self.id_registry.mappings.append(self._after_undo_callbacks)
     
     def execute(self, command: Command, trigger_widget_id: Optional[str] = None) -> bool:
         """
@@ -160,8 +171,10 @@ class CommandManager:
             self._is_updating = True
             
             # Call before execute callbacks
-            for callback in self._before_execute_callbacks.values():
-                callback(command)
+            for callback_id in self._before_execute_callbacks:
+                callback = self._before_execute_callbacks.get(callback_id)
+                if callback:
+                    callback(command)
             
             command.execute()
             
@@ -169,19 +182,21 @@ class CommandManager:
             if not self._is_initializing:
                 self._history.add_command(command)
                 
-            
-            
             # Call after execute callbacks
-            for callback in self._after_execute_callbacks.values():
-                callback(command, True)
+            for callback_id in self._after_execute_callbacks:
+                callback = self._after_execute_callbacks.get(callback_id)
+                if callback:
+                    callback(command, True)
                 
             return True
         except Exception as e:
             print(f"Error executing command: {e}")
             
             # Call after execute callbacks with failure
-            for callback in self._after_execute_callbacks.values():
-                callback(command, False)
+            for callback_id in self._after_execute_callbacks:
+                callback = self._after_execute_callbacks.get(callback_id)
+                if callback:
+                    callback(command, False)
                 
             return False
         finally:
@@ -205,22 +220,28 @@ class CommandManager:
                 # Navigate to command context if available
                 self._navigate_to_command_context(command)
                 # Call before undo callbacks
-                for callback in self._before_undo_callbacks.values():
-                    callback(command)
+                for callback_id in self._before_undo_callbacks:
+                    callback = self._before_undo_callbacks.get(callback_id)
+                    if callback:
+                        callback(command)
                 
                 command.undo()
                 
                 # Call after undo callbacks
-                for callback in self._after_undo_callbacks.values():
-                    callback(command, True)
+                for callback_id in self._after_undo_callbacks:
+                    callback = self._after_undo_callbacks.get(callback_id)
+                    if callback:
+                        callback(command, True)
                 
                 return True
             except Exception as e:
                 print(f"Error undoing command: {e}")
                 
                 # Call after undo callbacks with failure
-                for callback in self._after_undo_callbacks.values():
-                    callback(command, False)
+                for callback_id in self._after_undo_callbacks:
+                    callback = self._after_undo_callbacks.get(callback_id)
+                    if callback:
+                        callback(command, False)
                 
                 # Re-add the command since undo failed
                 self._history.redo()
@@ -247,22 +268,28 @@ class CommandManager:
                 # Navigate to command context if available
                 self._navigate_to_command_context(command)
                 # Call before execute callbacks (same as execute)
-                for callback in self._before_execute_callbacks.values():
-                    callback(command)
+                for callback_id in self._before_execute_callbacks:
+                    callback = self._before_execute_callbacks.get(callback_id)
+                    if callback:
+                        callback(command)
                 
                 command.redo()
                 
                 # Call after execute callbacks (same as execute)
-                for callback in self._after_execute_callbacks.values():
-                    callback(command, True)
+                for callback_id in self._after_execute_callbacks:
+                    callback = self._after_execute_callbacks.get(callback_id)
+                    if callback:
+                        callback(command, True)
                 
                 return True
             except Exception as e:
                 print(f"Error redoing command: {e}")
                 
                 # Call after execute callbacks with failure
-                for callback in self._after_execute_callbacks.values():
-                    callback(command, False)
+                for callback_id in self._after_execute_callbacks:
+                    callback = self._after_execute_callbacks.get(callback_id)
+                    if callback:
+                        callback(command, False)
                 
                 # Remove the command since redo failed
                 self._history.undo()
@@ -306,7 +333,7 @@ class CommandManager:
         # Get the trigger widget ID
         trigger_widget_id = command.trigger_widget_id
         # Get the container 
-        id_registry = get_id_registry()
+        id_registry = self.id_registry
         container_id = id_registry.get_container_id_from_widget_id(trigger_widget_id)
         if not container_id or container_id == "0":
             trigger_widget = id_registry.get_widget(trigger_widget_id)
@@ -401,14 +428,25 @@ class CommandManager:
         Args:
             callback_id: ID of the callback to remove
         """
-        if callback_id in self._before_execute_callbacks:
-            del self._before_execute_callbacks[callback_id]
-        if callback_id in self._after_execute_callbacks:
-            del self._after_execute_callbacks[callback_id]
-        if callback_id in self._before_undo_callbacks:
-            del self._before_undo_callbacks[callback_id]
-        if callback_id in self._after_undo_callbacks:
-            del self._after_undo_callbacks[callback_id]
+        self._before_execute_callbacks.delete(callback_id)
+        self._after_execute_callbacks.delete(callback_id)
+        self._before_undo_callbacks.delete(callback_id)
+        self._after_undo_callbacks.delete(callback_id)
+        
+    def __del__(self):
+        """Clean up mappings from the ID registry."""
+        try:
+            if hasattr(self, 'id_registry') and hasattr(self.id_registry, 'mappings'):
+                if self._before_execute_callbacks in self.id_registry.mappings:
+                    self.id_registry.mappings.remove(self._before_execute_callbacks)
+                if self._after_execute_callbacks in self.id_registry.mappings:
+                    self.id_registry.mappings.remove(self._after_execute_callbacks)
+                if self._before_undo_callbacks in self.id_registry.mappings:
+                    self.id_registry.mappings.remove(self._before_undo_callbacks)
+                if self._after_undo_callbacks in self.id_registry.mappings:
+                    self.id_registry.mappings.remove(self._after_undo_callbacks)
+        except:
+            pass  # Ignore errors during cleanup
 
 def get_command_manager():
     """
