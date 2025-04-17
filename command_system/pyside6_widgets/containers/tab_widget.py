@@ -435,9 +435,6 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         current_position = None
         if 'current_position' in serialized_data:
             current_position = serialized_data['current_position']
-        elif 'current_index' in serialized_data:
-            # Backward compatibility
-            current_position = serialized_data['current_index']
             
         if current_position is not None and 0 <= current_position < self.count():
             self.setCurrentIndex(current_position)

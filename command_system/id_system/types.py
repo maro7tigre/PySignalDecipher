@@ -35,10 +35,14 @@ class WidgetTypeCodes:
     COMBO_BOX = 'co'
     SLIDER = 'sl'
     SPIN_BOX = 'sp'
+    DOUBLE_SPIN_BOX = 'ds'
     TEXT_EDIT = 'te'
     LIST_WIDGET = 'lw'
     TREE_WIDGET = 'tw'
     TABLE_WIDGET = 'tb'
+    DATE_EDIT = 'de'
+    TIME_EDIT = 'ti'
+    DATE_TIME_EDIT = 'dt'
     CUSTOM_WIDGET = 'cw'
     
     @classmethod
