@@ -18,6 +18,7 @@ from .double_spin_box import CommandDoubleSpinBox
 # Import container classes
 from .containers.base_container import BaseCommandContainer
 from .containers.tab_widget import CommandTabWidget
+from .containers.dock_widget import CommandDockWidget
 
 __all__ = [
     # Base classes
@@ -37,4 +38,5 @@ __all__ = [
     
     # Containers
     'CommandTabWidget',
+    'CommandDockWidget',
 ]

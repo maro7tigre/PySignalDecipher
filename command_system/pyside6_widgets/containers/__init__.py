@@ -7,8 +7,10 @@ for automatic undo/redo support, property binding, and serialization.
 
 from .base_container import BaseCommandContainer
 from .tab_widget import CommandTabWidget
+from .dock_widget import CommandDockWidget
 
 __all__ = [
     'BaseCommandContainer',
     'CommandTabWidget',
+    'CommandDockWidget',
 ]
