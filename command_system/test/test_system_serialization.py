@@ -757,12 +757,17 @@ class TestSystemSerialization:
     def test_complete_serialization_workflow(self):
         """Test comprehensive serialization workflow with multiple tabs and operations."""
         print("\n===== STARTING test_complete_serialization_workflow =====")
+        container_widget_ids = []
+        observable_ids = []
+        property_ids = []
         # Create form models
         form_model = FormDataModel("Test User", "test@example.com")
         self.observables.append(form_model)
         
         tab_model = TabDataModel("Test Title", "Test Content")
         self.observables.append(tab_model)
+        
+        observable_ids.extend([form_model.get_id(), tab_model.get_id()])
         
         # Register tab types
         form_tab_type = self.tab_widget.register_tab(
@@ -776,9 +781,11 @@ class TestSystemSerialization:
             tab_name="Content Tab",
             observables=[tab_model.get_id()]
         )
+        print(f"Registered tab types: {form_tab_type}, {content_tab_type}")
+        
         
         # Print initial state
-        print_id_system_state("INITIAL STATE")
+        print_id_system_state("INITIAL STATE", container_widget_ids, observable_ids, property_ids)
         
         # Store initial widget references
         registry = get_id_registry()
@@ -812,6 +819,7 @@ class TestSystemSerialization:
         # Add tabs
         form_tab_id = self.tab_widget.add_tab(form_tab_type)
         content_tab_id = self.tab_widget.add_tab(content_tab_type)
+        container_widget_ids.extend([form_tab_id, content_tab_id])
         process_events_and_wait()
         
         # Verify tabs were added
@@ -827,9 +835,13 @@ class TestSystemSerialization:
         # Find edit controls
         form_name_edit = form_tab_widget.findChild(CommandLineEdit, "name_edit")
         form_email_edit = form_tab_widget.findChild(CommandLineEdit, "email_edit")
+        container_widget_ids.extend([form_name_edit.get_id(), form_email_edit.get_id()])
         
         content_title_edits = [w for w in content_tab_widget.findChildren(CommandLineEdit) 
                              if hasattr(w, '_controlled_properties') and 'text' in w._controlled_properties]
+        for widget_content in content_title_edits:
+            container_widget_ids.append(widget_content.get_id())
+        
         content_title_edit = content_title_edits[0] if content_title_edits else None
         
         assert form_name_edit is not None, "Could not find form name edit"
@@ -890,7 +902,7 @@ class TestSystemSerialization:
         assert tab_model.title == "Modified Title", "Tab model title not updated"
         
         # Print state after modifications
-        print_id_system_state("AFTER MODIFICATIONS")
+        print_id_system_state("AFTER MODIFICATIONS", container_widget_ids, observable_ids, property_ids)
         
         # Serialize the entire tab widget
         serialized_state = self.tab_widget.get_serialization()
@@ -911,7 +923,7 @@ class TestSystemSerialization:
         assert self.tab_widget.count() == 0, "Failed to clear tabs"
         
         # Print state after clearing
-        print_id_system_state("AFTER CLEARING TABS")
+        print_id_system_state("AFTER CLEARING TABS", container_widget_ids, observable_ids, property_ids)
         
         # Count widgets after clearing
         after_clear_widgets = set()
@@ -954,17 +966,17 @@ class TestSystemSerialization:
             tab_name="Content Tab",
             observables=[tab_model.get_id()]
         )
+        print(f"Registered tab types: {form_tab_type}, {content_tab_type}")
         
         # Deserialize the tab widget
         result = self.tab_widget.deserialize(serialized_state)
         assert result, "Failed to deserialize tab widget"
         process_events_and_wait(200)  # Longer wait for complex restoration
         
+        # Print state after restoration
+        print_id_system_state("AFTER RESTORATION", container_widget_ids, observable_ids, property_ids)
         # Verify tabs were restored
         assert self.tab_widget.count() == 2, "Failed to restore tabs"
-        
-        # Print state after restoration
-        print_id_system_state("AFTER RESTORATION")
         
         # Count widgets after restoration
         after_restore_widgets = set()
