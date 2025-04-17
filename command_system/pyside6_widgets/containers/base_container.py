@@ -43,11 +43,21 @@ class BaseCommandContainer(BaseCommandWidget):
         self._types_map = Mapping(update_keys=True, update_values=True)
         self.id_registry.mappings.append(self._types_map)
         
+        # Maps ID system locations to subcontainer IDs
         self._locations_map = Mapping(update_keys=False, update_values=True)
         self.id_registry.mappings.append(self._locations_map)
         
+        # Maps subcontainer IDs to ID system locations
         self._id_to_location_map = Mapping(update_keys=True, update_values=False)
         self.id_registry.mappings.append(self._id_to_location_map)
+        
+        # Maps positions to subcontainer IDs (new)
+        self._positions_map = Mapping(update_keys=False, update_values=True)
+        self.id_registry.mappings.append(self._positions_map)
+        
+        # Maps subcontainer IDs to positions (new)
+        self._id_to_position_map = Mapping(update_keys=True, update_values=False)
+        self.id_registry.mappings.append(self._id_to_position_map)
     
     # MARK: - Type Registration
     def register_subcontainer_type(self, factory_func: Callable, 
@@ -82,27 +92,27 @@ class BaseCommandContainer(BaseCommandWidget):
         return type_id
     
     # MARK: - Subcontainer Management
-    def create_subcontainer(self, type_id: str, location: str = "0") -> Tuple[QWidget, str]:
+    def create_subcontainer(self, type_id: str, position: str = "0") -> Tuple[QWidget, str]:
         """
         Create an empty subcontainer widget for the specified type.
         Must be implemented by subclasses.
         
         Args:
             type_id: Type ID of the subcontainer
-            location: Location for the subcontainer
+            position: Position for the subcontainer in the GUI
             
         Returns:
-            Tuple of (subcontainer widget, location string)
+            Tuple of (subcontainer widget, ID system location string)
         """
         raise NotImplementedError("Subclasses must implement create_subcontainer")
     
-    def add_subcontainer(self, type_id: str, location: str = None) -> Optional[str]:
+    def add_subcontainer(self, type_id: str, position: str = None) -> Optional[str]:
         """
         Add a new subcontainer of the registered type.
         
         Args:
             type_id: ID of the registered subcontainer type
-            location: Location identifier within this container
+            position: Position identifier within this container
             
         Returns:
             ID of the created subcontainer, or None if failed
@@ -112,7 +122,7 @@ class BaseCommandContainer(BaseCommandWidget):
             return None
         
         # Create an empty subcontainer
-        subcontainer, subcontainer_location = self.create_subcontainer(type_id, location)
+        subcontainer, id_location = self.create_subcontainer(type_id, position)
         if not subcontainer:
             return None
         
@@ -122,8 +132,16 @@ class BaseCommandContainer(BaseCommandWidget):
         
         # Store mappings - now with bidirectional references for faster lookups
         self._types_map[subcontainer_id] = type_id
-        self._locations_map[subcontainer_location] = subcontainer_id
-        self._id_to_location_map[subcontainer_id] = subcontainer_location
+        
+        # Store both location (for ID system) and position (for GUI) mappings
+        self._locations_map[id_location] = subcontainer_id
+        self._id_to_location_map[subcontainer_id] = id_location
+        
+        # Store position mapping if the implementation provided it
+        gui_position = position if position is not None else id_location
+        self._positions_map[gui_position] = subcontainer_id
+        self._id_to_position_map[subcontainer_id] = gui_position
+        
         self._subcontainers[subcontainer_id] = subcontainer
         
         # Get type info for the content
@@ -140,7 +158,7 @@ class BaseCommandContainer(BaseCommandWidget):
                 observable_ids.append(obs)
         
         # Register non-controlling observables if any found
-        if observable_ids:
+        if observable_ids and hasattr(id_registry, 'register_non_controlling_observables'):
             id_registry.register_non_controlling_observables(subcontainer_id, observable_ids)
         
         # Create content using observable resolution
@@ -269,28 +287,52 @@ class BaseCommandContainer(BaseCommandWidget):
     
     def get_subcontainer_location(self, subcontainer_id: str) -> Optional[str]:
         """
-        Get the location for a subcontainer using bidirectional mapping.
+        Get the ID system location for a subcontainer.
         
         Args:
             subcontainer_id: ID of the subcontainer
             
         Returns:
-            Location, or None if not found
+            ID system location, or None if not found
         """
         # Direct lookup using bidirectional mapping
         return self._id_to_location_map.get(subcontainer_id)
     
-    def get_subcontainer_at_location(self, location: str) -> Optional[str]:
+    def get_subcontainer_position(self, subcontainer_id: str) -> Optional[str]:
         """
-        Get the subcontainer ID at a specific location.
+        Get the GUI position for a subcontainer.
         
         Args:
-            location: Location to look up
+            subcontainer_id: ID of the subcontainer
+            
+        Returns:
+            GUI position, or None if not found
+        """
+        return self._id_to_position_map.get(subcontainer_id)
+    
+    def get_subcontainer_at_location(self, location: str) -> Optional[str]:
+        """
+        Get the subcontainer ID at a specific ID system location.
+        
+        Args:
+            location: ID system location to look up
             
         Returns:
             Subcontainer ID, or None if not found
         """
         return self._locations_map.get(location)
+    
+    def get_subcontainer_at_position(self, position: str) -> Optional[str]:
+        """
+        Get the subcontainer ID at a specific GUI position.
+        
+        Args:
+            position: GUI position to look up
+            
+        Returns:
+            Subcontainer ID, or None if not found
+        """
+        return self._positions_map.get(position)
     
     def get_all_subcontainers(self) -> List[str]:
         """
@@ -327,11 +369,11 @@ class BaseCommandContainer(BaseCommandWidget):
         
         # Check if the target is in one of our subcontainers
         if target_container_id in self._subcontainers:
-            # Get the location directly from our mapping
-            subcontainer_location = self._id_to_location_map.get(target_container_id)
-            if subcontainer_location:
-                # Navigate to the subcontainer's location
-                self.navigate_to_location(subcontainer_location)
+            # Get the position directly from our mapping
+            subcontainer_position = self._id_to_position_map.get(target_container_id)
+            if subcontainer_position:
+                # Navigate to the subcontainer's position
+                self.navigate_to_position(subcontainer_position)
         
         # Set focus on the target widget
         target_widget = id_registry.get_widget(target_widget_id)
@@ -340,19 +382,19 @@ class BaseCommandContainer(BaseCommandWidget):
         
         return True
 
-    def navigate_to_location(self, location: str) -> bool:
+    def navigate_to_position(self, position: str) -> bool:
         """
-        Navigate to a specific location within this container.
+        Navigate to a specific position within this container.
         Must be implemented by container subclasses.
         
         Args:
-            location: Location identifier
+            position: Position identifier in the GUI
             
         Returns:
             True if navigation was successful
         """
         # Base implementation does nothing
-        raise NotImplementedError("Subclasses must implement navigate_to_location")
+        raise NotImplementedError("Subclasses must implement navigate_to_position")
     
     # MARK: - Resource Management
     def close_subcontainer(self, subcontainer_id: str) -> bool:
@@ -371,13 +413,18 @@ class BaseCommandContainer(BaseCommandWidget):
             
         id_registry = self.id_registry
         
-        # Get the location from our direct mapping
+        # Get location and position from our direct mappings
         location = self._id_to_location_map.get(subcontainer_id)
+        position = self._id_to_position_map.get(subcontainer_id)
         
         # Remove from tracking maps efficiently
         if location:
             self._locations_map.delete(location)
+        if position:
+            self._positions_map.delete(position)
+            
         self._id_to_location_map.delete(subcontainer_id)
+        self._id_to_position_map.delete(subcontainer_id)
         self._types_map.delete(subcontainer_id)
         self._subcontainers.delete(subcontainer_id)
         
@@ -405,6 +452,10 @@ class BaseCommandContainer(BaseCommandWidget):
                 self.id_registry.mappings.remove(self._locations_map)
             if self._id_to_location_map in self.id_registry.mappings:
                 self.id_registry.mappings.remove(self._id_to_location_map)
+            if self._positions_map in self.id_registry.mappings:
+                self.id_registry.mappings.remove(self._positions_map)
+            if self._id_to_position_map in self.id_registry.mappings:
+                self.id_registry.mappings.remove(self._id_to_position_map)
         
         # Unregister this container
         return super().unregister_widget()
@@ -447,6 +498,7 @@ class BaseCommandContainer(BaseCommandWidget):
         # Get subcontainer info from direct mappings
         subcontainer_type = self._types_map.get(subcontainer_id)
         location = self._id_to_location_map.get(subcontainer_id)
+        position = self._id_to_position_map.get(subcontainer_id)
         
         if not subcontainer_type or not location:
             return None
@@ -461,6 +513,7 @@ class BaseCommandContainer(BaseCommandWidget):
             'id': subcontainer_id,
             'type': subcontainer_type,
             'location': location,
+            'position': position,
             'children': {}
         }
         
@@ -491,9 +544,9 @@ class BaseCommandContainer(BaseCommandWidget):
             return False
         
         # Update container ID if needed
-        self.id_registry.update_id(self.get_id(),serialized_data['id'])
+        self.id_registry.update_id(self.get_id(), serialized_data['id'])
         
-        #update subcontainers
+        # Update subcontainers
         return self._deserialize_subcontainers(serialized_data)
     
     def _deserialize_subcontainers(self, serialized_data: Dict) -> bool:
@@ -509,6 +562,7 @@ class BaseCommandContainer(BaseCommandWidget):
         # Get current subcontainers and track which ones are in the serialized data
         current_subcontainers = set(self._subcontainers)
         serialized_subcontainers = set()
+        
         # Process serialized subcontainers
         if 'subcontainers' in serialized_data and isinstance(serialized_data['subcontainers'], list):
             for subcontainer_data in serialized_data['subcontainers']:
@@ -518,7 +572,11 @@ class BaseCommandContainer(BaseCommandWidget):
                     
                 subcontainer_id = subcontainer_data['id']
                 subcontainer_type = subcontainer_data['type']
-                location = subcontainer_data['location']
+                
+                # Use position for GUI placement when available, fallback to location
+                position = subcontainer_data.get('position')
+                if position is None:
+                    position = subcontainer_data.get('location', '0')
                 
                 serialized_subcontainers.add(subcontainer_id)
                 
@@ -527,7 +585,7 @@ class BaseCommandContainer(BaseCommandWidget):
                     # Update existing subcontainer
                     self.deserialize_subcontainer(
                         subcontainer_type, 
-                        location, 
+                        position, 
                         subcontainer_data, 
                         subcontainer_id
                     )
@@ -535,14 +593,13 @@ class BaseCommandContainer(BaseCommandWidget):
                     # Create new subcontainer
                     self.deserialize_subcontainer(
                         subcontainer_type,
-                        location,
+                        position,
                         subcontainer_data
                     )
         
         # Close any subcontainers that aren't in the serialized data
         for subcontainer_id in current_subcontainers - serialized_subcontainers:
             self.close_subcontainer(subcontainer_id)
-            
         
         return True
     
@@ -558,10 +615,9 @@ class BaseCommandContainer(BaseCommandWidget):
         """
         return (isinstance(subcontainer_data, dict) and
                 'id' in subcontainer_data and
-                'type' in subcontainer_data and
-                'location' in subcontainer_data)
+                'type' in subcontainer_data)
     
-    def deserialize_subcontainer(self, type_id: str, location: str, 
+    def deserialize_subcontainer(self, type_id: str, position: str, 
                                 serialized_subcontainer: Dict,
                                 existing_subcontainer_id: Optional[str] = None) -> str:
         """
@@ -569,7 +625,7 @@ class BaseCommandContainer(BaseCommandWidget):
         
         Args:
             type_id: Type ID of the subcontainer
-            location: Location for the subcontainer
+            position: GUI position for the subcontainer
             serialized_subcontainer: Dict containing serialized subcontainer state
             existing_subcontainer_id: ID of existing subcontainer to update (optional)
             
@@ -584,13 +640,13 @@ class BaseCommandContainer(BaseCommandWidget):
             if not subcontainer:
                 # Create a new one if the existing one is gone
                 return self.deserialize_subcontainer(
-                    type_id, location, serialized_subcontainer)
+                    type_id, position, serialized_subcontainer)
                 
             # The ID stays the same
             subcontainer_id = existing_subcontainer_id
         else:
             # Create a new subcontainer
-            subcontainer_id = self.add_subcontainer(type_id, location)
+            subcontainer_id = self.add_subcontainer(type_id, position)
             if not subcontainer_id:
                 return None
             
@@ -599,6 +655,7 @@ class BaseCommandContainer(BaseCommandWidget):
         
         if not success:
             raise ValueError(f"Failed to update ID for subcontainer {subcontainer_id}: {error}")
+            
         # Deserialize children if included
         self._deserialize_children(subcontainer_id, serialized_subcontainer)
 
@@ -639,7 +696,6 @@ class BaseCommandContainer(BaseCommandWidget):
                 
                 # Create a location key that combines container location and widget location ID
                 location_key = f"{parsed_old_id['container_location']}-{parsed_old_id['widget_location_id']}"
-                
                 
                 # Look for a widget with matching location in our current children
                 if location_key in new_widgets_by_location:

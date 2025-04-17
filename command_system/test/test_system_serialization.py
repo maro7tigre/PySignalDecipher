@@ -1015,7 +1015,7 @@ class TestSystemSerialization:
         
         # Verify serialized state has expected components
         assert "id" in serialized_state
-        assert "current_index" in serialized_state
+        assert "current_position" in serialized_state
         assert "subcontainers" in serialized_state
         assert len(serialized_state["subcontainers"]) == 2
         

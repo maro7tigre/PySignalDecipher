@@ -34,19 +34,19 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         self.initiate_container(ContainerTypeCodes.TAB, container_id, location)
         
         # Enhanced tab tracking with direct index-to-id mapping using Mapping
-        self._tab_index_to_id = Mapping(update_keys=False, update_values=True)
-        self.id_registry.mappings.append(self._tab_index_to_id)
+        self._tab_position_to_id = Mapping(update_keys=False, update_values=True)
+        self.id_registry.mappings.append(self._tab_position_to_id)
         
-        self._tab_closable_map = {}  # index -> closable flag
+        self._tab_closable_map = {}  # tab position -> closable flag
         
         # Connect signals
         self.setTabsClosable(True)
         self.tabCloseRequested.connect(self._on_tab_close_requested)
         self.currentChanged.connect(self._on_current_changed)
         
-        # Track the current tab index for undo/redo operations
-        # Initialize to the current index (usually 0 for a new widget)
-        self._last_tab_index = self.currentIndex()
+        # Track the current tab position for undo/redo operations
+        # Initialize to the current position (usually 0 for a new widget)
+        self._last_tab_position = self.currentIndex()
     
     # MARK: - Tab Registration
     def register_tab(self, factory_func: Callable, tab_name: str = None,
@@ -85,8 +85,8 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             if subcontainer_id:
                 # Emit signal for the new tab
                 self.tabAdded.emit(subcontainer_id)
-                # Update the last tab index to match current
-                self._last_tab_index = self.currentIndex()
+                # Update the last tab position to match current
+                self._last_tab_position = self.currentIndex()
             return subcontainer_id
         
         # Create a command for adding a tab
@@ -96,16 +96,16 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         return cmd.component_id
     
     # MARK: - Subcontainer Implementation
-    def create_subcontainer(self, type_id: str, location: str = None) -> Tuple[QWidget, str]:
+    def create_subcontainer(self, type_id: str, position: str = None) -> Tuple[QWidget, str]:
         """
         Create an empty tab subcontainer for the specified type.
         
         Args:
             type_id: Type ID of the subcontainer
-            location: Location for the subcontainer (tab index)
+            position: Position for the subcontainer (tab position)
             
         Returns:
-            Tuple of (tab container widget, location string)
+            Tuple of (tab container widget, ID system location string)
         """
         # Validate type exists
         type_info = self._widget_types.get(type_id)
@@ -126,49 +126,49 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         # Add the tab
         index = self.addTab(tab_container, tab_name)
         
-        # Convert location to integer index if provided
-        target_index = index
-        if location is not None:
+        # Convert position to integer index if provided
+        target_position = index
+        if position is not None:
             try:
-                loc_index = int(location)
-                # Move tab to the specified location if different
-                if loc_index != index and 0 <= loc_index < self.count():
-                    self.tabBar().moveTab(index, loc_index)
-                    target_index = loc_index
+                pos_index = int(position)
+                # Move tab to the specified position if different
+                if pos_index != index and 0 <= pos_index < self.count():
+                    self.tabBar().moveTab(index, pos_index)
+                    target_position = pos_index
             except ValueError:
                 pass
         
         # Set tab closability
-        self._tab_closable_map[target_index] = closable
-        self.set_tab_closable(target_index, closable)
+        self._tab_closable_map[target_position] = closable
+        self.set_tab_closable(target_position, closable)
         
         # Set as current tab 
-        self.setCurrentIndex(target_index)
+        self.setCurrentIndex(target_position)
         
-        # Update the last tab index to match current after adding
-        self._last_tab_index = self.currentIndex()
+        # Update the last tab position to match current after adding
+        self._last_tab_position = self.currentIndex()
         
-        # Location is the string representation of the index
-        tab_location = str(target_index)
+        # For ID system location, use the string representation of the position
+        tab_location = str(target_position)
         
         return tab_container, tab_location
 
-    def close_tab(self, tab_index: int) -> bool:
+    def close_tab(self, tab_position: int) -> bool:
         """
-        Close a tab at the given index.
+        Close a tab at the given position.
         
         Args:
-            tab_index: Index of the tab to close
+            tab_position: Position of the tab to close
             
         Returns:
             True if successful, False otherwise
         """
-        # Validate index
-        if not (0 <= tab_index < self.count()):
+        # Validate position
+        if not (0 <= tab_position < self.count()):
             return False
             
-        # Get the widget at the index
-        tab_widget = self.widget(tab_index)
+        # Get the widget at the position
+        tab_widget = self.widget(tab_position)
         if not tab_widget:
             return False
             
@@ -186,35 +186,39 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         self.tabClosed.emit(subcontainer_id)
         
         # Remove the tab from the widget
-        self.removeTab(tab_index)
+        self.removeTab(tab_position)
         
         # Update internal mappings
         self._update_tab_mappings()
         
-        # Make sure _last_tab_index is updated if needed
-        if self._last_tab_index >= self.count():
-            self._last_tab_index = self.currentIndex()
+        # Make sure _last_tab_position is updated if needed
+        if self._last_tab_position >= self.count():
+            self._last_tab_position = self.currentIndex()
         
         return True
     
     def _update_tab_mappings(self):
         """Update all internal tab mappings after changes."""
         # Clear existing mappings - don't use clear() as it won't properly trigger updates
-        for index in list(self._tab_index_to_id):
-            self._tab_index_to_id.delete(index)
+        for position in list(self._tab_position_to_id):
+            self._tab_position_to_id.delete(position)
         self._tab_closable_map.clear()
         
         # Rebuild all mappings
         for i in range(self.count()):
             tab_widget = self.widget(i)
             if tab_widget:
-                # Update widget-to-index mapping
+                # Update widget-to-position mapping
                 widget_id = self.id_registry.get_id(tab_widget)
                 if widget_id:
-                    self._tab_index_to_id[i] = widget_id
+                    self._tab_position_to_id[i] = widget_id
                     
-                    # Update location mappings for container
-                    self._locations_map[str(i)] = widget_id
+                    # Update position and location mappings for container
+                    self._positions_map[str(i)] = widget_id
+                    self._id_to_position_map[widget_id] = str(i)
+                    
+                    # Update location mappings (for ID system)
+                    self._locations_map[str(i)] = widget_id  
                     self._id_to_location_map[widget_id] = str(i)
                     
                 # Update closable mapping from tab data
@@ -224,12 +228,12 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
                     closable = tab_data['closable']
                 self._tab_closable_map[i] = closable
     
-    def set_tab_closable(self, index: int, closable: bool = True) -> None:
+    def set_tab_closable(self, position: int, closable: bool = True) -> None:
         """
         Set whether a specific tab should be closable.
         
         Args:
-            index: Tab index
+            position: Tab position
             closable: Whether the tab should be closable (True by default)
         """
         # Keep all tabs closable at the Qt level, but control the button visibility
@@ -237,33 +241,33 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         
         # Store closable state in tab data
         tab_data = {"closable": closable}
-        self.tabBar().setTabData(index, tab_data)
-        self._tab_closable_map[index] = closable
+        self.tabBar().setTabData(position, tab_data)
+        self._tab_closable_map[position] = closable
         
         # Get the close button for this tab and control its visibility
         button_position = QTabBar.RightSide
-        close_button = self.tabBar().tabButton(index, button_position)
+        close_button = self.tabBar().tabButton(position, button_position)
         
         # If we have a button, control its visibility
         if close_button:
             close_button.setVisible(closable)
     
-    def is_tab_closable(self, index: int) -> bool:
+    def is_tab_closable(self, position: int) -> bool:
         """
         Check if a tab can be closed by the user.
         
         Args:
-            index: Tab index
+            position: Tab position
             
         Returns:
             True if tab is closable, False otherwise
         """
         # First check our direct mapping
-        if index in self._tab_closable_map:
-            return self._tab_closable_map[index]
+        if position in self._tab_closable_map:
+            return self._tab_closable_map[position]
             
         # Fall back to tab data
-        tab_data = self.tabBar().tabData(index)
+        tab_data = self.tabBar().tabData(position)
         if tab_data and isinstance(tab_data, dict) and 'closable' in tab_data:
             return tab_data['closable']
             
@@ -271,20 +275,20 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         return True
     
     # MARK: - Navigation
-    def navigate_to_location(self, location: str) -> bool:
+    def navigate_to_position(self, position: str) -> bool:
         """
-        Navigate to a specific tab by index.
+        Navigate to a specific tab by position.
         
         Args:
-            location: Tab index as string
+            position: Tab position as string
             
         Returns:
             True if navigation was successful
         """
         try:
-            tab_index = int(location)
-            if 0 <= tab_index < self.count():
-                self.setCurrentIndex(tab_index)
+            tab_position = int(position)
+            if 0 <= tab_position < self.count():
+                self.setCurrentIndex(tab_position)
                 return True
         except ValueError:
             pass
@@ -293,14 +297,14 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
     
     # MARK: - Event Handlers
     @Slot(int)
-    def _on_tab_close_requested(self, index: int) -> None:
+    def _on_tab_close_requested(self, position: int) -> None:
         """Handle tab close request from UI."""
         # Check if tab is closable using our efficient mapping
-        if not self.is_tab_closable(index):
+        if not self.is_tab_closable(position):
             return
             
         # Get the tab widget
-        tab_widget = self.widget(index)
+        tab_widget = self.widget(position)
         if not tab_widget:
             return
             
@@ -315,30 +319,30 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         
         # Check if we're in a command execution
         if get_command_manager().is_updating():
-            self.close_tab(index)
+            self.close_tab(position)
             return
         
         # Create a command to close the tab
-        cmd = CloseTabCommand(subcontainer_id, subcontainer_type, self.get_id(), index)
+        cmd = CloseTabCommand(subcontainer_id, subcontainer_type, self.get_id(), position)
         cmd.set_trigger_widget(self.get_id())
         get_command_manager().execute(cmd)
     
     @Slot(int)
-    def _on_current_changed(self, index: int) -> None:
+    def _on_current_changed(self, position: int) -> None:
         """Handle tab selection change."""
         # Skip if we're executing a command to avoid recursion
         if get_command_manager().is_updating():
             return
         
-        # Get the old index for the command
-        old_index = self._last_tab_index
+        # Get the old position for the command
+        old_position = self._last_tab_position
         
-        # Update the last tab index for future changes
-        self._last_tab_index = index
+        # Update the last tab position for future changes
+        self._last_tab_position = position
             
-        # Only create command if index actually changed
-        if old_index != index:
-            cmd = TabSelectionCommand(self.get_id(), old_index, index)
+        # Only create command if position actually changed
+        if old_position != position:
+            cmd = TabSelectionCommand(self.get_id(), old_position, position)
             cmd.set_trigger_widget(self.get_id())
             get_command_manager().execute(cmd)
     
@@ -349,15 +353,15 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         self._update_tab_mappings()
         return result
         
-    def insertTab(self, index: int, widget: QWidget, label: str) -> int:
+    def insertTab(self, position: int, widget: QWidget, label: str) -> int:
         """Override to track tab insertions."""
-        result = super().insertTab(index, widget, label)
+        result = super().insertTab(position, widget, label)
         self._update_tab_mappings()
         return result
         
-    def removeTab(self, index: int) -> None:
+    def removeTab(self, position: int) -> None:
         """Override to properly handle tab removal."""
-        super().removeTab(index)
+        super().removeTab(position)
         self._update_tab_mappings()
     
     # MARK: - Custom Event Handling
@@ -369,8 +373,8 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
             
         # Remove tab mappings from the registry's tracking
         if hasattr(self, 'id_registry') and hasattr(self.id_registry, 'mappings'):
-            if self._tab_index_to_id in self.id_registry.mappings:
-                self.id_registry.mappings.remove(self._tab_index_to_id)
+            if self._tab_position_to_id in self.id_registry.mappings:
+                self.id_registry.mappings.remove(self._tab_position_to_id)
         
         # Unregister from ID system
         self.unregister_widget()
@@ -390,7 +394,7 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         
         # Add tab widget specific state
         result.update({
-            'current_index': self.currentIndex(),
+            'current_position': self.currentIndex(),
             'tab_position': self.tabPosition(),
             'tabs_closable': self.tabsClosable(),
             'document_mode': self.documentMode(),
@@ -426,13 +430,19 @@ class CommandTabWidget(QTabWidget, BaseCommandContainer):
         if 'moving_enabled' in serialized_data:
             self.setMovable(serialized_data['moving_enabled'])
             
-        # Set current index last to avoid multiple signals
-        if 'current_index' in serialized_data:
-            index = serialized_data['current_index']
-            if 0 <= index < self.count():
-                self.setCurrentIndex(index)
-                # Update our tracking variable
-                self._last_tab_index = index
+        # Set current position last to avoid multiple signals
+        # Check for the new naming first, then fall back to old naming for compatibility
+        current_position = None
+        if 'current_position' in serialized_data:
+            current_position = serialized_data['current_position']
+        elif 'current_index' in serialized_data:
+            # Backward compatibility
+            current_position = serialized_data['current_index']
+            
+        if current_position is not None and 0 <= current_position < self.count():
+            self.setCurrentIndex(current_position)
+            # Update our tracking variable
+            self._last_tab_position = current_position
                 
         return True
 
@@ -453,15 +463,15 @@ class AddTabCommand(SerializationCommand):
         self.type_id = type_id
         self.container_id = container_id
         self.component_id = None
-        self.location = None
+        self.position = None
         
     def execute(self):
         """Execute to add the tab."""
         container = get_id_registry().get_widget(self.container_id)
         if container:
             self.component_id = container.add_subcontainer(self.type_id)
-            # Store location for later use
-            self.location = container.get_subcontainer_location(self.component_id)
+            # Store position for later use
+            self.position = container.get_subcontainer_position(self.component_id)
 
     def undo(self):
         """Undo saves serialization and closes tab."""
@@ -471,18 +481,18 @@ class AddTabCommand(SerializationCommand):
                 # Save serialization before closing
                 self.serialized_state = container.serialize_subcontainer(self.component_id)
                 
-                # Close the tab - find index from location
-                if self.location:
+                # Close the tab - find position from stored value
+                if self.position:
                     try:
-                        tab_index = int(self.location)
-                        container.close_tab(tab_index)
+                        tab_position = int(self.position)
+                        container.close_tab(tab_position)
                     except ValueError:
-                        # If location can't be converted to index, try using the mapping
-                        location = container.get_subcontainer_location(self.component_id)
-                        if location:
+                        # If position can't be converted to index, try using the mapping
+                        position = container.get_subcontainer_position(self.component_id)
+                        if position:
                             try:
-                                tab_index = int(location)
-                                container.close_tab(tab_index)
+                                tab_position = int(position)
+                                container.close_tab(tab_position)
                             except ValueError:
                                 pass
             
@@ -494,7 +504,7 @@ class AddTabCommand(SerializationCommand):
                 # Restore from serialization
                 container.deserialize_subcontainer(
                     self.type_id,
-                    self.location if self.location else "0",
+                    self.position if self.position else "0",
                     self.serialized_state
                 )
         else:
@@ -504,7 +514,7 @@ class AddTabCommand(SerializationCommand):
 class CloseTabCommand(SerializationCommand):
     """Command for closing a tab with serialization support."""
     
-    def __init__(self, component_id: str, type_id: str, container_id: str, index: int):
+    def __init__(self, component_id: str, type_id: str, container_id: str, position: int):
         """
         Initialize with tab information.
         
@@ -512,78 +522,71 @@ class CloseTabCommand(SerializationCommand):
             component_id: ID of the tab component
             type_id: Type ID of the tab 
             container_id: ID of the container
-            index: Tab index
+            position: Tab position
         """
         super().__init__()
         self.component_id = component_id
         self.type_id = type_id
         self.container_id = container_id
-        self.location = str(index)
+        self.position = str(position)
         
     def execute(self):
         """Execute captures state and closes tab."""
         container = get_id_registry().get_widget(self.container_id)
-        print(f"contaiener id : {self.container_id} component id : {self.component_id}")
         if container and self.component_id:
             # Save serialization before closing
             self.serialized_state = container.serialize_subcontainer(self.component_id)
-            print(f" Serialized state : {self.serialized_state}")
+            
             # Close the tab
             try:
-                tab_index = int(self.location)
-                container.close_tab(tab_index)
-            except ValueError as e:
-                print(f"ValueError occurred: {e}")
-                
+                tab_position = int(self.position)
+                container.close_tab(tab_position)
+            except ValueError:
+                pass
 
     def undo(self):
         """Undo restores the tab."""
-        print("+++++++++++++++++++++++++")
         if self.serialized_state:
-            print(f" Serialized state : {self.serialized_state}")
             container = get_id_registry().get_widget(self.container_id)
-            print(f" Container : {container}, with id : {self.container_id}")
             if container:
                 # Restore from serialization
-                print(f" Location : {self.location}, Type ID : {self.type_id}")
                 container.deserialize_subcontainer(
                     self.type_id,
-                    self.location,
+                    self.position,
                     self.serialized_state
                 )
-        print("++++++++++++++++++++++++++")
         
 class TabSelectionCommand(Command):
     """Command for changing the selected tab."""
     
-    def __init__(self, tab_widget_id: str, old_index: int, new_index: int):
+    def __init__(self, tab_widget_id: str, old_position: int, new_position: int):
         """
-        Initialize with tab indices.
+        Initialize with tab positions.
         
         Args:
             tab_widget_id: ID of the tab widget
-            old_index: Previous tab index
-            new_index: New tab index
+            old_position: Previous tab position
+            new_position: New tab position
         """
         super().__init__()
         self.tab_widget_id = tab_widget_id
-        self.old_index = old_index
-        self.new_index = new_index
+        self.old_position = old_position
+        self.new_position = new_position
         
     def execute(self):
         """Execute the command to change the selected tab."""
         tab_widget = get_id_registry().get_widget(self.tab_widget_id)
-        if tab_widget and 0 <= self.new_index < tab_widget.count():
-            tab_widget.setCurrentIndex(self.new_index)
+        if tab_widget and 0 <= self.new_position < tab_widget.count():
+            tab_widget.setCurrentIndex(self.new_position)
             # Update the internal tracking to match
-            if hasattr(tab_widget, '_last_tab_index'):
-                tab_widget._last_tab_index = self.new_index
+            if hasattr(tab_widget, '_last_tab_position'):
+                tab_widget._last_tab_position = self.new_position
     
     def undo(self):
         """Undo the command by selecting the previous tab."""
         tab_widget = get_id_registry().get_widget(self.tab_widget_id)
-        if tab_widget and 0 <= self.old_index < tab_widget.count():
-            tab_widget.setCurrentIndex(self.old_index)
+        if tab_widget and 0 <= self.old_position < tab_widget.count():
+            tab_widget.setCurrentIndex(self.old_position)
             # Update the internal tracking to match
-            if hasattr(tab_widget, '_last_tab_index'):
-                tab_widget._last_tab_index = self.old_index
+            if hasattr(tab_widget, '_last_tab_position'):
+                tab_widget._last_tab_position = self.old_position
