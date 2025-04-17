@@ -118,7 +118,7 @@ class BaseCommandContainer(BaseCommandWidget):
         
         # Register the subcontainer with the ID system - using consistent container type
         id_registry = self.id_registry
-        subcontainer_id = id_registry.register(subcontainer, self.type_code, None, self.get_id(), location)
+        subcontainer_id = id_registry.register(subcontainer, self.type_code, None, self.get_id())
         
         # Store mappings - now with bidirectional references for faster lookups
         self._types_map[subcontainer_id] = type_id
@@ -490,11 +490,8 @@ class BaseCommandContainer(BaseCommandWidget):
         if not serialized_data or not isinstance(serialized_data, dict):
             return False
         
-        print(f"Deserializing container {self.get_id()}: {serialized_data}")
-        
         # Update container ID if needed
         self.id_registry.update_id(self.get_id(),serialized_data['id'])
-        print(f"updated id : {self.get_id()}")
         
         #update subcontainers
         return self._deserialize_subcontainers(serialized_data)
@@ -512,11 +509,9 @@ class BaseCommandContainer(BaseCommandWidget):
         # Get current subcontainers and track which ones are in the serialized data
         current_subcontainers = set(self._subcontainers)
         serialized_subcontainers = set()
-        print(f"current subcontainers 1: {current_subcontainers}")
         # Process serialized subcontainers
         if 'subcontainers' in serialized_data and isinstance(serialized_data['subcontainers'], list):
             for subcontainer_data in serialized_data['subcontainers']:
-                print(f"===> restoring subcontainer {subcontainer_data} <===")
                 # Validate required fields
                 if not self._validate_subcontainer_data(subcontainer_data):
                     continue
@@ -544,12 +539,10 @@ class BaseCommandContainer(BaseCommandWidget):
                         subcontainer_data
                     )
         
-        print(f"current subcontainers 2: {set(self._subcontainers)}")
         # Close any subcontainers that aren't in the serialized data
         for subcontainer_id in current_subcontainers - serialized_subcontainers:
             self.close_subcontainer(subcontainer_id)
             
-        print(f"current subcontainers 3: {set(self._subcontainers)}")
         
         return True
     
@@ -600,9 +593,10 @@ class BaseCommandContainer(BaseCommandWidget):
             subcontainer_id = self.add_subcontainer(type_id, location)
             if not subcontainer_id:
                 return None
-                
+            
         # Update the subcontainer's ID
         success, subcontainer_id, error = id_registry.update_id(subcontainer_id, serialized_subcontainer['id'])
+        
         if not success:
             raise ValueError(f"Failed to update ID for subcontainer {subcontainer_id}: {error}")
         # Deserialize children if included
