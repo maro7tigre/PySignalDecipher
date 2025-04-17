@@ -1,36 +1,20 @@
 """
-Command-enabled check box widget for PySide6 integration.
-
-This module provides a check box widget that integrates with the command system
-for automatic undo/redo support and property binding.
+Command-enabled check box widget for PySide6 integration using click detection.
 """
 from typing import Any, Optional
 from PySide6.QtWidgets import QCheckBox
-from PySide6.QtCore import Signal, Slot, Qt
+from PySide6.QtCore import Qt, QEvent, QTimer
 
 from command_system.id_system import WidgetTypeCodes
-from .base_widget import BaseCommandWidget, CommandTriggerMode
+from .base_widget import BaseCommandWidget
+from command_system.core import PropertyCommand, get_command_manager
 
 class CommandCheckBox(QCheckBox, BaseCommandWidget):
-    """
-    A command-system integrated check box widget.
-    
-    Supports binding to observable properties with automatic command generation
-    for undo/redo functionality.
-    """
+    """A command-system integrated check box widget that responds to clicks."""
     
     def __init__(self, text: str = "", container_id: Optional[str] = None, 
                 location: Optional[str] = None, parent=None, checked: bool = False):
-        """
-        Initialize a command check box.
-        
-        Args:
-            text: Text to display next to the checkbox
-            container_id: Optional ID of the parent container
-            location: Optional location within the container
-            parent: Qt parent widget
-            checked: Initial checked state
-        """
+        """Initialize a command check box."""
         # Initialize QCheckBox first
         QCheckBox.__init__(self, text, parent)
         
@@ -40,152 +24,95 @@ class CommandCheckBox(QCheckBox, BaseCommandWidget):
         # Set initial value
         self.setChecked(checked)
         
-        # Connect signals for value changes
-        self.stateChanged.connect(self._handle_state_changed)
+        # Initialize tracking variables
+        self._was_checked = checked
+        self._suppress_events = False
         
-        # Default to immediate trigger mode since checkboxes have immediate feedback
-        self.set_command_trigger_mode(CommandTriggerMode.IMMEDIATE)
+        # Install click handler
+        self.clicked.connect(self._handle_clicked)
     
-    # MARK: - Property Implementation
     def _update_widget_property(self, property_name: str, value: Any):
-        """
-        Update a widget property value.
+        """Update a widget property value."""
+        # Suppress event handling while updating
+        old_suppress = self._suppress_events
+        self._suppress_events = True
         
-        Args:
-            property_name: Name of the property to update
-            value: New value for the property
-        """
-        # Block signals to prevent recursion
-        self.blockSignals(True)
-        
-        if property_name == "checked":
-            self.setChecked(bool(value))
-        elif property_name == "text":
-            self.setText(str(value) if value is not None else "")
-        elif property_name == "enabled":
-            self.setEnabled(bool(value))
-        elif property_name == "checkState":
-            # Handle tri-state checkboxes
-            if value is None:
-                state = Qt.PartiallyChecked
-            elif value:
-                state = Qt.Checked
-            else:
-                state = Qt.Unchecked
-            self.setCheckState(state)
-        else:
-            self.blockSignals(False)
-            raise ValueError(f"Unsupported property: {property_name}")
-        
-        # Re-enable signals
-        self.blockSignals(False)
+        try:
+            if property_name == "checked":
+                boolean_value = bool(value)
+                self.setChecked(boolean_value)
+                self._was_checked = boolean_value
+            elif property_name == "text":
+                self.setText(str(value) if value is not None else "")
+            elif property_name == "enabled":
+                self.setEnabled(bool(value))
+            elif property_name == "checkState":
+                if not self.isTristate():
+                    self.setTristate(True)
+                    
+                if value is None:
+                    self.setCheckState(Qt.PartiallyChecked)
+                elif value:
+                    self.setCheckState(Qt.Checked)
+                else:
+                    self.setCheckState(Qt.Unchecked)
+                self._was_checked = (value == True)
+        finally:
+            # Restore previous suppress state
+            self._suppress_events = old_suppress
     
-    # MARK: - Signal Handlers
-    @Slot(int)
-    def _handle_state_changed(self, state: int):
-        """
-        Handle state changes from the widget.
-        
-        Args:
-            state: New state (Qt.Checked, Qt.Unchecked, or Qt.PartiallyChecked)
-        """
-        # Convert Qt state to boolean for the "checked" property
-        checked = state == Qt.Checked
-        
-        # Delegate to base class
-        self._on_widget_value_changed("checked", checked)
-        
-        # For tri-state support, also update checkState property if needed
-        if self.isTristate():
-            # Convert Qt state to Python value (True, False, None)
-            check_state = None if state == Qt.PartiallyChecked else checked
-            self._on_widget_value_changed("checkState", check_state)
+    def _handle_clicked(self, checked):
+        """Direct handler for checkbox clicks."""
+        # Skip if events are suppressed
+        if self._suppress_events:
+            return
+            
+        # Only create command if state actually changed
+        if checked != self._was_checked:
+            # Store new state
+            self._was_checked = checked
+            
+            # Create command for checked property if bound
+            if "checked" in self._controlled_properties:
+                property_id = self._controlled_properties.get("checked")
+                if property_id:
+                    cmd = PropertyCommand(property_id, checked)
+                    cmd.set_trigger_widget(self.get_id())
+                    get_command_manager().execute(cmd)
+            
+            # Handle tri-state if needed
+            if self.isTristate() and "checkState" in self._controlled_properties:
+                current_state = self.checkState()
+                check_state = None if current_state == Qt.PartiallyChecked else checked
+                
+                property_id = self._controlled_properties.get("checkState")
+                if property_id:
+                    cmd = PropertyCommand(property_id, check_state)
+                    cmd.set_trigger_widget(self.get_id())
+                    get_command_manager().execute(cmd)
     
-    # MARK: - Convenience Methods
     def bind_to_checked_property(self, observable_id: str, property_name: str):
-        """
-        Convenience method to bind checked property.
-        
-        Args:
-            observable_id: ID of the observable object
-            property_name: Name of the property on the observable
-        """
+        """Bind to checked property."""
         self.bind_property("checked", observable_id, property_name)
     
     def unbind_checked_property(self):
-        """Convenience method to unbind checked property."""
+        """Unbind checked property."""
         self.unbind_property("checked")
     
     def bind_to_text_property(self, observable_id: str, property_name: str):
-        """
-        Convenience method to bind text property.
-        
-        Args:
-            observable_id: ID of the observable object
-            property_name: Name of the property on the observable
-        """
+        """Bind to text property."""
         self.bind_property("text", observable_id, property_name)
     
     def unbind_text_property(self):
-        """Convenience method to unbind text property."""
+        """Unbind text property."""
         self.unbind_property("text")
         
     def bind_to_check_state_property(self, observable_id: str, property_name: str):
-        """
-        Convenience method to bind checkState property for tri-state checkboxes.
-        
-        Args:
-            observable_id: ID of the observable object
-            property_name: Name of the property on the observable
-        """
-        # Enable tri-state mode if not already enabled
+        """Bind to checkState property."""
         if not self.isTristate():
             self.setTristate(True)
         self.bind_property("checkState", observable_id, property_name)
     
     def unbind_check_state_property(self):
-        """Convenience method to unbind checkState property."""
+        """Unbind checkState property."""
         self.unbind_property("checkState")
-        
-    # MARK: - Serialization
-    def get_serialization(self) -> dict:
-        """
-        Get serialized representation of this widget.
-        
-        Returns:
-            Dict containing serialized widget state
-        """
-        # Get base serialization
-        result = super().get_serialization()
-        
-        # Add QCheckBox-specific properties
-        result['check_box_props'] = {
-            'text': self.text(),
-            'tristate': self.isTristate(),
-        }
-        
-        return result
-    
-    def deserialize(self, data: dict) -> bool:
-        """
-        Restore this widget's state from serialized data.
-
-        Args:
-            data: Dictionary containing widget state
-
-        Returns:
-            True if successful
-        """
-        # Let the base class handle the common serialization
-        if not super().deserialize(data):
-            return False
-            
-        # Handle QCheckBox-specific properties
-        if 'check_box_props' in data:
-            props = data['check_box_props']
-            if 'text' in props:
-                self.setText(props['text'])
-            if 'tristate' in props:
-                self.setTristate(props['tristate'])
-        
-        return True
