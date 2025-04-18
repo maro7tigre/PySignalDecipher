@@ -165,8 +165,58 @@ class CommandTextEdit(QTextEdit, BaseCommandWidget):
         """Convenience method to unbind readOnly property."""
         self.unbind_property("readOnly")
     
+    # MARK: - Helper methods for enum conversion
+    def _get_line_wrap_mode_value(self):
+        """
+        Get the integer value of the current line wrap mode.
+        
+        Returns:
+            int: 0 for NoWrap, 1 for WidgetWidth
+        """
+        mode = self.lineWrapMode()
+        if mode == QTextEdit.LineWrapMode.NoWrap:
+            return 0
+        elif mode == QTextEdit.LineWrapMode.WidgetWidth:
+            return 1
+        else:
+            return 0  # Default to NoWrap
+    
+    def _get_text_interaction_flags_value(self):
+        """
+        Get the integer value of the current text interaction flags.
+        
+        Returns:
+            int: Integer representation of the flags
+        """
+        flags = self.textInteractionFlags()
+        
+        # Instead of trying to directly convert the flags to int,
+        # we'll create a numeric value based on individual flag checks
+        value = 0
+        
+        # Map each flag to a bit position (these need to match Qt's values)
+        # These values are from Qt documentation
+        if flags & Qt.TextInteractionFlag.NoTextInteraction:
+            value |= 0
+        if flags & Qt.TextInteractionFlag.TextSelectableByMouse:
+            value |= 1
+        if flags & Qt.TextInteractionFlag.TextSelectableByKeyboard:
+            value |= 2
+        if flags & Qt.TextInteractionFlag.LinksAccessibleByMouse:
+            value |= 4
+        if flags & Qt.TextInteractionFlag.LinksAccessibleByKeyboard:
+            value |= 8
+        if flags & Qt.TextInteractionFlag.TextEditable:
+            value |= 16
+        if flags & Qt.TextInteractionFlag.TextEditorInteraction:
+            value |= (1 | 2 | 16)  # This is a combination of other flags
+        if flags & Qt.TextInteractionFlag.TextBrowserInteraction:
+            value |= (1 | 4 | 8)  # This is a combination of other flags
+        
+        return value
+    
     # MARK: - Serialization
-    def get_serialization(self) -> dict:
+    def get_serialization(self):
         """
         Get serialized representation of this widget.
         
@@ -176,14 +226,13 @@ class CommandTextEdit(QTextEdit, BaseCommandWidget):
         # Get base serialization
         result = super().get_serialization()
         
-        # Add QTextEdit-specific properties
+        # Add QTextEdit-specific properties with safe enum conversions
         result['text_edit_props'] = {
             'plain_text': self.toPlainText(),
             'html': self.toHtml(),
             'read_only': self.isReadOnly(),
-            'line_wrap_mode': int(self.lineWrapMode()),
-            'text_interaction_flags': int(self.textInteractionFlags()),
-            # Add more properties as needed
+            'line_wrap_mode': self._get_line_wrap_mode_value(),
+            'text_interaction_flags': self._get_text_interaction_flags_value(),
         }
         
         return result
@@ -220,10 +269,25 @@ class CommandTextEdit(QTextEdit, BaseCommandWidget):
                 self.setReadOnly(props['read_only'])
             
             if 'line_wrap_mode' in props:
-                self.setLineWrapMode(QTextEdit.LineWrapMode(props['line_wrap_mode']))
+                mode_value = props['line_wrap_mode']
+                if mode_value == 0:
+                    self.setLineWrapMode(QTextEdit.LineWrapMode.NoWrap)
+                else:
+                    self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
             
             if 'text_interaction_flags' in props:
-                self.setTextInteractionFlags(Qt.TextInteractionFlags(props['text_interaction_flags']))
+                # Convert numeric value back to Qt flags
+                flag_value = props['text_interaction_flags']
+                
+                # For simplicity, just set some common combinations
+                if flag_value & 16:  # TextEditable
+                    self.setTextInteractionFlags(Qt.TextInteractionFlag.TextEditorInteraction)
+                elif flag_value & 4:  # LinksAccessibleByMouse
+                    self.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+                elif flag_value & 1:  # TextSelectableByMouse
+                    self.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                else:
+                    self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
             
             self.blockSignals(False)
         

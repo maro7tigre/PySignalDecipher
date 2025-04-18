@@ -167,40 +167,29 @@ class CommandManager:
         if trigger_widget_id:
             command.set_trigger_widget(trigger_widget_id)
             
-        try:
-            self._is_updating = True
+        self._is_updating = True
+        
+        # Call before execute callbacks
+        for callback_id in self._before_execute_callbacks:
+            callback = self._before_execute_callbacks.get(callback_id)
+            if callback:
+                callback(command)
+        
+        command.execute()
+        
+        # Only add to history if not in initialization mode
+        if not self._is_initializing:
+            self._history.add_command(command)
             
-            # Call before execute callbacks
-            for callback_id in self._before_execute_callbacks:
-                callback = self._before_execute_callbacks.get(callback_id)
-                if callback:
-                    callback(command)
+        # Call after execute callbacks
+        for callback_id in self._after_execute_callbacks:
+            callback = self._after_execute_callbacks.get(callback_id)
+            if callback:
+                callback(command, True)
+        
+        self._is_updating = False
+        return True
             
-            command.execute()
-            
-            # Only add to history if not in initialization mode
-            if not self._is_initializing:
-                self._history.add_command(command)
-                
-            # Call after execute callbacks
-            for callback_id in self._after_execute_callbacks:
-                callback = self._after_execute_callbacks.get(callback_id)
-                if callback:
-                    callback(command, True)
-                
-            return True
-        except Exception as e:
-            print(f"Error executing command: {e}")
-            
-            # Call after execute callbacks with failure
-            for callback_id in self._after_execute_callbacks:
-                callback = self._after_execute_callbacks.get(callback_id)
-                if callback:
-                    callback(command, False)
-                
-            return False
-        finally:
-            self._is_updating = False
     
     def undo(self) -> bool:
         """
@@ -214,40 +203,27 @@ class CommandManager:
             
         command = self._history.undo()
         if command:
-            try:
-                self._is_updating = True
-                
-                # Navigate to command context if available
-                self._navigate_to_command_context(command)
-                # Call before undo callbacks
-                for callback_id in self._before_undo_callbacks:
-                    callback = self._before_undo_callbacks.get(callback_id)
-                    if callback:
-                        callback(command)
-                
-                command.undo()
-                
-                # Call after undo callbacks
-                for callback_id in self._after_undo_callbacks:
-                    callback = self._after_undo_callbacks.get(callback_id)
-                    if callback:
-                        callback(command, True)
-                
-                return True
-            except Exception as e:
-                print(f"Error undoing command: {e}")
-                
-                # Call after undo callbacks with failure
-                for callback_id in self._after_undo_callbacks:
-                    callback = self._after_undo_callbacks.get(callback_id)
-                    if callback:
-                        callback(command, False)
-                
-                # Re-add the command since undo failed
-                self._history.redo()
-                return False
-            finally:
-                self._is_updating = False
+            self._is_updating = True
+            
+            # Navigate to command context if available
+            self._navigate_to_command_context(command)
+            # Call before undo callbacks
+            for callback_id in self._before_undo_callbacks:
+                callback = self._before_undo_callbacks.get(callback_id)
+                if callback:
+                    callback(command)
+            
+            command.undo()
+            
+            # Call after undo callbacks
+            for callback_id in self._after_undo_callbacks:
+                callback = self._after_undo_callbacks.get(callback_id)
+                if callback:
+                    callback(command, True)
+            
+            self._is_updating = False
+            return True
+            
         return False
     
     def redo(self) -> bool:
@@ -262,40 +238,27 @@ class CommandManager:
             
         command = self._history.redo()
         if command:
-            try:
-                self._is_updating = True
+            self._is_updating = True
+            
+            # Navigate to command context if available
+            self._navigate_to_command_context(command)
+            # Call before execute callbacks (same as execute)
+            for callback_id in self._before_execute_callbacks:
+                callback = self._before_execute_callbacks.get(callback_id)
+                if callback:
+                    callback(command)
+            
+            command.redo()
+            
+            # Call after execute callbacks (same as execute)
+            for callback_id in self._after_execute_callbacks:
+                callback = self._after_execute_callbacks.get(callback_id)
+                if callback:
+                    callback(command, True)
+            
+            self._is_updating = False
+            return True
                 
-                # Navigate to command context if available
-                self._navigate_to_command_context(command)
-                # Call before execute callbacks (same as execute)
-                for callback_id in self._before_execute_callbacks:
-                    callback = self._before_execute_callbacks.get(callback_id)
-                    if callback:
-                        callback(command)
-                
-                command.redo()
-                
-                # Call after execute callbacks (same as execute)
-                for callback_id in self._after_execute_callbacks:
-                    callback = self._after_execute_callbacks.get(callback_id)
-                    if callback:
-                        callback(command, True)
-                
-                return True
-            except Exception as e:
-                print(f"Error redoing command: {e}")
-                
-                # Call after execute callbacks with failure
-                for callback_id in self._after_execute_callbacks:
-                    callback = self._after_execute_callbacks.get(callback_id)
-                    if callback:
-                        callback(command, False)
-                
-                # Remove the command since redo failed
-                self._history.undo()
-                return False
-            finally:
-                self._is_updating = False
         return False
     
     def clear(self) -> None:
