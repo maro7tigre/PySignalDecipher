@@ -10,8 +10,7 @@ import os
 from typing import Type, Union, List
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, 
-    QHBoxLayout, QPushButton, QLabel, QStatusBar,
-    QLineEdit, QTextEdit, QMainWindow, QSlider
+    QHBoxLayout, QPushButton, QLabel, QStatusBar, QMainWindow, QSlider
 )
 from PySide6.QtCore import Qt
 
@@ -23,7 +22,7 @@ if project_root not in sys.path:
 # Import command system components
 from command_system.core.observable import Observable, ObservableProperty
 from command_system.core.command_manager import get_command_manager
-from command_system.pyside6_widgets.line_edit import CommandLineEdit
+from command_system.pyside6_widgets import CommandLineEdit, CommandTextEdit
 from command_system.pyside6_widgets.containers.dock_widget import CommandDockWidget, DockArea
 
 
@@ -260,9 +259,9 @@ class DockWidgetDemo(QMainWindow):
         notes_label = QLabel("Notes:")
         layout.addWidget(notes_label)
         
-        notes_edit = QTextEdit()
+        notes_edit = CommandTextEdit()
+        notes_edit.bind_to_plain_text_property(model.get_id(), "notes")
         notes_edit.setPlainText(model.notes)
-        notes_edit.textChanged.connect(lambda: self.update_notes(model, notes_edit))
         layout.addWidget(notes_edit)
         
         # Info about this dock
@@ -300,9 +299,9 @@ class DockWidgetDemo(QMainWindow):
         desc_label = QLabel("Description:")
         layout.addWidget(desc_label)
         
-        desc_edit = QTextEdit()
+        desc_edit = CommandTextEdit()
         desc_edit.setPlainText(model.description)
-        desc_edit.textChanged.connect(lambda: self.update_description(model, desc_edit))
+        desc_edit.bind_to_plain_text_property(model.get_id(), "description")
         layout.addWidget(desc_edit)
         
         priority_label = QLabel(f"Priority: {model.priority}")
@@ -312,7 +311,6 @@ class DockWidgetDemo(QMainWindow):
         priority_slider.setMinimum(1)
         priority_slider.setMaximum(10)
         priority_slider.setValue(model.priority)
-        priority_slider.valueChanged.connect(lambda v: self.update_priority(model, v, priority_label))
         layout.addWidget(priority_slider)
         
         return widget
@@ -341,33 +339,6 @@ class DockWidgetDemo(QMainWindow):
         layout.addWidget(note)
         
         return widget
-    
-    def update_notes(self, model, notes_edit):
-        """Update the notes property of a Person model."""
-        # Only create commands when not already updating
-        if not self.cmd_manager.is_updating():
-            new_text = notes_edit.toPlainText()
-            if model.notes != new_text:
-                property_id = model._get_property_id("notes")
-                self.cmd_manager.execute_property_command(property_id, new_text)
-    
-    def update_description(self, model, desc_edit):
-        """Update the description property of a Project model."""
-        # Only create commands when not already updating
-        if not self.cmd_manager.is_updating():
-            new_text = desc_edit.toPlainText()
-            if model.description != new_text:
-                property_id = model._get_property_id("description")
-                self.cmd_manager.execute_property_command(property_id, new_text)
-    
-    def update_priority(self, model, value, label):
-        """Update the priority property of a Project model."""
-        # Only create commands when not already updating
-        if not self.cmd_manager.is_updating():
-            if model.priority != value:
-                property_id = model._get_property_id("priority")
-                self.cmd_manager.execute_property_command(property_id, value)
-                label.setText(f"Priority: {value}")
     
     def add_person_dock(self):
         """Add a person dock with the shared model."""

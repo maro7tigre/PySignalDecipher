@@ -10,7 +10,8 @@ from PySide6.QtWidgets import (
     QMainWindow, QDockWidget, QWidget, QVBoxLayout, 
     QApplication, QSizePolicy
 )
-from PySide6.QtCore import Signal, Slot, Qt, QTimer, QPoint, QSize
+from PySide6.QtCore import Signal, Slot, Qt, QTimer, QPoint, QSize, QEvent, QRect
+from PySide6.QtGui import QMouseEvent
 
 from command_system.id_system import get_id_registry, ContainerTypeCodes
 from command_system.id_system.core.mapping import Mapping
@@ -25,6 +26,71 @@ class DockArea(Enum):
     BOTTOM = Qt.BottomDockWidgetArea
     ALL = Qt.AllDockWidgetAreas
     NO_DOCK = 0
+
+class ImprovedQDockWidget(QDockWidget):
+    """Custom QDockWidget that properly handles drag operations."""
+    
+    dragFinished = Signal()  # Signal emitted when drag is completed
+    
+    def __init__(self, title, parent=None):
+        super().__init__(title, parent)
+        self._is_dragging = False
+        self._drag_start_pos = None
+        self._drag_start_area = None
+        self._drag_start_floating = None
+        self._drag_start_geometry = None
+        
+        # Install event filter on title bar widget to catch mouse events
+        title_bar = self.titleBarWidget()
+        if title_bar:
+            title_bar.installEventFilter(self)
+        
+        # Filter events on the dock widget itself
+        self.installEventFilter(self)
+    
+    def eventFilter(self, obj, event):
+        """Filter events to detect mouse operations on dock."""
+        if event.type() == QEvent.MouseButtonPress:
+            # Store initial state when mouse press starts
+            if isinstance(event, QMouseEvent) and event.button() == Qt.LeftButton:
+                self._is_dragging = True
+                self._drag_start_pos = event.globalPos()
+                
+                # Get the dock area from parent if it's a QMainWindow
+                parent = self.parent()
+                if parent and isinstance(parent, QMainWindow):
+                    self._drag_start_area = parent.dockWidgetArea(self)
+                else:
+                    self._drag_start_area = None
+                
+                # Store floating state and geometry
+                self._drag_start_floating = self.isFloating()
+                self._drag_start_geometry = self.geometry()
+                
+                print(f"DEBUG: Drag started for {self.windowTitle()}, floating={self._drag_start_floating}, area={self._drag_start_area}")
+                
+        elif event.type() == QEvent.MouseButtonRelease:
+            # When mouse is released, check if we were dragging
+            if self._is_dragging and isinstance(event, QMouseEvent) and event.button() == Qt.LeftButton:
+                self._is_dragging = False
+                
+                # Delayed signal to ensure all Qt internal state is updated
+                QTimer.singleShot(100, self.dragFinished)
+                print(f"DEBUG: Drag finished for {self.windowTitle()}")
+        
+        return super().eventFilter(obj, event)
+    
+    def isDragging(self):
+        """Check if dock is currently being dragged."""
+        return self._is_dragging
+    
+    def getDragStartState(self):
+        """Get the state when drag started."""
+        return {
+            "area": self._drag_start_area,
+            "floating": self._drag_start_floating,
+            "geometry": self._drag_start_geometry
+        }
 
 class CommandDockWidget(QMainWindow, BaseCommandContainer):
     """
@@ -47,51 +113,30 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
         # Initialize container with DOCK type code
         self.initiate_container(ContainerTypeCodes.DOCK, container_id, location)
         
-        # Enhanced dock tracking with position-to-id mapping using Mapping
+        # Enhanced dock tracking with position-to-id mapping
         self._dock_position_to_id = Mapping(update_keys=False, update_values=True)
         self.id_registry.mappings.append(self._dock_position_to_id)
         
         # Store additional data for each dock
         self._dock_data = {}  # {dock_id: {area, title, floating, closable, etc.}}
         
-        # Position change tracking for delayed commands
-        self._position_change_timer = QTimer(self)
-        self._position_change_timer.setSingleShot(True)
-        self._position_change_timer.timeout.connect(self._on_position_change_timeout)
-        self._position_change_delay = 500  # milliseconds
-        self._pending_position_changes = {}  # {dock_id: {area, geometry}}
-        
-        # For tracking a dock's previous position (for undo/redo)
-        self._last_dock_positions = {}  # {dock_id: {area, geometry}}
+        # Track active docks and their states
+        self._dock_states = {}  # {dock_id: {area, floating, geometry, etc.}}
         
         # Set up a central widget to ensure proper dock behavior
-        self._setup_central_widget()
-    
-    def _setup_central_widget(self):
-        """Set up the central widget for the dock container."""
         central = QWidget()
         central.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setCentralWidget(central)
+        
+        # Enable dock nesting
+        self.setDockNestingEnabled(True)
     
     # MARK: - Dock Registration
     def register_dock(self, factory_func: Callable, dock_title: str = None,
                      observables: List[Union[str, Type[Observable]]] = None, 
                      closable: bool = True, floating: bool = False,
                      default_area: DockArea = DockArea.RIGHT) -> str:
-        """
-        Register a dock type with factory function.
-        
-        Args:
-            factory_func: Function that creates the dock content
-            dock_title: Display title for docks of this type
-            observables: List of Observable IDs or Observable classes
-            closable: Whether docks of this type can be closed
-            floating: Whether docks of this type are floating by default
-            default_area: Default dock area
-            
-        Returns:
-            ID of the registered dock type
-        """
+        """Register a dock type with factory function."""
         options = {
             "dock_title": dock_title or "Dock", 
             "closable": closable,
@@ -103,17 +148,7 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
     
     def add_dock(self, type_id: str, area: Optional[DockArea] = None, 
                 floating: Optional[bool] = None) -> str:
-        """
-        Add a new dock of the registered type.
-        
-        Args:
-            type_id: ID of the registered dock type
-            area: Optional dock area to override the default
-            floating: Optional floating state to override the default
-            
-        Returns:
-            ID of the created dock subcontainer
-        """
+        """Add a new dock of the registered type."""
         # Check if we're in a command execution
         if get_command_manager().is_updating():
             # Direct dock addition during command execution
@@ -137,16 +172,7 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
     
     # MARK: - Subcontainer Implementation
     def create_subcontainer(self, type_id: str, position: str = None) -> Tuple[QWidget, str]:
-        """
-        Create an empty dock subcontainer for the specified type.
-        
-        Args:
-            type_id: Type ID of the subcontainer
-            position: Position for the subcontainer (encoded options)
-            
-        Returns:
-            Tuple of (dock container widget, ID system location string)
-        """
+        """Create an empty dock subcontainer for the specified type."""
         # Validate type exists
         type_info = self._widget_types.get(type_id)
         if not type_info:
@@ -163,10 +189,8 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
         override_options = {}
         if position:
             try:
-                # Try to evaluate the position string as a dict
                 override_options = eval(position)
             except Exception:
-                # If not a valid dict, just use as a unique identifier
                 pass
         
         # Get actual settings with overrides applied
@@ -177,14 +201,13 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
         if isinstance(area, DockArea):
             qt_area = area.value
         else:
-            # Try to convert to enum if it's an integer
             try:
                 qt_area = int(area)
             except (ValueError, TypeError):
                 qt_area = DockArea.RIGHT.value
         
-        # Create the dock widget
-        dock = QDockWidget(dock_title, self)
+        # Create the custom dock widget
+        dock = ImprovedQDockWidget(dock_title, self)
         dock.setObjectName(f"dock_{len(self._dock_position_to_id)}")
         dock.setFeatures(QDockWidget.DockWidgetClosable | 
                          QDockWidget.DockWidgetMovable | 
@@ -210,45 +233,59 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
             dock.setFeatures(features)
         
         # Connect signals
-        dock.dockLocationChanged.connect(lambda: self._on_dock_location_changed(dock))
-        dock.topLevelChanged.connect(lambda floating: self._on_dock_floating_changed(dock, floating))
+        dock.dragFinished.connect(lambda: self._on_dock_drag_finished(dock))
         dock.visibilityChanged.connect(lambda visible: self._on_dock_visibility_changed(dock, visible))
         
         # Generate a unique location ID for the ID system
         location_id = f"dock_{len(self._dock_position_to_id)}"
         
+        # Capture initial state
+        current_state = {
+            "area": qt_area,
+            "floating": floating, 
+            "geometry": dock.geometry() if floating else None,
+            "visible": True
+        }
+        
+        # Store container ID for later lookup
+        self._dock_states[content_container] = current_state
+        
+        print(f"DEBUG: Created dock {dock_title} at area {qt_area}, floating={floating}")
+        
         return content_container, location_id
     
     def close_dock(self, dock_id: str) -> bool:
-        """
-        Close a dock with the given ID.
+        """Close a dock with the given ID."""
+        print(f"DEBUG: Closing dock {dock_id}")
         
-        Args:
-            dock_id: ID of the dock to close
-            
-        Returns:
-            True if successful, False otherwise
-        """
         # Validate ID
         if dock_id not in self._subcontainers:
+            print(f"DEBUG: Dock {dock_id} not found in subcontainers")
             return False
             
         # Get the dock widget
         dock_container = self._subcontainers.get(dock_id)
         if not dock_container:
+            print(f"DEBUG: Dock container for {dock_id} not found")
             return False
             
         # Find the QDockWidget parent
         dock_widget = self._find_dock_widget_for_container(dock_container)
         if not dock_widget:
+            print(f"DEBUG: Dock widget for {dock_id} not found")
             return False
             
         # Close the subcontainer (will handle ID cleanup)
         if not self.close_subcontainer(dock_id):
+            print(f"DEBUG: Failed to close subcontainer for {dock_id}")
             return False
         
         # Emit signal before removing the dock
         self.dockClosed.emit(dock_id)
+        
+        # Clean up stored states
+        if dock_container in self._dock_states:
+            del self._dock_states[dock_container]
         
         # Remove the dock from the main window
         dock_widget.setParent(None)
@@ -257,6 +294,7 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
         # Update internal mappings
         self._update_dock_mappings()
         
+        print(f"DEBUG: Successfully closed dock {dock_id}")
         return True
     
     def _find_dock_widget_for_container(self, container: QWidget) -> Optional[QDockWidget]:
@@ -296,224 +334,105 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
                 "geometry": dock.geometry() if dock.isFloating() else None,
                 "object_name": dock.objectName()
             }
+            
+            # Update dock state
+            self._dock_states[container] = {
+                "area": self.dockWidgetArea(dock),
+                "floating": dock.isFloating(),
+                "geometry": dock.geometry() if dock.isFloating() else None,
+                "visible": dock.isVisible()
+            }
     
-    def set_dock_title(self, dock_id: str, title: str) -> bool:
-        """
-        Set the title for a dock.
+    # MARK: - Event Handlers
+    def _on_dock_drag_finished(self, dock: ImprovedQDockWidget):
+        """Handle completion of a dock drag operation."""
+        # Skip if we're in a command execution to avoid recursion
+        if get_command_manager().is_updating():
+            print("DEBUG: Skipping drag finished during command execution")
+            return
         
-        Args:
-            dock_id: ID of the dock
-            title: New title
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        # Get the dock container
-        container = self._subcontainers.get(dock_id)
-        if not container:
-            return False
-            
-        # Find the dock widget
-        dock = self._find_dock_widget_for_container(container)
-        if not dock:
-            return False
-            
-        # Set the title
-        dock.setWindowTitle(title)
-        
-        # Update stored data
-        if dock_id in self._dock_data:
-            self._dock_data[dock_id]["title"] = title
-            
-        return True
-    
-    def set_dock_area(self, dock_id: str, area: DockArea) -> bool:
-        """
-        Move a dock to a specific area.
-        
-        Args:
-            dock_id: ID of the dock
-            area: Target dock area
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        # Get the dock container
-        container = self._subcontainers.get(dock_id)
-        if not container:
-            return False
-            
-        # Find the dock widget
-        dock = self._find_dock_widget_for_container(container)
-        if not dock:
-            return False
-            
-        # Set the dock area
-        self.addDockWidget(area.value, dock)
-        
-        # Update stored data
-        if dock_id in self._dock_data:
-            self._dock_data[dock_id]["area"] = area.value
-            
-        return True
-    
-    def set_dock_floating(self, dock_id: str, floating: bool) -> bool:
-        """
-        Set whether a dock is floating.
-        
-        Args:
-            dock_id: ID of the dock
-            floating: Whether the dock should be floating
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        # Get the dock container
-        container = self._subcontainers.get(dock_id)
-        if not container:
-            return False
-            
-        # Find the dock widget
-        dock = self._find_dock_widget_for_container(container)
-        if not dock:
-            return False
-            
-        # Set floating state
-        dock.setFloating(floating)
-        
-        # Update stored data
-        if dock_id in self._dock_data:
-            self._dock_data[dock_id]["floating"] = floating
-            
-        return True
-    
-    def get_dock_data(self, dock_id: str) -> Optional[Dict]:
-        """
-        Get data for a specific dock.
-        
-        Args:
-            dock_id: ID of the dock
-            
-        Returns:
-            Dict containing dock data or None if not found
-        """
-        return self._dock_data.get(dock_id)
-    
-    # MARK: - Navigation
-    def navigate_to_position(self, position: str) -> bool:
-        """
-        Navigate to a specific dock by position.
-        
-        Args:
-            position: Dock position identifer
-            
-        Returns:
-            True if navigation was successful
-        """
-        # Try to find the dock at this position
-        if position in self._dock_position_to_id:
-            dock_id = self._dock_position_to_id[position]
-            container = self._subcontainers.get(dock_id)
-            if container:
-                # Find the dock widget
-                dock = self._find_dock_widget_for_container(container)
-                if dock:
-                    # Make sure the dock is visible
-                    dock.show()
-                    dock.raise_()
-                    dock.setFocus()
-                    return True
-                
-        return False
-    
-    # MARK: - Event Handlers for Position Changes
-    def _on_dock_location_changed(self, dock: QDockWidget):
-        """Handle dock location changes."""
-        # Find the container and its ID
+        # Find the container widget
         container = dock.widget()
         if not container:
+            print("DEBUG: No container found for dock")
             return
             
+        # Get container ID
         dock_id = self.id_registry.get_id(container)
         if not dock_id:
+            print("DEBUG: No dock ID found for container")
             return
             
-        # Get current dock area and geometry
-        area = self.dockWidgetArea(dock)
-        geometry = dock.geometry() if dock.isFloating() else None
-        
-        # Store the current state
+        # Get the start state saved when drag began
+        old_state = dock.getDragStartState()
+        if not old_state or not old_state["area"]:
+            print(f"DEBUG: No valid start state for dock {dock_id}")
+            return
+            
+        # Get current state
         current_state = {
-            "area": area,
-            "geometry": geometry,
-            "floating": dock.isFloating()
+            "area": self.dockWidgetArea(dock),
+            "floating": dock.isFloating(),
+            "geometry": dock.geometry() if dock.isFloating() else None,
+            "visible": dock.isVisible()
         }
         
-        # Add to pending changes
-        self._pending_position_changes[dock_id] = current_state
+        # Check if there's an actual state change
+        significant_change = (
+            old_state["area"] != current_state["area"] or
+            old_state["floating"] != current_state["floating"]
+        )
         
-        # Restart the timer to create a command after changes settle
-        self._position_change_timer.start(self._position_change_delay)
-        
-        # Update our tracking data
-        if dock_id in self._dock_data:
-            self._dock_data[dock_id]["area"] = area
-            self._dock_data[dock_id]["geometry"] = geometry
+        # Only create command if there's a significant change
+        if significant_change:
+            print(f"DEBUG: Creating position command for dock {dock_id}")
+            print(f"DEBUG:   Old: area={old_state['area']}, floating={old_state['floating']}")
+            print(f"DEBUG:   New: area={current_state['area']}, floating={current_state['floating']}")
             
-        # Emit signal for the move
-        self.dockMoved.emit(dock_id, area)
-    
-    def _on_dock_floating_changed(self, dock: QDockWidget, floating: bool):
-        """Handle dock floating state changes."""
-        # Find the container and its ID
-        container = dock.widget()
-        if not container:
-            return
+            # Create a command for this position change
+            cmd = DockPositionCommand(
+                self.get_id(),
+                dock_id,
+                old_state,
+                current_state
+            )
+            cmd.set_trigger_widget(self.get_id())
+            get_command_manager().execute(cmd)
             
-        dock_id = self.id_registry.get_id(container)
-        if not dock_id:
-            return
-            
-        # Get current dock area and geometry
-        area = self.dockWidgetArea(dock)
-        geometry = dock.geometry() if floating else None
-        
-        # Store the current state
-        current_state = {
-            "area": area,
-            "geometry": geometry,
-            "floating": floating
-        }
-        
-        # Add to pending changes
-        self._pending_position_changes[dock_id] = current_state
-        
-        # Restart the timer to create a command after changes settle
-        self._position_change_timer.start(self._position_change_delay)
-        
-        # Update our tracking data
-        if dock_id in self._dock_data:
-            self._dock_data[dock_id]["floating"] = floating
-            self._dock_data[dock_id]["geometry"] = geometry
+            # Update the dock state
+            self._dock_states[container] = current_state
+        else:
+            print(f"DEBUG: No significant change for dock {dock_id}")
     
     def _on_dock_visibility_changed(self, dock: QDockWidget, visible: bool):
         """Handle dock visibility changes."""
-        # Find the container and its ID
+        # Skip if we're in a command execution
+        if get_command_manager().is_updating():
+            return
+            
+        # Skip automatic visibility changes during drag operations
+        if hasattr(dock, 'isDragging') and dock.isDragging():
+            return
+            
+        # Find the container widget
         container = dock.widget()
         if not container:
             return
             
+        # Get container ID
         dock_id = self.id_registry.get_id(container)
         if not dock_id:
             return
             
-        # If the dock is being hidden and it wasn't by a command, it might be a user close
-        if not visible and not get_command_manager().is_updating():
+        # If the dock is being hidden and it's a manual close
+        if not visible:
             # Only handle if it's closable
             features = dock.features()
             if features & QDockWidget.DockWidgetClosable:
                 # Check if this dock is registered with us
                 if dock_id in self._subcontainers:
+                    print(f"DEBUG: Handling visibility change to close dock {dock_id}")
+                    
                     # Get the subcontainer type for recreation
                     subcontainer_type = self.get_subcontainer_type(dock_id)
                     
@@ -523,47 +442,71 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
                     get_command_manager().execute(cmd)
                     return
         
-        # Update our tracking data
-        if dock_id in self._dock_data:
-            self._dock_data[dock_id]["visible"] = visible
+        # Update stored state
+        if container in self._dock_states:
+            self._dock_states[container]["visible"] = visible
     
-    def _on_position_change_timeout(self):
-        """Handle position change timeout to create commands."""
-        # Skip if we're in a command execution
-        if get_command_manager().is_updating():
-            return
+    # MARK: - Dock Manipulation Methods
+    def set_dock_position(self, dock_id: str, area: DockArea, floating: bool = False, 
+                         geometry: Optional[QRect] = None) -> bool:
+        """
+        Set the position and state of a dock.
+        
+        Args:
+            dock_id: ID of the dock to position
+            area: The dock area to move to
+            floating: Whether the dock should be floating
+            geometry: Optional geometry for floating docks
             
-        # Process all pending position changes
-        for dock_id, new_state in self._pending_position_changes.items():
-            # Check if we have previous position data
-            old_state = self._last_dock_positions.get(dock_id)
+        Returns:
+            True if successful, False otherwise
+        """
+        print(f"DEBUG: Setting dock {dock_id} position to area={area}, floating={floating}")
+        
+        # Get the dock container
+        container = self._subcontainers.get(dock_id)
+        if not container:
+            print(f"DEBUG: Container for dock {dock_id} not found")
+            return False
             
-            # Only create command if there's actually a change
-            if old_state != new_state:
-                # Create a command for this position change
-                cmd = DockPositionCommand(
-                    self.get_id(),
-                    dock_id,
-                    old_state,
-                    new_state
-                )
-                cmd.set_trigger_widget(self.get_id())
-                get_command_manager().execute(cmd)
-                
-                # Update the last known position
-                self._last_dock_positions[dock_id] = new_state
-                
-        # Clear pending changes
-        self._pending_position_changes.clear()
+        # Find the dock widget
+        dock = self._find_dock_widget_for_container(container)
+        if not dock:
+            print(f"DEBUG: Dock widget for dock {dock_id} not found")
+            return False
+        
+        # Add to appropriate area first (only if not floating)
+        if not floating and area is not None and hasattr(area, 'value'):
+            print(f"DEBUG: Adding dock {dock_id} to area {area.value}")
+            self.addDockWidget(area.value, dock)
+        
+        # Set floating state
+        if floating:
+            print(f"DEBUG: Setting dock {dock_id} to floating")
+            dock.setFloating(True)
+            
+            # Set geometry if provided
+            if geometry:
+                print(f"DEBUG: Setting dock {dock_id} geometry")
+                dock.setGeometry(geometry)
+        else:
+            # Ensure dock is not floating
+            dock.setFloating(False)
+        
+        # Update stored state
+        if container in self._dock_states:
+            self._dock_states[container] = {
+                "area": area.value if hasattr(area, 'value') else area,
+                "floating": floating,
+                "geometry": geometry if floating else None,
+                "visible": dock.isVisible()
+            }
+            
+        return True
     
     # MARK: - Serialization
     def get_serialization(self) -> Dict:
-        """
-        Get serialized representation of this dock widget container.
-        
-        Returns:
-            Dict containing serialized dock widget state
-        """
+        """Get serialized representation of this dock widget container."""
         # Update mappings to ensure we have the latest state
         self._update_dock_mappings()
         
@@ -578,15 +521,7 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
         return result
     
     def deserialize(self, serialized_data: Dict) -> bool:
-        """
-        Deserialize and restore dock widget container state.
-        
-        Args:
-            serialized_data: Dict containing serialized state
-            
-        Returns:
-            True if successful, False otherwise
-        """
+        """Deserialize and restore dock widget container state."""
         # First restore base container state
         if not super().deserialize(serialized_data):
             return False
@@ -629,14 +564,34 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
                 if "visible" in data:
                     dock.setVisible(data["visible"])
                 
-                # Store the current position for tracking
-                self._last_dock_positions[dock_id] = {
+                # Store state
+                self._dock_states[container] = {
                     "area": data.get("area", DockArea.RIGHT.value),
+                    "floating": data.get("floating", False),
                     "geometry": data.get("geometry"),
-                    "floating": data.get("floating", False)
+                    "visible": data.get("visible", True)
                 }
                 
         return True
+
+    # MARK: - Utilities
+    def navigate_to_position(self, position: str) -> bool:
+        """Navigate to a specific dock by position."""
+        # Try to find the dock at this position
+        if position in self._dock_position_to_id:
+            dock_id = self._dock_position_to_id[position]
+            container = self._subcontainers.get(dock_id)
+            if container:
+                # Find the dock widget
+                dock = self._find_dock_widget_for_container(container)
+                if dock:
+                    # Make sure the dock is visible
+                    dock.show()
+                    dock.raise_()
+                    dock.setFocus()
+                    return True
+                
+        return False
 
 
 # MARK: - Command Classes
@@ -646,15 +601,7 @@ class AddDockCommand(SerializationCommand):
     def __init__(self, type_id: str, container_id: str, 
                 area: Optional[DockArea] = None, 
                 floating: Optional[bool] = None):
-        """
-        Initialize with type and container information.
-        
-        Args:
-            type_id: Type ID of the dock to add
-            container_id: ID of the container to add the dock to
-            area: Optional dock area override
-            floating: Optional floating state override
-        """
+        """Initialize with type and container information."""
         super().__init__()
         self.type_id = type_id
         self.container_id = container_id
@@ -670,6 +617,7 @@ class AddDockCommand(SerializationCommand):
         
     def execute(self):
         """Execute to add the dock."""
+        print(f"DEBUG: AddDockCommand execute for type {self.type_id}")
         container = get_id_registry().get_widget(self.container_id)
         if container:
             # Convert options to position string
@@ -683,6 +631,7 @@ class AddDockCommand(SerializationCommand):
 
     def undo(self):
         """Undo saves serialization and closes dock."""
+        print(f"DEBUG: AddDockCommand undo for dock {self.component_id}")
         if self.component_id:
             container = get_id_registry().get_widget(self.container_id)
             if container:
@@ -694,6 +643,7 @@ class AddDockCommand(SerializationCommand):
             
     def redo(self):
         """Redo restores the dock from serialization."""
+        print(f"DEBUG: AddDockCommand redo for type {self.type_id}")
         if self.serialized_state:
             container = get_id_registry().get_widget(self.container_id)
             if container:
@@ -711,14 +661,7 @@ class CloseDockCommand(SerializationCommand):
     """Command for closing a dock with serialization support."""
     
     def __init__(self, component_id: str, type_id: str, container_id: str):
-        """
-        Initialize with dock information.
-        
-        Args:
-            component_id: ID of the dock component
-            type_id: Type ID of the dock 
-            container_id: ID of the container
-        """
+        """Initialize with dock information."""
         super().__init__()
         self.component_id = component_id
         self.type_id = type_id
@@ -727,6 +670,7 @@ class CloseDockCommand(SerializationCommand):
         
     def execute(self):
         """Execute captures state and closes dock."""
+        print(f"DEBUG: CloseDockCommand execute for dock {self.component_id}")
         container = get_id_registry().get_widget(self.container_id)
         if container and self.component_id:
             # Save position
@@ -740,6 +684,7 @@ class CloseDockCommand(SerializationCommand):
 
     def undo(self):
         """Undo restores the dock."""
+        print(f"DEBUG: CloseDockCommand undo for dock {self.component_id}")
         if self.serialized_state:
             container = get_id_registry().get_widget(self.container_id)
             if container:
@@ -755,15 +700,7 @@ class DockPositionCommand(Command):
     
     def __init__(self, container_id: str, dock_id: str, 
                 old_state: Dict, new_state: Dict):
-        """
-        Initialize with dock position information.
-        
-        Args:
-            container_id: ID of the dock container
-            dock_id: ID of the dock
-            old_state: Previous dock state (area, geometry, floating)
-            new_state: New dock state (area, geometry, floating)
-        """
+        """Initialize with dock position information."""
         super().__init__()
         self.container_id = container_id
         self.dock_id = dock_id
@@ -772,31 +709,37 @@ class DockPositionCommand(Command):
         
     def execute(self):
         """Execute the command to change the dock position."""
+        print(f"DEBUG: DockPositionCommand execute for dock {self.dock_id}")
         # Apply the new state
         self._apply_state(self.new_state)
     
     def undo(self):
         """Undo the command by restoring the previous position."""
+        print(f"DEBUG: DockPositionCommand undo for dock {self.dock_id}")
         # Apply the old state
         self._apply_state(self.old_state)
     
     def _apply_state(self, state: Dict):
         """Apply a dock state (position, area, floating)."""
         if not state:
+            print(f"DEBUG: No state to apply for dock {self.dock_id}")
             return
             
         container = get_id_registry().get_widget(self.container_id)
         if not container:
+            print(f"DEBUG: Container {self.container_id} not found")
             return
             
         # Get the dock container
         dock_container = container._subcontainers.get(self.dock_id)
         if not dock_container:
+            print(f"DEBUG: Dock container {self.dock_id} not found")
             return
             
         # Find the dock widget
         dock = container._find_dock_widget_for_container(dock_container)
         if not dock:
+            print(f"DEBUG: Dock widget for {self.dock_id} not found")
             return
             
         # Get state values
@@ -804,18 +747,27 @@ class DockPositionCommand(Command):
         geometry = state.get("geometry")
         floating = state.get("floating", False)
         
+        print(f"DEBUG: Applying state - area={area}, floating={floating}")
+        
+        # Stop any ongoing drag operation
+        if hasattr(dock, '_is_dragging'):
+            dock._is_dragging = False
+        
         # Apply area first (must be done before setting floating)
         if area is not None:
+            print(f"DEBUG: Adding dock to area {area}")
             container.addDockWidget(area, dock)
             
         # Apply floating state
         if floating is not None:
+            print(f"DEBUG: Setting floating={floating}")
             dock.setFloating(floating)
             
         # Apply geometry if floating
         if floating and geometry:
+            print(f"DEBUG: Setting geometry")
             dock.setGeometry(geometry)
             
         # Update container tracking data
-        if hasattr(container, '_last_dock_positions'):
-            container._last_dock_positions[self.dock_id] = state.copy()
+        if hasattr(container, '_dock_states') and dock_container in container._dock_states:
+            container._dock_states[dock_container] = state.copy()
