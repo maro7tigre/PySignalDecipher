@@ -75,8 +75,9 @@ class ImprovedQDockWidget(QDockWidget):
                 self._is_dragging = False
                 
                 # Delayed signal to ensure all Qt internal state is updated
-                QTimer.singleShot(100, self.dragFinished)
-                print(f"DEBUG: Drag finished for {self.windowTitle()}")
+                # Use a longer delay to ensure Qt has fully processed the dock state changes
+                QTimer.singleShot(300, self.dragFinished)
+                print(f"DEBUG: Drag finished for {self.windowTitle()}, dragFinished signal will be emitted after delay")
         
         return super().eventFilter(obj, event)
     
@@ -187,11 +188,11 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
         
         # Parse position string if provided (may contain override options)
         override_options = {}
-        if position:
+        if position and position.startswith('{') and position.endswith('}'):
             try:
                 override_options = eval(position)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"DEBUG: Error parsing position string: {e}")
         
         # Get actual settings with overrides applied
         area = override_options.get("area", default_area)
@@ -365,9 +366,12 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
             
         # Get the start state saved when drag began
         old_state = dock.getDragStartState()
-        if not old_state or not old_state["area"]:
+        if not old_state or old_state["area"] is None:
             print(f"DEBUG: No valid start state for dock {dock_id}")
             return
+        
+        # Force refresh dock widgets to ensure state is updated correctly
+        QApplication.processEvents()
             
         # Get current state
         current_state = {
@@ -435,6 +439,9 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
                     
                     # Get the subcontainer type for recreation
                     subcontainer_type = self.get_subcontainer_type(dock_id)
+                    if not subcontainer_type:
+                        print(f"DEBUG: Cannot get subcontainer type for {dock_id}")
+                        return
                     
                     # Create a command to close the dock
                     cmd = CloseDockCommand(dock_id, subcontainer_type, self.get_id())
@@ -447,7 +454,7 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
             self._dock_states[container]["visible"] = visible
     
     # MARK: - Dock Manipulation Methods
-    def set_dock_position(self, dock_id: str, area: DockArea, floating: bool = False, 
+    def set_dock_position(self, dock_id: str, area: Union[DockArea, int], floating: bool = False, 
                          geometry: Optional[QRect] = None) -> bool:
         """
         Set the position and state of a dock.
@@ -475,10 +482,15 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
             print(f"DEBUG: Dock widget for dock {dock_id} not found")
             return False
         
+        # Convert area to integer value if it's an enum
+        qt_area = area
+        if isinstance(area, DockArea):
+            qt_area = area.value
+        
         # Add to appropriate area first (only if not floating)
-        if not floating and area is not None and hasattr(area, 'value'):
-            print(f"DEBUG: Adding dock {dock_id} to area {area.value}")
-            self.addDockWidget(area.value, dock)
+        if not floating and qt_area is not None:
+            print(f"DEBUG: Adding dock {dock_id} to area {qt_area}")
+            self.addDockWidget(qt_area, dock)
         
         # Set floating state
         if floating:
@@ -496,7 +508,7 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
         # Update stored state
         if container in self._dock_states:
             self._dock_states[container] = {
-                "area": area.value if hasattr(area, 'value') else area,
+                "area": qt_area,
                 "floating": floating,
                 "geometry": geometry if floating else None,
                 "visible": dock.isVisible()
@@ -674,7 +686,11 @@ class CloseDockCommand(SerializationCommand):
         container = get_id_registry().get_widget(self.container_id)
         if container and self.component_id:
             # Save position
-            self.position = container.get_subcontainer_position(self.component_id)
+            position = container.get_subcontainer_position(self.component_id)
+            if position is not None:
+                # Ensure position is a string to prevent type conversion errors
+                self.position = str(position)
+                print(f"DEBUG: Saved position {self.position} for dock {self.component_id}")
             
             # Save serialization before closing
             self.serialized_state = container.serialize_subcontainer(self.component_id)
@@ -691,7 +707,7 @@ class CloseDockCommand(SerializationCommand):
                 # Restore from serialization
                 container.deserialize_subcontainer(
                     self.type_id,
-                    self.position,
+                    self.position if self.position is not None else "0",
                     self.serialized_state
                 )
         
