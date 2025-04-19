@@ -1,37 +1,24 @@
 """
-Command-aware dock container widget with integrated command system support.
+Command-aware dock widget container with integrated command system support.
 
-Provides a dock widget container that integrates with the ID system and command
-system for undo/redo functionality and serialization.
+Provides a dock widget container that integrates with the ID system and command system
+for undo/redo functionality, serialization, and comprehensive state management.
 """
 from typing import Any, Dict, Optional, List, Callable, Union, Type, Tuple
-from enum import Enum
-from PySide6.QtWidgets import (
-    QMainWindow, QDockWidget, QWidget, QVBoxLayout, 
-    QApplication, QSizePolicy
-)
-from PySide6.QtCore import Signal, Qt, QTimer
+from PySide6.QtWidgets import QMainWindow, QDockWidget, QWidget, QVBoxLayout
+from PySide6.QtCore import Signal, Slot, Qt, QRect
 
 from command_system.id_system import get_id_registry, ContainerTypeCodes
 from command_system.id_system.core.mapping import Mapping
 from command_system.core import get_command_manager, Command, SerializationCommand, Observable
 from .base_container import BaseCommandContainer
 
-# Define dock area enum matching Qt::DockWidgetArea
-class DockArea(Enum):
-    LEFT = Qt.LeftDockWidgetArea
-    RIGHT = Qt.RightDockWidgetArea
-    TOP = Qt.TopDockWidgetArea
-    BOTTOM = Qt.BottomDockWidgetArea
-    ALL = Qt.AllDockWidgetAreas
-    NO_DOCK = 0
-
 class CommandDockWidget(QMainWindow, BaseCommandContainer):
     """
-    A dock widget container with command system integration.
+    A dock widget container with full command system integration.
     
     Manages a collection of dock subcontainers with proper ID tracking,
-    and serialization support.
+    serialization support, and undo/redo operations.
     """
     
     # Signals emitted when docks are modified
@@ -46,369 +33,423 @@ class CommandDockWidget(QMainWindow, BaseCommandContainer):
         # Initialize container with DOCK type code
         self.initiate_container(ContainerTypeCodes.DOCK, container_id, location)
         
-        # Enhanced dock tracking with position-to-id mapping
-        self._dock_position_to_id = Mapping(update_keys=False, update_values=True)
-        self.id_registry.mappings.append(self._dock_position_to_id)
+        # Track dock floating state and area
+        self._dock_states = {}  # subcontainer_id -> (floating, area, geometry)
         
-        # Store additional data for each dock
-        self._dock_data = {}  # {dock_id: {area, title, closable, etc.}}
-        
-        # Set up a central widget to ensure proper dock behavior
-        central = QWidget()
-        central.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.setCentralWidget(central)
-        
-        # Enable dock nesting
-        self.setDockNestingEnabled(True)
+        # Let QMainWindow be visible even without a central widget
+        # This is important because sometimes we might not set a central widget
+        # but still want the main window to be visible to hold docks
+        self.setMinimumSize(400, 300)
     
     # MARK: - Dock Registration
-    def register_dock(self, factory_func: Callable, dock_title: str = None,
-                     observables: List[Union[str, Type[Observable]]] = None, 
-                     closable: bool = True, floating: bool = False,
-                     default_area: DockArea = DockArea.RIGHT) -> str:
-        """Register a dock type with factory function."""
-        options = {
-            "dock_title": dock_title or "Dock", 
-            "closable": closable,
-            "floating": floating,
-            "default_area": default_area
-        }
+    def register_dock(self, factory_func: Callable, dock_name: str = None,
+                    observables: List[Union[str, Type[Observable]]] = None,
+                    closable: bool = True) -> str:
+        """
+        Register a dock type with factory function.
+        
+        Args:
+            factory_func: Function that creates the dock content
+            dock_name: Display name for docks of this type
+            observables: List of Observable IDs or Observable classes
+            closable: Whether docks of this type can be closed
+            
+        Returns:
+            ID of the registered dock type
+        """
+        options = {"dock_name": dock_name or "Dock", "closable": closable}
         type_id = self.register_subcontainer_type(factory_func, observables, None, **options)
         return type_id
     
-    def add_dock(self, type_id: str, area: Optional[DockArea] = None, 
-                floating: Optional[bool] = None) -> str:
-        """Add a new dock of the registered type."""
+    def add_dock(self, type_id: str, floating: bool = False) -> str:
+        """
+        Add a new dock of the registered type.
+        
+        Args:
+            type_id: ID of the registered dock type
+            floating: Whether the dock should be initially floating
+            
+        Returns:
+            ID of the created dock subcontainer
+            
+        # TODO: Add more options for positioning and layout of docks
+        """
         # Check if we're in a command execution
         if get_command_manager().is_updating():
             # Direct dock addition during command execution
-            dock_options = {}
-            if area is not None:
-                dock_options["area"] = area
-            if floating is not None:
-                dock_options["floating"] = floating
-                
-            subcontainer_id = self.add_subcontainer(type_id, str(dock_options))
+            subcontainer_id = self.add_subcontainer(type_id, str(floating))
             if subcontainer_id:
                 # Emit signal for the new dock
                 self.dockAdded.emit(subcontainer_id)
             return subcontainer_id
         
         # Create a command for adding a dock
-        cmd = AddDockCommand(type_id, self.get_id(), area, floating)
+        cmd = AddDockCommand(type_id, self.get_id(), floating)
         cmd.set_trigger_widget(self.get_id())
         get_command_manager().execute(cmd)
         return cmd.component_id
     
     # MARK: - Subcontainer Implementation
     def create_subcontainer(self, type_id: str, position: str = None) -> Tuple[QWidget, str]:
-        """Create an empty dock subcontainer for the specified type."""
+        """
+        Create an empty dock subcontainer for the specified type.
+        
+        Args:
+            type_id: Type ID of the subcontainer
+            position: Position information (e.g., "True" for floating)
+            
+        Returns:
+            Tuple of (dock container widget, ID system location string)
+        """
         # Validate type exists
         type_info = self._widget_types.get(type_id)
         if not type_info:
             return None, None
             
-        # Get dock options from type_info or use defaults
-        options = type_info.get("options", {})
-        dock_title = options.get("dock_title", "Dock")
-        closable = options.get("closable", True)
-        default_floating = options.get("floating", False)
-        default_area = options.get("default_area", DockArea.RIGHT)
+        # Get dock name from options or use default
+        dock_name = type_info.get("options", {}).get("dock_name", "Dock")
+        closable = type_info.get("options", {}).get("closable", True)
         
-        # Parse position string if provided (may contain override options)
-        override_options = {}
-        if position and position.startswith('{') and position.endswith('}'):
-            try:
-                override_options = eval(position)
-            except Exception:
-                pass
+        # Parse floating state from position string if provided
+        floating = False
+        try:
+            if position is not None:
+                floating = position.lower() == "true"
+        except (ValueError, AttributeError):
+            pass
         
-        # Get actual settings with overrides applied
-        area = override_options.get("area", default_area)
-        floating = override_options.get("floating", default_floating)
+        # Create a new QDockWidget
+        dock_widget = QDockWidget(dock_name, self)
         
-        # Ensure area is a DockArea enum
-        if isinstance(area, DockArea):
-            qt_area = area.value
-        else:
-            try:
-                qt_area = int(area)
-            except (ValueError, TypeError):
-                qt_area = DockArea.RIGHT.value
+        # Create content widget for the dock
+        content_widget = QWidget(dock_widget)
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        dock_widget.setWidget(content_widget)
         
-        # Create the dock widget
-        dock = QDockWidget(dock_title, self)
-        dock.setObjectName(f"dock_{len(self._dock_position_to_id)}")
-        dock.setFeatures(QDockWidget.DockWidgetClosable | 
-                         QDockWidget.DockWidgetMovable | 
-                         QDockWidget.DockWidgetFloatable)
+        # Configure dock widget
+        dock_widget.setFloating(floating)
         
-        # Create content container
-        content_container = QWidget()
-        layout = QVBoxLayout(content_container)
-        layout.setContentsMargins(0, 0, 0, 0)
-        dock.setWidget(content_container)
+        features = QDockWidget.DockWidgetFeature.DockWidgetMovable | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+        if closable:
+            features |= QDockWidget.DockWidgetFeature.DockWidgetClosable
+        dock_widget.setFeatures(features)
         
-        # Add the dock to the main window
-        self.addDockWidget(qt_area, dock)
+        # Add the dock widget to the main window
+        # Default to right dock area if not specified
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock_widget)
+        dock_widget.show()  # Ensure dock is visible
         
-        # Set floating state if needed
-        if floating:
-            dock.setFloating(True)
+        # Connect close event
+        dock_widget.closeEvent = lambda event, dock=dock_widget: self._on_dock_close_requested(dock, event)
         
-        # Set closability
-        if not closable:
-            features = dock.features()
-            features &= ~QDockWidget.DockWidgetClosable
-            dock.setFeatures(features)
+        # Generate a unique location for this dock
+        dock_location = str(len(self._subcontainers))
         
-        # Connect close signal
-        dock.visibilityChanged.connect(lambda visible: self._on_dock_visibility_changed(dock, visible))
+        return content_widget, dock_location
+
+    def close_dock(self, subcontainer_id: str) -> bool:
+        """
+        Close and unregister a dock.
         
-        # Generate a unique location ID for the ID system
-        location_id = f"dock_{len(self._dock_position_to_id)}"
-        
-        return content_container, location_id
-    
-    def close_dock(self, dock_id: str) -> bool:
-        """Close a dock with the given ID."""
-        # Validate ID
-        if dock_id not in self._subcontainers:
+        Args:
+            subcontainer_id: ID of the subcontainer to close
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        # Validate subcontainer exists
+        content_widget = self.get_subcontainer(subcontainer_id)
+        if not content_widget:
             return False
             
-        # Get the dock widget
-        dock_container = self._subcontainers.get(dock_id)
-        if not dock_container:
-            return False
-            
-        # Find the QDockWidget parent
-        dock_widget = self._find_dock_widget_for_container(dock_container)
+        # Find the QDockWidget that contains this content
+        dock_widget = None
+        for dock in self.findChildren(QDockWidget):
+            if dock.widget() == content_widget:
+                dock_widget = dock
+                break
+                
         if not dock_widget:
             return False
-            
+        
+        # Emit signal before closing
+        self.dockClosed.emit(subcontainer_id)
+        
         # Close the subcontainer (will handle ID cleanup)
-        if not self.close_subcontainer(dock_id):
+        if not self.close_subcontainer(subcontainer_id):
             return False
         
-        # Emit signal before removing the dock
-        self.dockClosed.emit(dock_id)
-        
-        # Remove the dock from the main window
-        dock_widget.setParent(None)
+        # Close and delete the dock widget
+        dock_widget.close()
         dock_widget.deleteLater()
-        
-        # Update internal mappings
-        self._update_dock_mappings()
         
         return True
     
-    def _find_dock_widget_for_container(self, container: QWidget) -> Optional[QDockWidget]:
-        """Find the QDockWidget that contains the given container."""
-        # Try to find the dock widget in the parent hierarchy
-        parent = container.parent()
-        while parent:
-            if isinstance(parent, QDockWidget):
-                return parent
-            parent = parent.parent()
-        return None
-    
-    def _update_dock_mappings(self):
-        """Update all internal dock mappings after changes."""
-        # Find all QDockWidgets in this container
-        docks = self.findChildren(QDockWidget)
+    # MARK: - Dock State Tracking
+    def _update_dock_states(self):
+        """Update the internal tracking of dock states."""
+        self._dock_states.clear()
         
-        # Update mappings for each dock
-        for dock in docks:
-            # Get the content container (should be our registered widget)
-            container = dock.widget()
-            if not container:
-                continue
-                
-            # Find the container ID
-            container_id = self.id_registry.get_id(container)
-            if not container_id:
-                continue
-                
-            # Update data for this dock
-            self._dock_data[container_id] = {
-                "title": dock.windowTitle(),
-                "area": self.dockWidgetArea(dock),
-                "floating": dock.isFloating(),
-                "visible": dock.isVisible(),
-                "features": dock.features(),
-                "geometry": dock.geometry() if dock.isFloating() else None,
-                "object_name": dock.objectName()
-            }
+        # Track all dock widgets and their states
+        for dock in self.findChildren(QDockWidget):
+            content_widget = dock.widget()
+            if content_widget:
+                subcontainer_id = self.id_registry.get_id(content_widget)
+                if subcontainer_id:
+                    # Store floating state, area, and geometry
+                    area = self.dockWidgetArea(dock)
+                    floating = dock.isFloating()
+                    geometry = dock.geometry() if floating else None
+                    
+                    self._dock_states[subcontainer_id] = (floating, area, geometry)
     
-    # MARK: - Event Handlers
-    def _on_dock_visibility_changed(self, dock: QDockWidget, visible: bool):
-        """Handle dock visibility changes."""
-        # Skip if we're in a command execution
-        if get_command_manager().is_updating():
-            return
+    def get_dock_widget(self, subcontainer_id: str) -> Optional[QDockWidget]:
+        """
+        Get the QDockWidget for a subcontainer.
+        
+        Args:
+            subcontainer_id: ID of the subcontainer
             
-        # Skip if the dock is still in a dock area but temporarily hidden
-        # This can happen during drag operations
-        if not visible and not dock.isFloating() and self.dockWidgetArea(dock) != Qt.NoDockWidgetArea:
-            return
+        Returns:
+            QDockWidget or None if not found
+        """
+        content_widget = self.get_subcontainer(subcontainer_id)
+        if not content_widget:
+            return None
             
-        # Find the container widget
-        container = dock.widget()
-        if not container:
-            return
-            
-        # Get container ID
-        dock_id = self.id_registry.get_id(container)
-        if not dock_id:
-            return
-            
-        # If the dock is being hidden and it's a manual close
-        if not visible:
-            # Make sure it's actually a close event, not just a temporary state during drag
-            # We use a small delay to verify it's actually closing
-            # Create a one-shot timer to check if this is really a close
-            timer = QTimer(self)
-            timer.setSingleShot(True)
-            timer.timeout.connect(lambda: self._delayed_visibility_check(dock, dock_id))
-            timer.start(100)  # 100ms delay to confirm the close
-            return
+        # Find the QDockWidget that contains this content
+        for dock in self.findChildren(QDockWidget):
+            if dock.widget() == content_widget:
+                return dock
                 
-    def _delayed_visibility_check(self, dock: QDockWidget, dock_id: str):
-        """Check if a dock is actually closed after a short delay."""
-        # If the widget has been collected, just return
-        if dock.parent() is None:
-            return
-            
-        # If the dock is still not visible, treat it as a close request
-        if not dock.isVisible() and dock_id in self._subcontainers:
-            # Only handle if it's closable
-            features = dock.features()
-            if features & QDockWidget.DockWidgetClosable:
-                # Get the subcontainer type for recreation
-                subcontainer_type = self.get_subcontainer_type(dock_id)
-                if not subcontainer_type:
-                    return
-                
-                # Create a command to close the dock
-                cmd = CloseDockCommand(dock_id, subcontainer_type, self.get_id())
-                cmd.set_trigger_widget(self.get_id())
-                get_command_manager().execute(cmd)
+        return None
     
     # MARK: - Navigation
     def navigate_to_position(self, position: str) -> bool:
-        """Navigate to a specific dock by position."""
-        # Try to find the dock at this position
-        if position in self._dock_position_to_id:
-            dock_id = self._dock_position_to_id[position]
-            container = self._subcontainers.get(dock_id)
-            if container:
-                # Find the dock widget
-                dock = self._find_dock_widget_for_container(container)
-                if dock:
-                    # Make sure the dock is visible
-                    dock.show()
-                    dock.raise_()
-                    dock.setFocus()
-                    return True
-                
-        return False
+        """
+        Navigate to a specific dock by position.
+        
+        Args:
+            position: Dock position as string
+            
+        Returns:
+            True if navigation was successful
+        """
+        # Find dock by position
+        subcontainer_id = self.get_subcontainer_at_position(position)
+        if not subcontainer_id:
+            return False
+            
+        # Get the dock widget
+        dock_widget = self.get_dock_widget(subcontainer_id)
+        if not dock_widget:
+            return False
+            
+        # Activate the dock
+        dock_widget.raise_()
+        dock_widget.setFocus()
+        
+        return True
+    
+    # MARK: - Event Handlers
+    def _on_dock_close_requested(self, dock_widget: QDockWidget, event):
+        """Handle dock close request from UI."""
+        # Find the content widget
+        content_widget = dock_widget.widget()
+        if not content_widget:
+            # Let the event pass through
+            event.accept()
+            return
+            
+        # Get the subcontainer ID
+        id_registry = self.id_registry
+        subcontainer_id = id_registry.get_id(content_widget)
+        if not subcontainer_id:
+            # Let the event pass through
+            event.accept()
+            return
+            
+        # Get subcontainer type
+        subcontainer_type = self.get_subcontainer_type(subcontainer_id)
+        
+        # Check if we're in a command execution
+        if get_command_manager().is_updating():
+            self.close_dock(subcontainer_id)
+            event.accept()
+            return
+        
+        # Create a command to close the dock
+        cmd = CloseDockCommand(subcontainer_id, subcontainer_type, self.get_id())
+        cmd.set_trigger_widget(self.get_id())
+        get_command_manager().execute(cmd)
+        
+        # Prevent the default close behavior
+        event.ignore()
+    
+    # MARK: - Custom Event Handling
+    def closeEvent(self, event):
+        """Handle widget close event."""
+        # Clean up all subcontainers
+        for subcontainer_id in list(self._subcontainers):
+            self.close_subcontainer(subcontainer_id)
+            
+        # Unregister from ID system
+        self.unregister_widget()
+        
+        # Process the event
+        super().closeEvent(event)
     
     # MARK: - Serialization
     def get_serialization(self) -> Dict:
-        """Get serialized representation of this dock widget container."""
-        # Update mappings to ensure we have the latest state
-        self._update_dock_mappings()
+        """
+        Get serialized representation of this dock widget container.
         
-        # Get base serialization
+        Returns:
+            Dict containing serialized dock widget container state
+        """
+        # Update dock states before serialization
+        self._update_dock_states()
+        
         result = super().get_serialization()
         
         # Add dock container specific state
         result.update({
-            "dock_data": self._dock_data.copy()
+            'dock_states': {
+                subcontainer_id: {
+                    'floating': state[0],
+                    'area': state[1],
+                    'geometry': {
+                        'x': state[2].x() if state[2] else 0,
+                        'y': state[2].y() if state[2] else 0,
+                        'width': state[2].width() if state[2] else 0,
+                        'height': state[2].height() if state[2] else 0
+                    } if state[2] else None
+                }
+                for subcontainer_id, state in self._dock_states.items()
+            }
         })
         
         return result
     
-    def deserialize(self, serialized_data: Dict) -> bool:
-        """Deserialize and restore dock widget container state."""
-        # First restore base container state
-        if not super().deserialize(serialized_data):
-            return False
+    def serialize_subcontainer(self, subcontainer_id: str) -> Dict:
+        """
+        Serialize a subcontainer with its dock state information.
+        
+        Args:
+            subcontainer_id: ID of the subcontainer to serialize
             
-        # Restore dock data if available
-        if "dock_data" in serialized_data and isinstance(serialized_data["dock_data"], dict):
-            # Store dock data for later use
-            self._dock_data = serialized_data["dock_data"].copy()
+        Returns:
+            Dict containing serialized subcontainer state
+        """
+        # First update dock states
+        self._update_dock_states()
+        
+        # Get basic subcontainer serialization
+        serialized = super().serialize_subcontainer(subcontainer_id)
+        if not serialized:
+            return None
             
-            # Apply dock settings to each dock
-            for dock_id, data in self._dock_data.items():
-                # Get the dock container
-                container = self._subcontainers.get(dock_id)
-                if not container:
-                    continue
-                    
-                # Find the dock widget
-                dock = self._find_dock_widget_for_container(container)
-                if not dock:
-                    continue
-                    
-                # Restore dock settings
-                if "title" in data:
-                    dock.setWindowTitle(data["title"])
-                    
-                if "features" in data:
-                    dock.setFeatures(data["features"])
-                    
-                if "area" in data:
-                    # Move to the correct area before setting floating
-                    self.addDockWidget(data["area"], dock)
-                    
-                if "floating" in data and data["floating"]:
-                    dock.setFloating(True)
-                    
-                    # Also restore geometry if available
-                    if "geometry" in data and data["geometry"]:
-                        dock.setGeometry(data["geometry"])
-                
-                if "visible" in data:
-                    dock.setVisible(data["visible"])
-                
-        return True
+        # Add dock-specific state information
+        if subcontainer_id in self._dock_states:
+            state = self._dock_states[subcontainer_id]
+            serialized['dock_state'] = {
+                'floating': state[0],
+                'area': state[1],
+                'geometry': {
+                    'x': state[2].x() if state[2] else 0,
+                    'y': state[2].y() if state[2] else 0,
+                    'width': state[2].width() if state[2] else 0,
+                    'height': state[2].height() if state[2] else 0
+                } if state[2] else None
+            }
+            
+        return serialized
+    
+    def deserialize_subcontainer(self, type_id: str, position: str, 
+                                serialized_subcontainer: Dict,
+                                existing_subcontainer_id: Optional[str] = None) -> str:
+        """
+        Deserialize and restore a subcontainer with its dock state.
+        
+        Args:
+            type_id: Type ID of the subcontainer
+            position: Position information
+            serialized_subcontainer: Dict containing serialized subcontainer state
+            existing_subcontainer_id: ID of existing subcontainer to update (optional)
+            
+        Returns:
+            ID of the subcontainer
+        """
+        # Get dock state for proper restoration
+        dock_state = serialized_subcontainer.get('dock_state', {})
+        floating = dock_state.get('floating', False)
+        
+        # First deserialize the basic subcontainer
+        subcontainer_id = super().deserialize_subcontainer(
+            type_id, 
+            str(floating),  # Pass floating state as position
+            serialized_subcontainer,
+            existing_subcontainer_id
+        )
+        
+        if not subcontainer_id:
+            return None
+            
+        # Apply dock-specific state
+        dock_widget = self.get_dock_widget(subcontainer_id)
+        if dock_widget and dock_state:
+            # Apply dock area
+            area = dock_state.get('area', Qt.DockWidgetArea.RightDockWidgetArea)
+            if not dock_widget.isFloating():
+                # First remove it from current area
+                self.removeDockWidget(dock_widget)
+                # Then add to the correct area
+                self.addDockWidget(area, dock_widget)
+            
+            # Apply floating state
+            dock_widget.setFloating(floating)
+            
+            # Apply geometry if floating
+            if floating and 'geometry' in dock_state and dock_state['geometry']:
+                geometry = dock_state['geometry']
+                dock_widget.setGeometry(
+                    geometry.get('x', 0),
+                    geometry.get('y', 0),
+                    geometry.get('width', 200),
+                    geometry.get('height', 200)
+                )
+            
+            # Make the dock visible
+            dock_widget.show()
+            
+        return subcontainer_id
 
 
-# MARK: - Command Classes
+# MARK: - Command Classes    
 class AddDockCommand(SerializationCommand):
     """Command for adding a new dock with serialization support."""
     
-    def __init__(self, type_id: str, container_id: str, 
-                area: Optional[DockArea] = None, 
-                floating: Optional[bool] = None):
-        """Initialize with type and container information."""
+    def __init__(self, type_id: str, container_id: str, floating: bool = False):
+        """
+        Initialize with type and container information.
+        
+        Args:
+            type_id: Type ID of the dock to add
+            container_id: ID of the container to add the dock to
+            floating: Whether the dock should be floating
+        """
         super().__init__()
         self.type_id = type_id
         self.container_id = container_id
         self.component_id = None
-        self.position = None
-        
-        # Store override options
-        self.override_options = {}
-        if area is not None:
-            self.override_options["area"] = area
-        if floating is not None:
-            self.override_options["floating"] = floating
+        self.floating = floating
         
     def execute(self):
         """Execute to add the dock."""
         container = get_id_registry().get_widget(self.container_id)
         if container:
-            # Convert options to position string
-            position = str(self.override_options) if self.override_options else None
-            
-            # Add the dock
-            self.component_id = container.add_subcontainer(self.type_id, position)
-            
-            # Store position for later use
-            self.position = container.get_subcontainer_position(self.component_id)
+            self.component_id = container.add_subcontainer(self.type_id, str(self.floating))
 
     def undo(self):
         """Undo saves serialization and closes dock."""
@@ -429,7 +470,7 @@ class AddDockCommand(SerializationCommand):
                 # Restore from serialization
                 container.deserialize_subcontainer(
                     self.type_id,
-                    self.position if self.position else "0",
+                    str(self.floating),
                     self.serialized_state
                 )
         else:
@@ -440,23 +481,23 @@ class CloseDockCommand(SerializationCommand):
     """Command for closing a dock with serialization support."""
     
     def __init__(self, component_id: str, type_id: str, container_id: str):
-        """Initialize with dock information."""
+        """
+        Initialize with dock information.
+        
+        Args:
+            component_id: ID of the dock component
+            type_id: Type ID of the dock 
+            container_id: ID of the container
+        """
         super().__init__()
         self.component_id = component_id
         self.type_id = type_id
         self.container_id = container_id
-        self.position = None
         
     def execute(self):
         """Execute captures state and closes dock."""
         container = get_id_registry().get_widget(self.container_id)
         if container and self.component_id:
-            # Save position
-            position = container.get_subcontainer_position(self.component_id)
-            if position is not None:
-                # Ensure position is a string to prevent type conversion errors
-                self.position = str(position)
-            
             # Save serialization before closing
             self.serialized_state = container.serialize_subcontainer(self.component_id)
             
@@ -468,9 +509,13 @@ class CloseDockCommand(SerializationCommand):
         if self.serialized_state:
             container = get_id_registry().get_widget(self.container_id)
             if container:
+                # Get the floating state for correct restoration
+                dock_state = self.serialized_state.get('dock_state', {})
+                floating = dock_state.get('floating', False)
+                
                 # Restore from serialization
                 container.deserialize_subcontainer(
                     self.type_id,
-                    self.position if self.position is not None else "0",
+                    str(floating),
                     self.serialized_state
                 )

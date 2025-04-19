@@ -1,7 +1,7 @@
 """
-Demo for the dock widget system with command-enabled functionality.
+Demo for the command-aware dock widget container system.
 
-This demo showcases the dock registration and instantiation pattern with
+This demo showcases the registration and instantiation pattern with
 full undo/redo support for dock operations, using both existing observables
 and dynamic observable creation. Also includes command count tracking.
 """
@@ -10,9 +10,11 @@ import os
 from typing import Type, Union, List
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, 
-    QHBoxLayout, QPushButton, QLabel, QStatusBar, QMainWindow, QSlider
+    QHBoxLayout, QPushButton, QLabel, QStatusBar,
+    QToolBar
 )
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 
 # Add project root to path
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -22,37 +24,35 @@ if project_root not in sys.path:
 # Import command system components
 from command_system.core.observable import Observable, ObservableProperty
 from command_system.core.command_manager import get_command_manager
-from command_system.pyside6_widgets import CommandLineEdit, CommandTextEdit
-from command_system.pyside6_widgets.containers.dock_widget import CommandDockWidget, DockArea
+from command_system.pyside6_widgets.line_edit import CommandLineEdit
+from command_system.pyside6_widgets.text_edit import CommandTextEdit
+from command_system.pyside6_widgets.containers.dock_widget import CommandDockWidget
 
 
-class Person(Observable):
-    """Simple person model with observable properties."""
-    name = ObservableProperty("John Doe")
-    email = ObservableProperty("john@example.com")
-    notes = ObservableProperty("Additional notes about this person")
+class Task(Observable):
+    """Simple task model with observable properties."""
+    title = ObservableProperty("New Task")
+    description = ObservableProperty("Task description goes here")
+    priority = ObservableProperty("Medium")
 
 
-class Project(Observable):
-    """Project model with observable properties."""
-    title = ObservableProperty("New Project")
-    description = ObservableProperty("Project description")
-    priority = ObservableProperty(5)  # 1-10 scale
-
-
-class DockWidgetDemo(QMainWindow):
-    """Demo of the dock widget system with registration pattern."""
+class DocksDemo(CommandDockWidget):
+    """
+    Demo of the dock container system with registration pattern.
     
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Dock Widget Demo")
-        self.resize(1000, 700)
+    This demo inherits directly from CommandDockWidget to ensure proper
+    dock management, as CommandDockWidget extends QMainWindow.
+    """
+    
+    def __init__(self, parent=None):
+        # Initialize as CommandDockWidget (which is a QMainWindow)
+        super().__init__(parent)
         
-        # Create shared models
-        self.person = Person()
-        self.project = Project()
+        self.setWindowTitle("Docks Demo")
+        self.resize(800, 600)
         
-        # Get command manager
+        # Create shared model
+        self.task = Task()
         self.cmd_manager = get_command_manager()
         self.cmd_manager._is_initializing = True
         
@@ -62,8 +62,8 @@ class DockWidgetDemo(QMainWindow):
         # Register dock types
         self.register_dock_types()
         
-        # Add initial docks
-        self.dock_widget.add_dock(self.info_dock_id)
+        # Add initial info dock
+        self.add_dock(self.info_dock_id)
         
         # Set up command tracking
         self.cmd_manager.add_after_execute_callback("docks_demo", self.update_command_count)
@@ -76,71 +76,89 @@ class DockWidgetDemo(QMainWindow):
     
     def setup_ui(self):
         """Set up the user interface."""
-        # Central widget and layout
-        central = QWidget()
-        self.setCentralWidget(central)
-        layout = QVBoxLayout(central)
+        # Create central widget with welcome content
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
+        central_layout = QVBoxLayout(self.central_widget)
         
-        # Create dock widget container
-        self.dock_widget = CommandDockWidget(self)
-        layout.addWidget(self.dock_widget)
+        # Add welcome content
+        welcome_label = QLabel(
+            "<h1>Welcome to the Dock Container Demo</h1>"
+            "<p>This demo showcases the command-aware dock widget system with:</p>"
+            "<ul>"
+            "<li>Observable registration and instantiation</li>"
+            "<li>Both shared and per-dock observable instances</li>"
+            "<li>Full undo/redo support for all operations</li>"
+            "<li>Selective dock closability</li>"
+            "<li>Floating dock support</li>"
+            "<li>Command history tracking</li>"
+            "</ul>"
+            "<p>Use the buttons or toolbar to add different types of docks.</p>"
+        )
+        welcome_label.setTextFormat(Qt.TextFormat.RichText)
+        welcome_label.setWordWrap(True)
+        central_layout.addWidget(welcome_label)
         
-        # Create buttons for adding docks
-        button_layout = QHBoxLayout()
-        layout.addLayout(button_layout)
+        # Create toolbar
+        toolbar = QToolBar("Dock Controls")
+        self.addToolBar(toolbar)
         
-        # Add buttons for different types of docks
-        person_dock_btn = QPushButton("Add Person Dock")
-        person_dock_btn.clicked.connect(self.add_person_dock)
-        button_layout.addWidget(person_dock_btn)
+        # Add dock actions
+        shared_action = QAction("Add Shared Model Dock", self)
+        shared_action.triggered.connect(self.add_shared_model_dock)
+        toolbar.addAction(shared_action)
         
-        project_dock_btn = QPushButton("Add Project Dock")
-        project_dock_btn.clicked.connect(self.add_project_dock)
-        button_layout.addWidget(project_dock_btn)
+        new_action = QAction("Add New Model Dock", self)
+        new_action.triggered.connect(self.add_new_model_dock)
+        toolbar.addAction(new_action)
         
-        new_person_dock_btn = QPushButton("Add New Person Dock")
-        new_person_dock_btn.clicked.connect(self.add_new_person_dock)
-        button_layout.addWidget(new_person_dock_btn)
+        floating_action = QAction("Add Floating Dock", self)
+        floating_action.triggered.connect(self.add_floating_dock)
+        toolbar.addAction(floating_action)
         
-        floating_dock_btn = QPushButton("Add Floating Dock")
-        floating_dock_btn.clicked.connect(self.add_floating_dock)
-        button_layout.addWidget(floating_dock_btn)
+        non_closable_action = QAction("Add Non-Closable Dock", self)
+        non_closable_action.triggered.connect(self.add_non_closable_dock)
+        toolbar.addAction(non_closable_action)
         
-        # Create buttons for specific areas
-        area_layout = QHBoxLayout()
-        layout.addLayout(area_layout)
+        toolbar.addSeparator()
         
-        left_dock_btn = QPushButton("Add Left Dock")
-        left_dock_btn.clicked.connect(self.add_left_dock)
-        area_layout.addWidget(left_dock_btn)
+        # Add undo/redo actions
+        undo_action = QAction("Undo", self)
+        undo_action.triggered.connect(self.cmd_manager.undo)
+        toolbar.addAction(undo_action)
         
-        right_dock_btn = QPushButton("Add Right Dock")
-        right_dock_btn.clicked.connect(self.add_right_dock)
-        area_layout.addWidget(right_dock_btn)
+        redo_action = QAction("Redo", self)
+        redo_action.triggered.connect(self.cmd_manager.redo)
+        toolbar.addAction(redo_action)
         
-        top_dock_btn = QPushButton("Add Top Dock")
-        top_dock_btn.clicked.connect(self.add_top_dock)
-        area_layout.addWidget(top_dock_btn)
+        # Create control panel
+        control_panel = QWidget()
+        control_layout = QHBoxLayout(control_panel)
+        control_layout.setContentsMargins(5, 5, 5, 5)
         
-        bottom_dock_btn = QPushButton("Add Bottom Dock")
-        bottom_dock_btn.clicked.connect(self.add_bottom_dock)
-        area_layout.addWidget(bottom_dock_btn)
+        # Create dock buttons
+        shared_btn = QPushButton("Add Shared Dock")
+        shared_btn.clicked.connect(self.add_shared_model_dock)
+        control_layout.addWidget(shared_btn)
         
-        # Create undo/redo buttons
-        undo_redo_layout = QHBoxLayout()
-        layout.addLayout(undo_redo_layout)
+        new_btn = QPushButton("Add New Dock")
+        new_btn.clicked.connect(self.add_new_model_dock)
+        control_layout.addWidget(new_btn)
         
-        undo_btn = QPushButton("Undo")
-        undo_btn.clicked.connect(self.cmd_manager.undo)
-        undo_redo_layout.addWidget(undo_btn)
+        floating_btn = QPushButton("Add Floating Dock")
+        floating_btn.clicked.connect(self.add_floating_dock)
+        control_layout.addWidget(floating_btn)
         
-        redo_btn = QPushButton("Redo")
-        redo_btn.clicked.connect(self.cmd_manager.redo)
-        undo_redo_layout.addWidget(redo_btn)
+        non_closable_btn = QPushButton("Add Non-Closable Dock")
+        non_closable_btn.clicked.connect(self.add_non_closable_dock)
+        control_layout.addWidget(non_closable_btn)
         
         # Create command count label
         self.count_label = QLabel("Commands: 0")
-        undo_redo_layout.addWidget(self.count_label)
+        control_layout.addWidget(self.count_label)
+        
+        # Add control panel to central widget
+        central_layout.addWidget(control_panel)
         
         # Create status bar
         self.statusBar = QStatusBar()
@@ -149,236 +167,129 @@ class DockWidgetDemo(QMainWindow):
     
     def register_dock_types(self):
         """Register all dock types."""
-        # Register info dock (no observables needed)
-        self.info_dock_id = self.dock_widget.register_dock(
+        # Register information dock (no observables needed)
+        self.info_dock_id = self.register_dock(
             self.create_info_dock,
-            dock_title="Information",
+            dock_name="Information",
             observables=[],
-            closable=False,
-            default_area=DockArea.TOP
+            closable=False
         )
         
-        # Register person dock with shared model
-        self.person_dock_id = self.dock_widget.register_dock(
-            self.create_person_dock,
-            dock_title="Person Details",
-            observables=[self.person.get_id()],
-            closable=True,
-            default_area=DockArea.LEFT
+        # Register dock that uses an existing observable (shared model)
+        self.shared_model_dock_id = self.register_dock(
+            self.create_task_dock,
+            dock_name="Shared Task",
+            observables=[self.task.get_id()],  # Pass the ID of existing observable
+            closable=True
         )
         
-        # Register project dock with shared model
-        self.project_dock_id = self.dock_widget.register_dock(
-            self.create_project_dock,
-            dock_title="Project Details",
-            observables=[self.project.get_id()],
-            closable=True,
-            default_area=DockArea.RIGHT
+        # Register dock that creates a new observable instance each time
+        self.new_model_dock_id = self.register_dock(
+            self.create_task_dock,
+            dock_name="New Task",
+            observables=[Task],  # Pass the Task class to create new instances
+            closable=True
         )
         
-        # Register new person dock that creates a new model instance
-        self.new_person_dock_id = self.dock_widget.register_dock(
-            self.create_person_dock,
-            dock_title="New Person",
-            observables=[Person],  # Pass the Person class to create new instances
-            closable=True,
-            default_area=DockArea.BOTTOM
-        )
-        
-        # Register floating dock with unique content
-        self.floating_dock_id = self.dock_widget.register_dock(
-            self.create_floating_dock,
-            dock_title="Floating Dock",
-            observables=[],
-            closable=True,
-            floating=True,
-            default_area=DockArea.RIGHT
+        # Register non-closable dock with shared model
+        self.non_closable_dock_id = self.register_dock(
+            self.create_task_dock,
+            dock_name="Fixed Task",
+            observables=[self.task.get_id()],
+            closable=False
         )
     
     def create_info_dock(self):
-        """Create info dock content."""
+        """Create information dock content."""
         widget = QWidget()
         layout = QVBoxLayout(widget)
         
-        label = QLabel(
-            "Dock Widget System Demo\n\n"
-            "This demo showcases the dock widget system with:\n"
-            "• Dock registration and instantiation\n"
-            "• Both shared and per-dock observable instances\n"
-            "• Full undo/redo support for all operations\n"
-            "• Docks at different positions and areas\n"
-            "• Floating and non-closable docks\n"
-            "• Command tracking for all actions\n\n"
-            "Try adding different docks, moving them around, and using undo/redo."
-        )
-        label.setWordWrap(True)
-        layout.addWidget(label)
-        
         info_label = QLabel(
-            "The dock system automatically tracks:\n"
-            "- Dock positions and areas\n"
-            "- Floating state changes\n"
-            "- Dock visibility\n"
-            "- Content changes within docks\n\n"
-            "All changes are captured for undo/redo with a 500ms delay after position changes settle."
+            "<h3>About the docks:</h3>"
+            "<ul>"
+            "<li><b>Shared Task</b>: Uses a single shared observable across all docks</li>"
+            "<li><b>New Task</b>: Creates a new observable instance for each dock</li>"
+            "<li><b>Floating Dock</b>: Opens initially as a floating window</li>"
+            "<li><b>Fixed Task</b>: Cannot be closed with the close button</li>"
+            "</ul>"
+            "<p>The command count at the bottom shows the number of commands in the history.</p>"
+            "<p>Try undoing and redoing dock operations!</p>"
         )
+        info_label.setTextFormat(Qt.TextFormat.RichText)
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
         
         return widget
     
-    def create_person_dock(self, model):
+    def create_task_dock(self, task):
         """
-        Create content for a person dock.
+        Create content for a dock with a task model.
         
         Args:
-            model: Observable instance (either shared or newly created)
+            task: Observable instance (either shared or newly created)
         """
         widget = QWidget()
         layout = QVBoxLayout(widget)
+        layout.setContentsMargins(10, 10, 10, 10)
         
         # Show model ID to demonstrate shared vs new instances
-        id_label = QLabel(f"Model ID: {model.get_id()}")
+        id_label = QLabel(f"Model ID: {task.get_id()}")
         layout.addWidget(id_label)
         
         # Add editable fields bound to the model
-        name_label = QLabel("Name:")
-        layout.addWidget(name_label)
-        
-        name_edit = CommandLineEdit()
-        name_edit.bind_to_text_property(model.get_id(), "name")
-        layout.addWidget(name_edit)
-        
-        email_label = QLabel("Email:")
-        layout.addWidget(email_label)
-        
-        email_edit = CommandLineEdit()
-        email_edit.bind_to_text_property(model.get_id(), "email")
-        layout.addWidget(email_edit)
-        
-        notes_label = QLabel("Notes:")
-        layout.addWidget(notes_label)
-        
-        notes_edit = CommandTextEdit()
-        notes_edit.bind_to_plain_text_property(model.get_id(), "notes")
-        notes_edit.setPlainText(model.notes)
-        layout.addWidget(notes_edit)
-        
-        # Info about this dock
-        if model.get_id() == self.person.get_id():
-            info = QLabel("This dock uses the shared Person model. Changes here affect all Person docks.")
-        else:
-            info = QLabel("This dock uses its own Person model instance. Changes here only affect this dock.")
-        info.setWordWrap(True)
-        layout.addWidget(info)
-        
-        return widget
-    
-    def create_project_dock(self, model):
-        """
-        Create content for a project dock.
-        
-        Args:
-            model: Observable instance
-        """
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        # Show model ID
-        id_label = QLabel(f"Project Model ID: {model.get_id()}")
-        layout.addWidget(id_label)
-        
-        # Add editable fields bound to the model
-        title_label = QLabel("Project Title:")
+        title_label = QLabel("Title:")
         layout.addWidget(title_label)
         
         title_edit = CommandLineEdit()
-        title_edit.bind_to_text_property(model.get_id(), "title")
+        title_edit.bind_to_text_property(task.get_id(), "title")
         layout.addWidget(title_edit)
         
-        desc_label = QLabel("Description:")
-        layout.addWidget(desc_label)
+        description_label = QLabel("Description:")
+        layout.addWidget(description_label)
         
-        desc_edit = CommandTextEdit()
-        desc_edit.setPlainText(model.description)
-        desc_edit.bind_to_plain_text_property(model.get_id(), "description")
-        layout.addWidget(desc_edit)
+        description_edit = CommandTextEdit()
+        description_edit.bind_to_plain_text_property(task.get_id(), "description")
+        layout.addWidget(description_edit)
         
-        priority_label = QLabel(f"Priority: {model.priority}")
+        priority_label = QLabel("Priority:")
         layout.addWidget(priority_label)
         
-        priority_slider = QSlider(Qt.Horizontal)
-        priority_slider.setMinimum(1)
-        priority_slider.setMaximum(10)
-        priority_slider.setValue(model.priority)
-        layout.addWidget(priority_slider)
+        priority_edit = CommandLineEdit()
+        priority_edit.bind_to_text_property(task.get_id(), "priority")
+        layout.addWidget(priority_edit)
         
-        return widget
-    
-    def create_floating_dock(self):
-        """Create content for a floating dock."""
-        widget = QWidget()
-        layout = QVBoxLayout(widget)
-        
-        label = QLabel("This is a floating dock that can be moved freely around the screen.")
-        label.setWordWrap(True)
-        layout.addWidget(label)
-        
-        info = QLabel(
-            "The dock system tracks floating state changes and will create commands when:\n"
-            "• A dock is moved between different areas\n"
-            "• A dock is changed between docked and floating states\n"
-            "• A dock's position or size is changed\n\n"
-            "Commands are created 500ms after the changes settle to avoid creating too many commands."
-        )
+        # Info about this dock
+        if task.get_id() == self.task.get_id():
+            info = QLabel("This dock uses the shared model. Changes here affect all shared model docks.")
+        else:
+            info = QLabel("This dock uses its own model instance. Changes here only affect this dock.")
         info.setWordWrap(True)
         layout.addWidget(info)
         
-        note = QLabel("Try moving this dock around and then using undo/redo to see how position is restored.")
-        note.setWordWrap(True)
-        layout.addWidget(note)
+        # Add spacer to bottom to make layout nicer
+        layout.addStretch()
         
         return widget
     
-    def add_person_dock(self):
-        """Add a person dock with the shared model."""
-        dock_id = self.dock_widget.add_dock(self.person_dock_id)
-        self.statusBar.showMessage(f"Added person dock (ID: {dock_id})")
+    def add_shared_model_dock(self):
+        """Add a dock that uses the shared model."""
+        dock_id = self.add_dock(self.shared_model_dock_id)
+        self.statusBar.showMessage(f"Added shared model dock (ID: {dock_id})")
     
-    def add_project_dock(self):
-        """Add a project dock with the shared model."""
-        dock_id = self.dock_widget.add_dock(self.project_dock_id)
-        self.statusBar.showMessage(f"Added project dock (ID: {dock_id})")
-    
-    def add_new_person_dock(self):
-        """Add a dock with a new Person model instance."""
-        dock_id = self.dock_widget.add_dock(self.new_person_dock_id)
-        self.statusBar.showMessage(f"Added new person dock (ID: {dock_id})")
+    def add_new_model_dock(self):
+        """Add a dock with a new model instance."""
+        dock_id = self.add_dock(self.new_model_dock_id)
+        self.statusBar.showMessage(f"Added new model dock (ID: {dock_id})")
     
     def add_floating_dock(self):
-        """Add a floating dock."""
-        dock_id = self.dock_widget.add_dock(self.floating_dock_id)
+        """Add a floating dock with a shared model."""
+        dock_id = self.add_dock(self.shared_model_dock_id, floating=True)
         self.statusBar.showMessage(f"Added floating dock (ID: {dock_id})")
     
-    def add_left_dock(self):
-        """Add a person dock to the left area."""
-        dock_id = self.dock_widget.add_dock(self.person_dock_id, area=DockArea.LEFT)
-        self.statusBar.showMessage(f"Added left dock (ID: {dock_id})")
-    
-    def add_right_dock(self):
-        """Add a project dock to the right area."""
-        dock_id = self.dock_widget.add_dock(self.project_dock_id, area=DockArea.RIGHT)
-        self.statusBar.showMessage(f"Added right dock (ID: {dock_id})")
-    
-    def add_top_dock(self):
-        """Add a person dock to the top area."""
-        dock_id = self.dock_widget.add_dock(self.person_dock_id, area=DockArea.TOP)
-        self.statusBar.showMessage(f"Added top dock (ID: {dock_id})")
-    
-    def add_bottom_dock(self):
-        """Add a project dock to the bottom area."""
-        dock_id = self.dock_widget.add_dock(self.project_dock_id, area=DockArea.BOTTOM)
-        self.statusBar.showMessage(f"Added bottom dock (ID: {dock_id})")
+    def add_non_closable_dock(self):
+        """Add a non-closable dock with the shared model."""
+        dock_id = self.add_dock(self.non_closable_dock_id)
+        self.statusBar.showMessage(f"Added non-closable dock (ID: {dock_id})")
     
     def update_command_count(self, *args):
         """Update command count display in the UI."""
@@ -403,6 +314,6 @@ class DockWidgetDemo(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    demo = DockWidgetDemo()
+    demo = DocksDemo()
     demo.show()
     sys.exit(app.exec())
