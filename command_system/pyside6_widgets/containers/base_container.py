@@ -357,7 +357,6 @@ class BaseCommandContainer(BaseCommandWidget):
         # First check if this container is inside another container
         id_registry = self.id_registry
         container_id = id_registry.get_container_id_from_widget_id(self.get_id())
-        
         if container_id and container_id != "0":
             # If we have a parent container, ask it to navigate to us first
             parent_container = id_registry.get_widget(container_id)
@@ -377,8 +376,8 @@ class BaseCommandContainer(BaseCommandWidget):
         
         # Set focus on the target widget
         target_widget = id_registry.get_widget(target_widget_id)
-        if target_widget:
-            target_widget.setFocus()
+        if target_widget and hasattr(target_widget, 'set_focus'):
+            target_widget.set_focus()
         
         return True
 

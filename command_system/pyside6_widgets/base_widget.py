@@ -98,6 +98,13 @@ class BaseCommandWidget:
         # Always get the most up-to-date ID from the registry
         return self.id_registry.get_id(self)
     
+    def set_focus(self):
+        """
+        Set focus to this widget.
+        """
+        if hasattr(self, 'setFocus'):
+            self.setFocus()
+    
     # MARK: - Command Trigger Configuration
     def set_command_trigger_mode(self, mode: CommandTriggerMode, delay_ms: int = 300):
         """

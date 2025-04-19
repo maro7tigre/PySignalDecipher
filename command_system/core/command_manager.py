@@ -300,7 +300,7 @@ class CommandManager:
         container_id = id_registry.get_container_id_from_widget_id(trigger_widget_id)
         if not container_id or container_id == "0":
             trigger_widget = id_registry.get_widget(trigger_widget_id)
-            trigger_widget.setFocus()
+            trigger_widget.set_focus()
             return True
             
         container = id_registry.get_widget(container_id)
@@ -311,7 +311,7 @@ class CommandManager:
             parent_container_id = id_registry.get_container_id_from_widget_id(container_id)
             parent_container = id_registry.get_widget(parent_container_id) if parent_container_id else None
             if parent_container and hasattr(parent_container, 'navigate_to_widget'):
-                parent_container.navigate_to_widget(container_id)        
+                parent_container.navigate_to_widget(trigger_widget_id)        
                 
         
         return True
