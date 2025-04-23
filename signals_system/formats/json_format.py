@@ -2,32 +2,42 @@
 JSON Format Implementation
 
 This module implements the JSON format handler for signal data.
+It provides a clean, human-readable format with good metadata support.
 """
 
 import json
-import os
 import numpy as np
-from typing import Dict, Any, List, Optional, BinaryIO, Tuple
-import logging
-from datetime import datetime
+from typing import Dict, Any, List, Optional, Union, BinaryIO
 import io
+import os
+from datetime import datetime
+from pathlib import Path
 
 from .base import (
-    SignalFormat, 
-    FormatCapability, 
-    ReadMode, 
+    SignalFormat,
+    SignalData,
+    TimeRange,
+    FormatCapability,
     SignalFormatError
 )
-
-logger = logging.getLogger(__name__)
 
 
 class JsonFormat(SignalFormat):
     """
     JSON format handler for signal data.
     
-    This format stores signal data as JSON with a simple structure containing
-    metadata and the signal data itself.
+    This format stores signal data as structured JSON with the following format:
+    {
+        "metadata": {
+            "format_version": "1.0",
+            "created_at": "2023-01-01T00:00:00.000Z",
+            ... (other metadata)
+        },
+        "data": [1.0, 2.0, 3.0, ...],  # For single-channel
+        # OR for multi-channel:
+        "data": [[1.0, 2.0], [1.1, 2.1], ...],
+        "timestamps": [0.0, 0.001, 0.002, ...]
+    }
     """
     
     @property
@@ -42,236 +52,249 @@ class JsonFormat(SignalFormat):
     def capabilities(self) -> List[FormatCapability]:
         return [
             FormatCapability.METADATA,
-            FormatCapability.STREAMING,
-            FormatCapability.MULTI_CHANNEL
+            FormatCapability.STREAMING
         ]
     
-    def serialize(self, 
-                 data: np.ndarray, 
-                 timestamps: np.ndarray = None, 
-                 metadata: Dict[str, Any] = None) -> bytes:
-        """Serialize signal data to JSON bytes."""
+    def read(self, source: Union[str, Path, BinaryIO], time_range: Optional[TimeRange] = None) -> SignalData:
+        """
+        Read signal data from a JSON source.
+        
+        Args:
+            source: File path or file-like object
+            time_range: Optional time range to filter by
+            
+        Returns:
+            SignalData object
+            
+        Raises:
+            SignalFormatError: If reading fails
+        """
         try:
-            # Create data structure with sensible defaults
+            # Handle different source types
+            if isinstance(source, (str, Path)):
+                with open(source, 'rb') as f:
+                    content = f.read()
+            else:
+                # Assume it's a file-like object
+                pos = source.tell()
+                source.seek(0)
+                content = source.read()
+                source.seek(pos)  # Restore position
+            
+            # Parse the JSON
+            try:
+                json_data = json.loads(content.decode('utf-8'))
+            except json.JSONDecodeError as e:
+                raise SignalFormatError(f"Invalid JSON: {str(e)}")
+            
+            # Extract components
+            if "data" not in json_data:
+                raise SignalFormatError("Missing 'data' field in JSON")
+            
+            # Convert to numpy arrays
+            values = np.array(json_data["data"])
+            timestamps = np.array(json_data.get("timestamps")) if "timestamps" in json_data else None
+            metadata = json_data.get("metadata", {})
+            
+            # Create the signal data
+            signal_data = SignalData(
+                values=values,
+                timestamps=timestamps,
+                metadata=metadata
+            )
+            
+            # Apply time range filter if specified
+            if time_range is not None and timestamps is not None:
+                signal_data = signal_data.time_slice(time_range)
+            
+            return signal_data
+            
+        except Exception as e:
+            if not isinstance(e, SignalFormatError):
+                e = SignalFormatError(f"Failed to read JSON: {str(e)}")
+            raise e
+    
+    def write(self, destination: Union[str, Path, BinaryIO], data: SignalData, append: bool = False) -> None:
+        """
+        Write signal data to a JSON destination.
+        
+        Args:
+            destination: File path or file-like object
+            data: SignalData to write
+            append: Whether to append to existing data
+            
+        Raises:
+            SignalFormatError: If writing fails
+        """
+        try:
+            # Handle append mode
+            if append:
+                if isinstance(destination, (str, Path)):
+                    if os.path.exists(destination):
+                        existing_data = self.read(destination)
+                        
+                        # Combine data
+                        combined_values = np.concatenate([existing_data.values, data.values])
+                        combined_timestamps = None
+                        if existing_data.timestamps is not None and data.timestamps is not None:
+                            combined_timestamps = np.concatenate([existing_data.timestamps, data.timestamps])
+                        
+                        # Update metadata
+                        combined_metadata = {**existing_data.metadata, **data.metadata}
+                        
+                        # Create new SignalData
+                        data = SignalData(
+                            values=combined_values,
+                            timestamps=combined_timestamps,
+                            metadata=combined_metadata
+                        )
+                else:
+                    # For file-like objects, appending doesn't make sense without reading first
+                    raise SignalFormatError("Append mode not supported for file-like objects")
+            
+            # Create the JSON structure
             output = {
                 "metadata": {
                     "format_version": "1.0",
                     "created_at": datetime.now().isoformat(),
-                    **(metadata or {})
+                    **data.metadata
                 },
-                "data": data.tolist()
+                "data": data.values.tolist()
             }
             
-            # Add timestamps if provided
-            if timestamps is not None:
-                output["timestamps"] = timestamps.tolist()
+            # Add timestamps if available
+            if data.timestamps is not None:
+                output["timestamps"] = data.timestamps.tolist()
             
-            # Serialize to JSON
-            return json.dumps(output).encode('utf-8')
+            # Convert to JSON string
+            json_str = json.dumps(output, indent=2)
+            
+            # Write to destination
+            if isinstance(destination, (str, Path)):
+                with open(destination, 'w', encoding='utf-8') as f:
+                    f.write(json_str)
+            else:
+                # Assume it's a file-like object
+                destination.write(json_str.encode('utf-8'))
+                destination.flush()
+                
+        except Exception as e:
+            raise SignalFormatError(f"Failed to write JSON: {str(e)}")
+    
+    def get_metadata(self, source: Union[str, Path, BinaryIO]) -> Dict[str, Any]:
+        """
+        Extract metadata from a JSON source.
+        
+        Args:
+            source: File path or file-like object
+            
+        Returns:
+            Dictionary of metadata
+            
+        Raises:
+            SignalFormatError: If metadata extraction fails
+        """
+        try:
+            # For JSON, we need to read the file but we can avoid converting arrays
+            if isinstance(source, (str, Path)):
+                with open(source, 'r', encoding='utf-8') as f:
+                    json_data = json.load(f)
+            else:
+                # Assume it's a file-like object
+                pos = source.tell()
+                source.seek(0)
+                content = source.read()
+                source.seek(pos)  # Restore position
+                json_data = json.loads(content.decode('utf-8'))
+            
+            return json_data.get("metadata", {})
             
         except Exception as e:
-            raise SignalFormatError(f"JSON serialization failed: {e}") from e
+            raise SignalFormatError(f"Failed to extract metadata from JSON: {str(e)}")
     
-    def deserialize(self, 
-                   data: bytes) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[Dict[str, Any]]]:
-        """Deserialize JSON bytes to signal data."""
-        try:
-            # Parse JSON
-            parsed = json.loads(data.decode('utf-8'))
+    # --- Streaming support ---
+    
+    def write_chunk(self, stream: BinaryIO, data: SignalData) -> None:
+        """
+        Write a chunk of data to a JSON stream.
+        
+        For JSON, this implementation uses a line-delimited JSON approach
+        where each chunk is a complete JSON object written on a new line.
+        
+        Args:
+            stream: Open file handle
+            data: Signal data chunk to write
             
-            # Extract components with validation
-            if "data" not in parsed:
-                raise SignalFormatError("Missing 'data' field in JSON")
+        Raises:
+            SignalFormatError: If writing fails
+        """
+        try:
+            # Create a minimal JSON structure for the chunk
+            chunk_json = {
+                "metadata": data.metadata,
+                "data": data.values.tolist()
+            }
+            
+            # Add timestamps if available
+            if data.timestamps is not None:
+                chunk_json["timestamps"] = data.timestamps.tolist()
+            
+            # Convert to JSON string and add newline
+            json_line = json.dumps(chunk_json) + "\n"
+            
+            # Write to stream
+            stream.write(json_line.encode('utf-8'))
+            stream.flush()
+            
+        except Exception as e:
+            raise SignalFormatError(f"Failed to write JSON chunk: {str(e)}")
+    
+    def read_chunk(self, stream: BinaryIO) -> Optional[SignalData]:
+        """
+        Read a chunk of data from a JSON stream.
+        
+        Reads a line from the stream and parses it as a JSON object.
+        
+        Args:
+            stream: Open file handle
+            
+        Returns:
+            Signal data chunk or None if end of stream
+            
+        Raises:
+            SignalFormatError: If reading fails
+        """
+        try:
+            # Read a line from the stream
+            line = stream.readline()
+            
+            # Check for end of file
+            if not line:
+                return None
+            
+            # Parse the JSON
+            try:
+                chunk_json = json.loads(line.decode('utf-8'))
+            except json.JSONDecodeError as e:
+                raise SignalFormatError(f"Invalid JSON in chunk: {str(e)}")
+            
+            # Extract data
+            if "data" not in chunk_json:
+                raise SignalFormatError("Missing 'data' field in JSON chunk")
             
             # Convert to numpy arrays
-            signal_data = np.array(parsed["data"])
-            timestamps = np.array(parsed.get("timestamps")) if "timestamps" in parsed else None
-            metadata = parsed.get("metadata", {})
+            values = np.array(chunk_json["data"])
+            timestamps = np.array(chunk_json.get("timestamps")) if "timestamps" in chunk_json else None
+            metadata = chunk_json.get("metadata", {})
             
-            return signal_data, timestamps, metadata
-            
-        except json.JSONDecodeError as e:
-            raise SignalFormatError(f"Invalid JSON: {e}") from e
-        except Exception as e:
-            raise SignalFormatError(f"JSON deserialization failed: {e}") from e
-    
-    def read_file(self, 
-                 file_path: str, 
-                 mode: ReadMode = ReadMode.FULL,
-                 start_time: Optional[float] = None,
-                 end_time: Optional[float] = None,
-                 start_sample: Optional[int] = None,
-                 end_sample: Optional[int] = None,
-                 chunk_size: Optional[int] = None) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
-        """Read signal data from a JSON file."""
-        try:
-            # For small files, the simplest approach is to read everything and then slice
-            with open(file_path, 'rb') as f:
-                data = f.read()
-            
-            signal_data, timestamps, metadata = self.deserialize(data)
-            
-            # Apply time/sample filtering based on mode
-            if mode == ReadMode.TIME_RANGE and timestamps is not None:
-                # Filter by time range if timestamps are available
-                mask = np.ones(len(timestamps), dtype=bool)
-                if start_time is not None:
-                    mask = mask & (timestamps >= start_time)
-                if end_time is not None:
-                    mask = mask & (timestamps <= end_time)
-                
-                signal_data = signal_data[mask]
-                timestamps = timestamps[mask]
-                
-            elif mode == ReadMode.SAMPLE_RANGE:
-                # Filter by sample range
-                start_idx = start_sample or 0
-                end_idx = end_sample if end_sample is not None else len(signal_data)
-                
-                signal_data = signal_data[start_idx:end_idx]
-                if timestamps is not None:
-                    timestamps = timestamps[start_idx:end_idx]
-            
-            # Note: CHUNK mode isn't well-suited for simple JSON files
-            # but we could implement it for streaming JSON formats
-            
-            return signal_data, timestamps, metadata
-            
-        except FileNotFoundError:
-            raise FileNotFoundError(f"File not found: {file_path}")
-        except Exception as e:
-            raise SignalFormatError(f"Failed to read JSON file: {e}") from e
-    
-    def write_file(self, 
-                  file_path: str, 
-                  data: np.ndarray, 
-                  timestamps: Optional[np.ndarray] = None,
-                  metadata: Optional[Dict[str, Any]] = None,
-                  append: bool = False,
-                  compression: Optional[str] = None) -> None:
-        """Write signal data to a JSON file."""
-        try:
-            # Create directory if it doesn't exist
-            os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
-            
-            # For append mode, we need to read existing data first
-            if append and os.path.exists(file_path):
-                existing_data, existing_timestamps, existing_metadata = self.read_file(file_path)
-                
-                # Combine existing and new data
-                data = np.concatenate([existing_data, data])
-                
-                if timestamps is not None and existing_timestamps is not None:
-                    timestamps = np.concatenate([existing_timestamps, timestamps])
-                elif existing_timestamps is not None:
-                    timestamps = existing_timestamps
-                
-                # Merge metadata, with new values taking precedence
-                if existing_metadata:
-                    merged_metadata = {**existing_metadata, **(metadata or {})}
-                    metadata = merged_metadata
-            
-            # Serialize and write to file
-            serialized = self.serialize(data, timestamps, metadata)
-            
-            with open(file_path, 'wb') as f:
-                f.write(serialized)
-                
-        except Exception as e:
-            raise SignalFormatError(f"Failed to write JSON file: {e}") from e
-    
-    def extract_metadata(self, file_path: str) -> Dict[str, Any]:
-        """Extract metadata from a JSON file without loading all data."""
-        try:
-            # For JSON, we unfortunately need to parse the entire file
-            # to get the metadata, but we can avoid converting arrays
-            with open(file_path, 'r') as f:
-                parsed = json.load(f)
-            
-            return parsed.get("metadata", {})
+            # Create signal data
+            return SignalData(
+                values=values,
+                timestamps=timestamps,
+                metadata=metadata
+            )
             
         except Exception as e:
-            raise SignalFormatError(f"Failed to extract metadata from JSON file: {e}") from e
-    
-    def get_file_structure(self, file_path: str) -> Dict[str, Any]:
-        """Get structure information about the JSON file."""
-        try:
-            # Extract metadata
-            metadata = self.extract_metadata(file_path)
-            
-            # Get file stats
-            file_stats = os.stat(file_path)
-            
-            # Read a small sample to determine data structure
-            with open(file_path, 'rb') as f:
-                # Read first 16KB which should be enough for structure
-                sample_data = f.read(16 * 1024)
-            
-            signal_data, timestamps, _ = self.deserialize(sample_data)
-            
-            # Determine structure from the sample
-            structure = {
-                "file_size_bytes": file_stats.st_size,
-                "modification_time": datetime.fromtimestamp(file_stats.st_mtime).isoformat(),
-                "creation_time": datetime.fromtimestamp(file_stats.st_ctime).isoformat(),
-                "data_type": str(signal_data.dtype),
-                "has_timestamps": timestamps is not None,
-            }
-            
-            # Add metadata-derived fields if available
-            if "sample_rate" in metadata:
-                structure["sample_rate"] = metadata["sample_rate"]
-            if "duration" in metadata:
-                structure["duration"] = metadata["duration"]
-            if "num_channels" in metadata:
-                structure["num_channels"] = metadata["num_channels"]
-            
-            return structure
-            
-        except Exception as e:
-            raise SignalFormatError(f"Failed to analyze JSON file structure: {e}") from e
-    
-    def write_chunk(self, 
-                   file_handle: BinaryIO, 
-                   data: np.ndarray,
-                   timestamps: Optional[np.ndarray] = None,
-                   metadata: Optional[Dict[str, Any]] = None) -> int:
-        """Write a chunk of data to an open JSON file."""
-        try:
-            # For simple JSON format, we don't support true chunking
-            # We just write the entire data as one chunk
-            chunk_data = self.serialize(data, timestamps, metadata)
-            bytes_written = file_handle.write(chunk_data)
-            file_handle.flush()
-            return bytes_written
-            
-        except Exception as e:
-            raise SignalFormatError(f"Failed to write JSON chunk: {e}") from e
-    
-    def read_chunk(self, 
-                  file_handle: BinaryIO, 
-                  chunk_size: int = 1024,
-                  offset: Optional[int] = None) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[Dict[str, Any]]]:
-        """Read a chunk of data from an open JSON file."""
-        try:
-            # For simple JSON format, we don't support true chunking
-            # We just read the entire file
-            if offset is not None:
-                file_handle.seek(offset)
-            
-            data = file_handle.read()
-            return self.deserialize(data)
-            
-        except Exception as e:
-            raise SignalFormatError(f"Failed to read JSON chunk: {e}") from e
-    
-    def finalize_file(self, file_handle: BinaryIO) -> None:
-        """Finalize a JSON file after writing."""
-        # For simple JSON, there's nothing to finalize
-        file_handle.flush()
-
-
-# Register the format when this module is imported
-def register():
-    from .base import format_registry
-    format_registry.register_format(JsonFormat())
+            if not isinstance(e, SignalFormatError):
+                raise SignalFormatError(f"Failed to read JSON chunk: {str(e)}")
+            raise e

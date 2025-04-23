@@ -2,26 +2,24 @@
 CSV Format Implementation
 
 This module implements the CSV format handler for signal data.
-CSV is a widely compatible format for tabular data that can easily be imported
-into other applications like Excel, MATLAB, or pandas.
+CSV provides a human-readable format with wide compatibility across tools.
 """
 
 import csv
-import os
 import numpy as np
-from typing import Dict, Any, List, Optional, BinaryIO, Tuple
-import logging
-from datetime import datetime
+from typing import Dict, Any, List, Optional, Union, BinaryIO, Tuple, Iterator
 import io
+import os
+from datetime import datetime
+from pathlib import Path
 
 from .base import (
-    SignalFormat, 
-    FormatCapability, 
-    ReadMode, 
+    SignalFormat,
+    SignalData,
+    TimeRange,
+    FormatCapability,
     SignalFormatError
 )
-
-logger = logging.getLogger(__name__)
 
 
 class CsvFormat(SignalFormat):
@@ -29,19 +27,17 @@ class CsvFormat(SignalFormat):
     CSV format handler for signal data.
     
     This format stores signal data as CSV with optional metadata as comments.
-    The default structure is:
-    
+    Structure:
     # metadata: key=value
-    # created_at: 2023-01-01T00:00:00.000000
+    # created_at: 2023-01-01T00:00:00.000Z
     timestamp,value1,value2,...
     0.0,1.0,2.0,...
     0.001,1.1,2.1,...
-    ...
     """
     
     # Constants
     COMMENT_CHAR = "#"
-    METADATA_PREFIX = "# metadata: "
+    METADATA_PREFIX = "# metadata:"
     
     @property
     def name(self) -> str:
@@ -56,16 +52,32 @@ class CsvFormat(SignalFormat):
         return [
             FormatCapability.METADATA,
             FormatCapability.STREAMING,
-            FormatCapability.MULTI_CHANNEL,
-            FormatCapability.PARTIAL_READ
+            FormatCapability.RANDOM_ACCESS,
+            FormatCapability.MULTI_CHANNEL
         ]
     
-    def _metadata_to_comments(self, metadata: Dict[str, Any]) -> List[str]:
-        """Convert metadata dictionary to comment lines."""
+    def _metadata_from_comments(self, lines: List[str]) -> Dict[str, Any]:
+        """Extract metadata from comment lines."""
+        metadata = {}
+        
+        for line in lines:
+            if not line.startswith(self.COMMENT_CHAR):
+                continue
+                
+            content = line[len(self.COMMENT_CHAR):].strip()
+            
+            if ":" in content:
+                key, value = content.split(":", 1)
+                metadata[key.strip()] = value.strip()
+                
+        return metadata
+    
+    def _comments_from_metadata(self, metadata: Dict[str, Any]) -> List[str]:
+        """Convert metadata to comment lines."""
         comments = []
         
-        # Add general metadata line
-        comments.append(f"{self.METADATA_PREFIX}format=csv,version=1.0")
+        # Add format indicator
+        comments.append(f"{self.METADATA_PREFIX} format=csv,version=1.0")
         
         # Add creation timestamp if not present
         if "created_at" not in metadata:
@@ -77,503 +89,517 @@ class CsvFormat(SignalFormat):
             
         return comments
     
-    def _comments_to_metadata(self, comments: List[str]) -> Dict[str, Any]:
-        """Extract metadata from comment lines."""
-        metadata = {}
+    def _parse_csv_content(self, content: str) -> Tuple[Dict[str, Any], np.ndarray, Optional[np.ndarray]]:
+        """Parse CSV content into metadata, values, and timestamps."""
+        # Split into lines and filter empty lines
+        lines = [line.strip() for line in content.splitlines() if line.strip()]
         
-        for line in comments:
-            # Skip non-comment lines
-            if not line.startswith(self.COMMENT_CHAR):
-                continue
-                
-            # Remove comment char and split by colon
-            content = line[len(self.COMMENT_CHAR):].strip()
-            
-            # Look for key-value pairs
-            if ":" in content:
-                key, value = content.split(":", 1)
-                metadata[key.strip()] = value.strip()
-                
-        return metadata
-    
-    def serialize(self, 
-                 data: np.ndarray, 
-                 timestamps: np.ndarray = None, 
-                 metadata: Dict[str, Any] = None) -> bytes:
-        """Serialize signal data to CSV bytes."""
-        try:
-            with io.StringIO() as output:
-                # Write metadata as comments
-                for comment in self._metadata_to_comments(metadata or {}):
-                    output.write(comment + "\n")
-                
-                # Create CSV writer
-                writer = csv.writer(output, lineterminator="\n")
-                
-                # Determine if we're dealing with multi-channel data
-                is_multi_channel = len(data.shape) > 1
-                
-                # Write header
-                if is_multi_channel:
-                    num_channels = data.shape[1]
-                    header = ["timestamp"] + [f"channel_{i}" for i in range(num_channels)]
-                else:
-                    header = ["timestamp", "value"]
-                    
-                writer.writerow(header)
-                
-                # Generate timestamps if not provided
-                if timestamps is None:
-                    # Default to 1000 Hz if not specified in metadata
-                    sample_rate = metadata.get("sample_rate", 1000.0) if metadata else 1000.0
-                    start_time = metadata.get("start_time", 0.0) if metadata else 0.0
-                    timestamps = np.arange(len(data)) / sample_rate + start_time
-                
-                # Write data rows
-                if is_multi_channel:
-                    for i, (time, values) in enumerate(zip(timestamps, data)):
-                        writer.writerow([time] + values.tolist())
-                else:
-                    for i, (time, value) in enumerate(zip(timestamps, data)):
-                        writer.writerow([time, value])
-                
-                # Return as bytes
-                return output.getvalue().encode('utf-8')
-                
-        except Exception as e:
-            raise SignalFormatError(f"CSV serialization failed: {e}") from e
-    
-    def deserialize(self, 
-                   data: bytes) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[Dict[str, Any]]]:
-        """Deserialize CSV bytes to signal data."""
-        try:
-            # Parse CSV
-            text = data.decode('utf-8')
-            lines = text.splitlines()
-            
-            # Extract comments and data lines
-            comments = []
-            data_lines = []
-            
-            for line in lines:
-                if line.startswith(self.COMMENT_CHAR):
-                    comments.append(line)
-                else:
-                    data_lines.append(line)
-            
-            # Extract metadata from comments
-            metadata = self._comments_to_metadata(comments)
-            
-            # Parse CSV data
-            with io.StringIO("\n".join(data_lines)) as csv_data:
-                reader = csv.reader(csv_data)
-                
-                # Read header
-                header = next(reader, None)
-                if not header:
-                    raise SignalFormatError("CSV file has no header")
-                
-                # Extract timestamp and values from each row
-                timestamps = []
-                values = []
-                
-                for row in reader:
-                    if not row:  # Skip empty rows
-                        continue
-                        
-                    try:
-                        timestamps.append(float(row[0]))
-                        
-                        # Handle multi-channel vs single-channel data
-                        if len(row) > 2:
-                            values.append([float(v) for v in row[1:]])
-                        else:
-                            values.append(float(row[1]))
-                    except (ValueError, IndexError) as e:
-                        logger.warning(f"Skipping invalid CSV row: {row}, error: {e}")
-                
-                # Convert to numpy arrays
-                timestamps_array = np.array(timestamps)
-                
-                # Handle multi-channel data
-                if values and isinstance(values[0], list):
-                    values_array = np.array(values)
-                else:
-                    values_array = np.array(values)
-                
-                return values_array, timestamps_array, metadata
-                
-        except Exception as e:
-            raise SignalFormatError(f"CSV deserialization failed: {e}") from e
-    
-    def read_file(self, 
-                 file_path: str, 
-                 mode: ReadMode = ReadMode.FULL,
-                 start_time: Optional[float] = None,
-                 end_time: Optional[float] = None,
-                 start_sample: Optional[int] = None,
-                 end_sample: Optional[int] = None,
-                 chunk_size: Optional[int] = None) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
-        """Read signal data from a CSV file."""
-        try:
-            # For TIME_RANGE mode, we can optimize by using a line-by-line approach
-            if mode == ReadMode.TIME_RANGE and (start_time is not None or end_time is not None):
-                return self._read_file_time_range(file_path, start_time, end_time)
-            
-            # For SAMPLE_RANGE mode, we might still need to read everything
-            # but we can optimize by skipping rows when reading
-            elif mode == ReadMode.SAMPLE_RANGE and (start_sample is not None or end_sample is not None):
-                return self._read_file_sample_range(file_path, start_sample, end_sample)
-                
-            # For CHUNK mode, we might read just a portion of the file
-            elif mode == ReadMode.CHUNK and chunk_size is not None:
-                return self._read_file_chunk(file_path, chunk_size)
-            
-            # Default: read the entire file
-            with open(file_path, 'rb') as f:
-                data = f.read()
-                
-            return self.deserialize(data)
-            
-        except FileNotFoundError:
-            raise FileNotFoundError(f"File not found: {file_path}")
-        except Exception as e:
-            raise SignalFormatError(f"Failed to read CSV file: {e}") from e
-    
-    def _read_file_time_range(self, 
-                             file_path: str, 
-                             start_time: Optional[float], 
-                             end_time: Optional[float]) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
-        """Read a specific time range from a CSV file."""
+        # Separate comments and data
+        comment_lines = [line for line in lines if line.startswith(self.COMMENT_CHAR)]
+        data_lines = [line for line in lines if not line.startswith(self.COMMENT_CHAR)]
+        
+        # Extract metadata
+        metadata = self._metadata_from_comments(comment_lines)
+        
+        # Parse CSV data
+        if not data_lines:
+            raise SignalFormatError("CSV file has no data rows")
+        
+        csv_reader = csv.reader(data_lines)
+        rows = list(csv_reader)
+        
+        # Get header and data rows
+        header = rows[0]
+        data_rows = rows[1:]
+        
+        # Check if first column contains timestamps
+        has_timestamps = header[0].lower().startswith('time') or 'timestamp' in header[0].lower()
+        
+        # Process data rows
         timestamps = []
         values = []
-        metadata = {}
-        is_multi_channel = None
         
-        with open(file_path, 'r') as f:
-            # Read and process the file line by line
-            for line in f:
-                # Extract metadata from comments
-                if line.startswith(self.COMMENT_CHAR):
-                    key_value = self._comments_to_metadata([line])
-                    metadata.update(key_value)
-                    continue
-                
-                # Skip empty lines
-                if not line.strip():
-                    continue
-                
-                # Parse CSV row
-                row = next(csv.reader([line]))
-                
-                # Check if this is the header row
-                if line.lower().startswith('timestamp') or 'time' in line.lower().split(',')[0]:
-                    # Determine if we have multi-channel data
-                    is_multi_channel = len(row) > 2
-                    continue
-                
-                try:
-                    # Extract timestamp
-                    timestamp = float(row[0])
+        # Determine if multi-channel (more than 2 columns)
+        is_multi_channel = len(header) > 2
+        
+        for row in data_rows:
+            if not row:
+                continue
+            
+            try:
+                if has_timestamps:
+                    timestamps.append(float(row[0]))
                     
-                    # Skip rows outside our time range
-                    if start_time is not None and timestamp < start_time:
-                        continue
-                    if end_time is not None and timestamp > end_time:
-                        break  # Assuming timestamps are sorted
-                    
-                    # Record the timestamp
-                    timestamps.append(timestamp)
-                    
-                    # Extract values
+                    # Handle multi-channel vs single-channel
                     if is_multi_channel:
                         values.append([float(v) for v in row[1:]])
                     else:
                         values.append(float(row[1]))
-                        
-                except (ValueError, IndexError) as e:
-                    logger.warning(f"Skipping invalid CSV row: {row}, error: {e}")
+                else:
+                    # No timestamps, all columns are values
+                    if len(row) > 1:
+                        values.append([float(v) for v in row])
+                    else:
+                        values.append(float(row[0]))
+            except (ValueError, IndexError) as e:
+                # Skip invalid rows but log warning
+                import logging
+                logging.warning(f"Skipping invalid CSV row: {row}, error: {e}")
         
         # Convert to numpy arrays
-        timestamps_array = np.array(timestamps)
+        values_array = np.array(values)
+        timestamps_array = np.array(timestamps) if timestamps else None
         
-        # Handle multi-channel data
-        if values and isinstance(values[0], list):
-            values_array = np.array(values)
+        return metadata, values_array, timestamps_array
+    
+    def _create_csv_content(self, data: SignalData) -> str:
+        """Create CSV content from SignalData."""
+        buffer = io.StringIO()
+        
+        # Write metadata as comments
+        for comment in self._comments_from_metadata(data.metadata):
+            buffer.write(comment + "\n")
+        
+        # Create CSV writer
+        writer = csv.writer(buffer, lineterminator="\n")
+        
+        # Determine if multi-channel
+        is_multi_channel = len(data.values.shape) > 1
+        
+        # Write header
+        if is_multi_channel:
+            channel_count = data.values.shape[1]
+            header = ["timestamp"] + [f"channel_{i}" for i in range(channel_count)]
         else:
-            values_array = np.array(values)
+            header = ["timestamp", "value"]
         
-        return values_array, timestamps_array, metadata
+        writer.writerow(header)
+        
+        # Write data rows
+        if data.timestamps is None:
+            # Generate timestamps if not provided
+            sample_rate = data.metadata.get("sample_rate", 1000.0)
+            start_time = data.metadata.get("start_time", 0.0)
+            timestamps = np.arange(len(data.values)) / sample_rate + start_time
+        else:
+            timestamps = data.timestamps
+        
+        if is_multi_channel:
+            for i, (time, values) in enumerate(zip(timestamps, data.values)):
+                writer.writerow([time] + values.tolist())
+        else:
+            for time, value in zip(timestamps, data.values):
+                writer.writerow([time, value])
+        
+        return buffer.getvalue()
     
-    def _read_file_sample_range(self, 
-                               file_path: str, 
-                               start_sample: Optional[int], 
-                               end_sample: Optional[int]) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
-        """Read a specific sample range from a CSV file."""
-        # For simplicity, we'll read everything and then slice
-        # A more optimized version would skip rows when reading
-        with open(file_path, 'rb') as f:
-            data = f.read()
+    def read(self, source: Union[str, Path, BinaryIO], time_range: Optional[TimeRange] = None) -> SignalData:
+        """
+        Read signal data from a CSV source.
+        
+        Args:
+            source: File path or file-like object
+            time_range: Optional time range to filter by
             
-        signal_data, timestamps, metadata = self.deserialize(data)
-        
-        # Apply sample range slicing
-        start_idx = start_sample or 0
-        end_idx = end_sample if end_sample is not None else len(signal_data)
-        
-        return signal_data[start_idx:end_idx], timestamps[start_idx:end_idx], metadata
-    
-    def _read_file_chunk(self, 
-                        file_path: str, 
-                        chunk_size: int) -> Tuple[np.ndarray, Optional[np.ndarray], Dict[str, Any]]:
-        """Read a chunk of data from a CSV file."""
-        # For simplicity, just read from the beginning
-        # A more advanced implementation would track state between calls
-        return self._read_file_sample_range(file_path, 0, chunk_size)
-    
-    def write_file(self, 
-                  file_path: str, 
-                  data: np.ndarray, 
-                  timestamps: Optional[np.ndarray] = None,
-                  metadata: Optional[Dict[str, Any]] = None,
-                  append: bool = False,
-                  compression: Optional[str] = None) -> None:
-        """Write signal data to a CSV file."""
+        Returns:
+            SignalData object
+        """
         try:
-            # Create directory if it doesn't exist
-            os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
+            # Handle different source types
+            if isinstance(source, (str, Path)):
+                with open(source, 'r', encoding='utf-8', newline='') as f:
+                    content = f.read()
+            else:
+                # File-like object
+                pos = source.tell()
+                source.seek(0)
+                content = source.read().decode('utf-8')
+                source.seek(pos)
             
+            # Parse the content
+            metadata, values, timestamps = self._parse_csv_content(content)
+            
+            # Create SignalData
+            signal_data = SignalData(
+                values=values,
+                timestamps=timestamps,
+                metadata=metadata
+            )
+            
+            # Apply time range filter if specified
+            if time_range is not None and timestamps is not None:
+                signal_data = signal_data.time_slice(time_range)
+            
+            return signal_data
+            
+        except Exception as e:
+            if not isinstance(e, SignalFormatError):
+                e = SignalFormatError(f"Failed to read CSV: {str(e)}")
+            raise e
+    
+    def write(self, destination: Union[str, Path, BinaryIO], data: SignalData, append: bool = False) -> None:
+        """
+        Write signal data to a CSV destination.
+        
+        Args:
+            destination: File path or file-like object
+            data: SignalData to write
+            append: Whether to append to existing data
+        """
+        try:
             # Handle append mode
-            if append and os.path.exists(file_path):
-                # Read existing data
-                existing_data, existing_timestamps, existing_metadata = self.read_file(file_path)
+            if append and isinstance(destination, (str, Path)) and os.path.exists(destination):
+                existing_data = self.read(destination)
                 
                 # Combine data
-                data = np.concatenate([existing_data, data])
+                combined_values = np.concatenate([existing_data.values, data.values])
                 
-                if timestamps is not None and existing_timestamps is not None:
-                    timestamps = np.concatenate([existing_timestamps, timestamps])
-                elif existing_timestamps is not None:
-                    timestamps = existing_timestamps
+                combined_timestamps = None
+                if existing_data.timestamps is not None and data.timestamps is not None:
+                    combined_timestamps = np.concatenate([existing_data.timestamps, data.timestamps])
                 
-                # Update metadata
-                if existing_metadata:
-                    metadata = {**existing_metadata, **(metadata or {})}
+                # Merge metadata
+                combined_metadata = {**existing_data.metadata, **data.metadata}
                 
-                # Write mode will be 'w' to create a new file
-                write_mode = 'w'
+                # Create combined signal data
+                data = SignalData(
+                    values=combined_values,
+                    timestamps=combined_timestamps,
+                    metadata=combined_metadata
+                )
+            
+            # Create CSV content
+            content = self._create_csv_content(data)
+            
+            # Write to destination
+            if isinstance(destination, (str, Path)):
+                # Ensure directory exists
+                if isinstance(destination, str):
+                    destination_path = Path(destination)
+                else:
+                    destination_path = destination
+                    
+                os.makedirs(destination_path.parent, exist_ok=True)
+                
+                with open(destination, 'w', encoding='utf-8', newline='') as f:
+                    f.write(content)
             else:
-                # Create new file
-                write_mode = 'w'
-            
-            # Serialize data
-            serialized = self.serialize(data, timestamps, metadata)
-            
-            # Write to file
-            with open(file_path, write_mode, encoding='utf-8') as f:
-                f.write(serialized.decode('utf-8'))
+                # File-like object
+                destination.write(content.encode('utf-8'))
+                destination.flush()
                 
         except Exception as e:
-            raise SignalFormatError(f"Failed to write CSV file: {e}") from e
+            raise SignalFormatError(f"Failed to write CSV: {str(e)}")
     
-    def extract_metadata(self, file_path: str) -> Dict[str, Any]:
-        """Extract metadata from a CSV file without loading all data."""
+    def get_metadata(self, source: Union[str, Path, BinaryIO]) -> Dict[str, Any]:
+        """
+        Extract metadata from a CSV source without loading all data.
+        
+        More efficient than the default implementation - only reads comment lines.
+        """
         try:
-            metadata = {}
-            
-            with open(file_path, 'r') as f:
-                # Read until we find a non-comment line
-                for line in f:
-                    if line.startswith(self.COMMENT_CHAR):
-                        key_value = self._comments_to_metadata([line])
-                        metadata.update(key_value)
-                    else:
-                        # We've read all metadata
+            # Read only the beginning of the file
+            if isinstance(source, (str, Path)):
+                with open(source, 'r', encoding='utf-8') as f:
+                    # Read until we find a non-comment line
+                    comment_lines = []
+                    for line in f:
+                        if line.strip().startswith(self.COMMENT_CHAR):
+                            comment_lines.append(line.strip())
+                        else:
+                            break
+            else:
+                # File-like object
+                pos = source.tell()
+                source.seek(0)
+                
+                comment_lines = []
+                line = source.readline().decode('utf-8').strip()
+                while line.startswith(self.COMMENT_CHAR):
+                    comment_lines.append(line)
+                    line = source.readline().decode('utf-8').strip()
+                    if not line:  # End of file
                         break
+                
+                source.seek(pos)  # Restore position
             
-            return metadata
-            
-        except Exception as e:
-            raise SignalFormatError(f"Failed to extract metadata from CSV file: {e}") from e
-    
-    def get_file_structure(self, file_path: str) -> Dict[str, Any]:
-        """Get structure information about the CSV file."""
-        try:
-            # Extract metadata
-            metadata = self.extract_metadata(file_path)
-            
-            # Get file stats
-            file_stats = os.stat(file_path)
-            
-            # Count lines and determine if multi-channel
-            total_lines = 0
-            header_cols = 0
-            is_multi_channel = False
-            
-            with open(file_path, 'r') as f:
-                for line in f:
-                    if not line.startswith(self.COMMENT_CHAR) and line.strip():
-                        # Check if this is the header
-                        if total_lines == 0 or 'timestamp' in line.lower() or 'time' in line.lower().split(',')[0]:
-                            header_cols = len(next(csv.reader([line])))
-                            is_multi_channel = header_cols > 2
-                        
-                        total_lines += 1
-            
-            # Build structure info
-            structure = {
-                "file_size_bytes": file_stats.st_size,
-                "total_lines": total_lines,
-                "modification_time": datetime.fromtimestamp(file_stats.st_mtime).isoformat(),
-                "creation_time": datetime.fromtimestamp(file_stats.st_ctime).isoformat(),
-                "is_multi_channel": is_multi_channel,
-                "num_channels": header_cols - 1 if header_cols > 0 else 0,
-            }
-            
-            # Add metadata-derived fields if available
-            if "sample_rate" in metadata:
-                structure["sample_rate"] = metadata["sample_rate"]
-            if "duration" in metadata:
-                structure["duration"] = metadata["duration"]
-            
-            return structure
+            return self._metadata_from_comments(comment_lines)
             
         except Exception as e:
-            raise SignalFormatError(f"Failed to analyze CSV file structure: {e}") from e
+            raise SignalFormatError(f"Failed to extract metadata from CSV: {str(e)}")
     
-    def write_chunk(self, 
-                   file_handle: BinaryIO, 
-                   data: np.ndarray,
-                   timestamps: Optional[np.ndarray] = None,
-                   metadata: Optional[Dict[str, Any]] = None) -> int:
-        """Write a chunk of data to an open CSV file."""
+    def read_time_range(self, source: Union[str, Path, BinaryIO], time_range: TimeRange) -> SignalData:
+        """
+        Read a specific time range from a CSV source (more efficient implementation).
+        
+        For CSV files, we can optimize by scanning line-by-line and only keeping
+        rows that fall within the time range.
+        """
+        if time_range.start is None and time_range.end is None:
+            return self.read(source)
+            
         try:
-            # For the first chunk, write metadata and header
-            if file_handle.tell() == 0:
-                # Serialize with metadata as comments
-                serialized = self.serialize(data, timestamps, metadata)
-                bytes_written = file_handle.write(serialized)
+            # Process line by line
+            if isinstance(source, (str, Path)):
+                with open(source, 'r', encoding='utf-8', newline='') as f:
+                    return self._read_time_range_from_file(f, time_range)
             else:
-                # For subsequent chunks, just write the data without headers
-                # Create a CSV writer using an in-memory buffer
-                with io.StringIO() as output:
-                    writer = csv.writer(output, lineterminator="\n")
-                    
-                    # Determine if we're dealing with multi-channel data
-                    is_multi_channel = len(data.shape) > 1
-                    
-                    # Generate timestamps if not provided
-                    if timestamps is None:
-                        # Default to 1000 Hz if not specified
-                        sample_rate = metadata.get("sample_rate", 1000.0) if metadata else 1000.0
-                        start_time = metadata.get("start_time", 0.0) if metadata else 0.0
-                        timestamps = np.arange(len(data)) / sample_rate + start_time
-                    
-                    # Write data rows only (no header)
-                    if is_multi_channel:
-                        for i, (time, values) in enumerate(zip(timestamps, data)):
-                            writer.writerow([time] + values.tolist())
-                    else:
-                        for i, (time, value) in enumerate(zip(timestamps, data)):
-                            writer.writerow([time, value])
-                    
-                    # Write to file handle
-                    csv_data = output.getvalue()
-                    bytes_written = file_handle.write(csv_data.encode('utf-8'))
+                # File-like object
+                pos = source.tell()
+                source.seek(0)
+                
+                content = source.read().decode('utf-8')
+                source.seek(pos)  # Restore position
+                
+                f = io.StringIO(content)
+                return self._read_time_range_from_file(f, time_range)
+                
+        except Exception as e:
+            if not isinstance(e, SignalFormatError):
+                e = SignalFormatError(f"Failed to read CSV time range: {str(e)}")
+            raise e
+    
+    def _read_time_range_from_file(self, file, time_range: TimeRange) -> SignalData:
+        """Helper to read time range from a file-like object."""
+        # Read comment lines for metadata
+        comment_lines = []
+        header = None
+        timestamps = []
+        values = []
+        
+        # Track if we've found the timestamp column
+        timestamp_col = 0
+        
+        for line in file:
+            line = line.strip()
+            if not line:
+                continue
+                
+            if line.startswith(self.COMMENT_CHAR):
+                comment_lines.append(line)
+                continue
             
-            file_handle.flush()
-            return bytes_written
+            # Parse as CSV row
+            row = next(csv.reader([line]))
+            
+            # Check if this is the header
+            if header is None:
+                header = row
+                # Validate we have a timestamp column
+                if not (header[0].lower().startswith('time') or 'timestamp' in header[0].lower()):
+                    raise SignalFormatError("CSV file must have timestamp as first column for time range reading")
+                continue
+            
+            # Extract timestamp
+            try:
+                timestamp = float(row[timestamp_col])
+                
+                # Skip if before start time
+                if time_range.start is not None and timestamp < time_range.start:
+                    continue
+                # Exit loop if past end time
+                if time_range.end is not None and timestamp > time_range.end:
+                    break
+                
+                # If we got here, timestamp is in range
+                timestamps.append(timestamp)
+                
+                # Extract values
+                if len(row) > 2:  # Multi-channel
+                    values.append([float(v) for v in row[1:]])
+                else:
+                    values.append(float(row[1]))
+                    
+            except (ValueError, IndexError) as e:
+                # Skip invalid rows
+                import logging
+                logging.warning(f"Skipping invalid CSV row: {row}, error: {e}")
+        
+        # Extract metadata
+        metadata = self._metadata_from_comments(comment_lines)
+        
+        # Convert to arrays
+        timestamps_array = np.array(timestamps)
+        values_array = np.array(values)
+        
+        # Create signal data
+        return SignalData(
+            values=values_array,
+            timestamps=timestamps_array,
+            metadata=metadata
+        )
+    
+    # --- Streaming support ---
+    
+    def write_chunk(self, stream: BinaryIO, data: SignalData) -> None:
+        """
+        Write a chunk of data to a CSV stream.
+        
+        For first chunk, writes comments and header.
+        For subsequent chunks, writes only data rows.
+        """
+        try:
+            # Check if this is the first write to the stream
+            is_first_chunk = stream.tell() == 0
+            
+            if is_first_chunk:
+                # Write full CSV with metadata and header
+                content = self._create_csv_content(data)
+                stream.write(content.encode('utf-8'))
+            else:
+                # Write only the data rows without header or metadata
+                buffer = io.StringIO()
+                writer = csv.writer(buffer, lineterminator="\n")
+                
+                is_multi_channel = len(data.values.shape) > 1
+                
+                # Write data rows
+                if data.timestamps is None:
+                    # Generate timestamps if not provided
+                    sample_rate = data.metadata.get("sample_rate", 1000.0)
+                    start_time = data.metadata.get("start_time", 0.0)
+                    timestamps = np.arange(len(data.values)) / sample_rate + start_time
+                else:
+                    timestamps = data.timestamps
+                
+                if is_multi_channel:
+                    for i, (time, values) in enumerate(zip(timestamps, data.values)):
+                        writer.writerow([time] + values.tolist())
+                else:
+                    for time, value in zip(timestamps, data.values):
+                        writer.writerow([time, value])
+                
+                stream.write(buffer.getvalue().encode('utf-8'))
+            
+            stream.flush()
             
         except Exception as e:
-            raise SignalFormatError(f"Failed to write CSV chunk: {e}") from e
+            raise SignalFormatError(f"Failed to write CSV chunk: {str(e)}")
     
-    def read_chunk(self, 
-                  file_handle: BinaryIO, 
-                  chunk_size: int = 1024,
-                  offset: Optional[int] = None) -> Tuple[np.ndarray, Optional[np.ndarray], Optional[Dict[str, Any]]]:
-        """Read a chunk of data from an open CSV file."""
+    def read_chunk(self, stream: BinaryIO) -> Optional[SignalData]:
+        """
+        Read a chunk of data from a CSV stream.
+        
+        Reads up to 1000 data rows or until end of file.
+        For first chunk, parses metadata and header.
+        """
         try:
-            # Set position if specified
-            if offset is not None:
-                file_handle.seek(offset)
+            # Track position to restore if needed
+            start_pos = stream.tell()
             
-            # Read lines
-            lines = []
-            metadata = {}
-            count = 0
+            # Read first line to check position in file
+            first_line = stream.readline().decode('utf-8').strip()
+            if not first_line:  # End of file
+                return None
             
-            while count < chunk_size:
-                line = file_handle.readline().decode('utf-8')
+            # For first chunk, handle metadata and header
+            if start_pos == 0:
+                # Go back to beginning
+                stream.seek(0)
+                
+                # Read comment lines for metadata
+                comment_lines = []
+                while True:
+                    pos = stream.tell()
+                    line = stream.readline().decode('utf-8').strip()
+                    if not line:
+                        break
+                    if line.startswith(self.COMMENT_CHAR):
+                        comment_lines.append(line)
+                    else:
+                        # Found the header line
+                        header = next(csv.reader([line]))
+                        break
+                
+                # Extract metadata
+                metadata = self._metadata_from_comments(comment_lines)
+            else:
+                # For subsequent chunks, we don't have metadata
+                metadata = {}
+                # Go back to read the first line again (could be header or data)
+                stream.seek(start_pos)
+                line = stream.readline().decode('utf-8').strip()
+                # Check if this is still the header
+                if line.lower().startswith('time') or 'timestamp' in line.lower().split(',')[0]:
+                    # This is the header, no data yet in this chunk
+                    return SignalData(
+                        values=np.array([]),
+                        timestamps=np.array([]),
+                        metadata=metadata
+                    )
+                else:
+                    # This is a data line, rewind to read it again
+                    stream.seek(start_pos)
+            
+            # Read data rows (up to 1000)
+            timestamps = []
+            values = []
+            is_multi_channel = None
+            max_rows = 1000
+            rows_read = 0
+            
+            while rows_read < max_rows:
+                pos = stream.tell()
+                line = stream.readline().decode('utf-8').strip()
+                
                 if not line:  # End of file
                     break
-                    
-                # Process metadata
-                if line.startswith(self.COMMENT_CHAR):
-                    key_value = self._comments_to_metadata([line])
-                    metadata.update(key_value)
+                
+                if line.startswith(self.COMMENT_CHAR) or line.lower().startswith('time') or 'timestamp' in line.lower().split(',')[0]:
+                    # Skip comment lines and header
                     continue
                 
-                lines.append(line)
-                count += 1
-            
-            # Parse as CSV
-            if lines:
-                with io.StringIO("".join(lines)) as csv_data:
-                    reader = csv.reader(csv_data)
+                # Parse as CSV row
+                row = next(csv.reader([line]))
+                
+                try:
+                    # Extract timestamp and values
+                    timestamp = float(row[0])
+                    timestamps.append(timestamp)
                     
-                    # Check for header
-                    first_row = next(reader, None)
-                    if not first_row:
-                        return np.array([]), np.array([]), metadata
+                    # Detect if multi-channel on first data row
+                    if is_multi_channel is None:
+                        is_multi_channel = len(row) > 2
                     
-                    # Check if first row is header
-                    is_header = any(['time' in col.lower() for col in first_row])
-                    
-                    # Track rows for data
-                    timestamps = []
-                    values = []
-                    
-                    # Process first row if it's not header
-                    if not is_header:
-                        try:
-                            timestamps.append(float(first_row[0]))
-                            
-                            if len(first_row) > 2:  # Multi-channel
-                                values.append([float(v) for v in first_row[1:]])
-                            else:
-                                values.append(float(first_row[1]))
-                        except (ValueError, IndexError) as e:
-                            logger.warning(f"Invalid CSV row: {first_row}, error: {e}")
-                    
-                    # Process remaining rows
-                    for row in reader:
-                        if not row:  # Skip empty rows
-                            continue
-                            
-                        try:
-                            timestamps.append(float(row[0]))
-                            
-                            # Handle multi-channel vs single-channel
-                            if len(row) > 2:
-                                values.append([float(v) for v in row[1:]])
-                            else:
-                                values.append(float(row[1]))
-                        except (ValueError, IndexError) as e:
-                            logger.warning(f"Invalid CSV row: {row}, error: {e}")
-                    
-                    # Convert to numpy arrays
-                    timestamps_array = np.array(timestamps)
-                    
-                    # Handle multi-channel data
-                    if values and isinstance(values[0], list):
-                        values_array = np.array(values)
+                    if is_multi_channel:
+                        values.append([float(v) for v in row[1:]])
                     else:
-                        values_array = np.array(values)
+                        values.append(float(row[1]))
                     
-                    return values_array, timestamps_array, metadata
+                    rows_read += 1
+                    
+                except (ValueError, IndexError) as e:
+                    # Skip invalid rows
+                    import logging
+                    logging.warning(f"Skipping invalid CSV row: {row}, error: {e}")
             
-            # No data read
-            return np.array([]), np.array([]), metadata
+            # If no data was read, return empty signal
+            if not timestamps:
+                return SignalData(
+                    values=np.array([]),
+                    timestamps=np.array([]),
+                    metadata=metadata
+                )
+            
+            # Convert to arrays
+            timestamps_array = np.array(timestamps)
+            values_array = np.array(values)
+            
+            # Create signal data
+            return SignalData(
+                values=values_array,
+                timestamps=timestamps_array,
+                metadata=metadata
+            )
             
         except Exception as e:
-            raise SignalFormatError(f"Failed to read CSV chunk: {e}") from e
+            if not isinstance(e, SignalFormatError):
+                raise SignalFormatError(f"Failed to read CSV chunk: {str(e)}")
+            raise e
+    
+    def close_stream(self, stream: BinaryIO) -> None:
+        """Close a CSV stream."""
+        try:
+            stream.close()
+        except Exception as e:
+            raise SignalFormatError(f"Failed to close CSV stream: {str(e)}")
