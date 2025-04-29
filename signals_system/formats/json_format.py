@@ -212,6 +212,55 @@ class JsonFormat(SignalFormat):
         except Exception as e:
             raise SignalFormatError(f"Failed to extract metadata from JSON: {str(e)}")
     
+    def validate(self, source: Union[str, Path, BinaryIO]) -> bool:
+        """
+        Validate whether a source contains valid data for this format.
+        
+        Args:
+            source: File path or file-like object to validate
+            
+        Returns:
+            True if valid, False otherwise
+        """
+        try:
+            # Read content from source
+            if isinstance(source, (str, Path)):
+                with open(source, 'rb') as f:
+                    content = f.read()
+            else:
+                # File-like object
+                pos = source.tell()
+                source.seek(0)
+                content = source.read()
+                source.seek(pos)  # Restore position
+            
+            # Try to parse as JSON
+            try:
+                json_data = json.loads(content.decode('utf-8'))
+            except json.JSONDecodeError:
+                return False
+                
+            # Check for required fields
+            if "data" not in json_data:
+                return False
+                
+            # Validate data is an array
+            if not isinstance(json_data["data"], list):
+                return False
+                
+            # If timestamps are present, validate they're an array
+            if "timestamps" in json_data and not isinstance(json_data["timestamps"], list):
+                return False
+                
+            # Check that metadata is a dictionary if present
+            if "metadata" in json_data and not isinstance(json_data["metadata"], dict):
+                return False
+                
+            return True
+                
+        except Exception:
+            return False
+    
     # --- Streaming support ---
     
     def write_chunk(self, stream: BinaryIO, data: SignalData) -> None:
@@ -298,3 +347,22 @@ class JsonFormat(SignalFormat):
             if not isinstance(e, SignalFormatError):
                 raise SignalFormatError(f"Failed to read JSON chunk: {str(e)}")
             raise e
+    
+    def close_stream(self, stream: BinaryIO) -> None:
+        """
+        Close a JSON stream.
+        
+        Args:
+            stream: Open file handle
+            
+        Raises:
+            SignalFormatError: If closing fails
+        """
+        try:
+            # Clean up any attributes we might have added
+            if hasattr(stream, '_json_chunk_state'):
+                delattr(stream, '_json_chunk_state')
+                
+            stream.close()
+        except Exception as e:
+            raise SignalFormatError(f"Failed to close JSON stream: {str(e)}")

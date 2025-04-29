@@ -475,3 +475,7 @@ def register_builtin_formats():
     # registry.register(NumpyFormat)
     # registry.register(Hdf5Format)
     # registry.register(ProtobufFormat)
+
+# Call register_builtin_formats to populate the registry
+# This fixes the empty registry issue
+register_builtin_formats()
